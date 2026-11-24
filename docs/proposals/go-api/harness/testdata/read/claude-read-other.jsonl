@@ -1,0 +1,1 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"fixture-tool","name":"Read","input":{"file_path":"/repo/docs/spec.md"}}],"stop_reason":"tool_use"}}

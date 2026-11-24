@@ -1,0 +1,7 @@
+private/
+CLAUDE.local.md
+AGENTS.override.md
+.beads/
+.worktrees/
+.superpowers/
+__pycache__/

@@ -1,0 +1,1 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"fixture-tool","name":"Bash","input":{"command":"cat /state/runs/r1/prompt/0123456789abcdef/prompt.md"}}],"stop_reason":"tool_use"}}

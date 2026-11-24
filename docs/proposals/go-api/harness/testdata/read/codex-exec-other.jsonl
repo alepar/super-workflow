@@ -1,0 +1,1 @@
+{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(await tools.exec_command({cmd:\"cat /repo/docs/spec.md\",max_output_tokens:10000}));"}}

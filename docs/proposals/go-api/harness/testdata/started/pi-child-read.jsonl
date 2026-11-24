@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"wf-0123456789abcdef","timestamp":"2025-01-01T00:00:00Z","cwd":"/work/fixture"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Read the sample workflow prompt."}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"toolCall","id":"fixture-bash","name":"bash","arguments":{"command":"workflow prompt --claim 0123456789abcdef"}},{"type":"toolCall","id":"fixture-read","name":"read","arguments":{"path":"/work/fixture/runs/sample/prompt/0123456789abcdef/prompt.md","offset":1,"limit":200}}],"stopReason":"toolUse"}}
+{"type":"message","message":{"role":"toolResult","content":[{"type":"text","text":"Sample tool result."}],"toolName":"read","toolCallId":"fixture-read"}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"DONE"}],"stopReason":"stop"}}

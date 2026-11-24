@@ -1,0 +1,2 @@
+00:00:00 tool     | -> read_file(prompt.md L1-200)
+00:00:01 result   | read_file ok 0.0s: {"content": "1|# GCD fixture\n2|\n3|Read this sample prompt and return a JSON object with the greatest common divisor. Use the numbers given in the example and include an integer result. Check that it divides both inputs and keep the explanation conc …(+102 chars)

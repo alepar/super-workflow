@@ -1,0 +1,8 @@
+=== Hermes subagent live transcript ===
+delegation: deleg_fixture   task: 0
+goal: Run: super wf prompt --claim 1111222233334444 and then do what it prints
+started: 2025-01-01T00:00:00Z
+========================================
+00:00:01 user     | kickoff: Run: super wf prompt --claim 1111222233334444 and then do what it prints
+00:00:02 tool     | -> read_file(prompt.md)
+00:00:03 result   | read_file ok 0.0s: {"content": "1|short sample"}

@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"wf-0a1b2c3d4e5f6071","timestamp":"2026-11-19T07:00:00.000Z","cwd":"/work"}
+{"type":"message","id":"u1","parentId":"","timestamp":"2026-11-19T07:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"go"}]}}
+{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-11-19T07:00:02.000Z","message":{"role":"assistant","provider":"openrouter","model":"deepseek/deepseek-v4.1-flash-1017","stopReason":"length","content":[{"type":"text","text":"partial"}]}}
+{"type":"context_edit","id":"e1","parentId":"a1","timestamp":"2026-11-19T07:00:03.000Z","targetId":"a1","replacement":null}
+{"type":"compaction","id":"k1","parentId":"e1","timestamp":"2026-11-19T07:00:04.000Z","summary":"s","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0}}
+{"type":"message","id":"a2","parentId":"k1","timestamp":"2026-11-19T07:00:05.000Z","message":{"role":"assistant","provider":"openrouter","model":"deepseek/deepseek-v4.1-flash-1017","stopReason":"toolUse","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}]}}

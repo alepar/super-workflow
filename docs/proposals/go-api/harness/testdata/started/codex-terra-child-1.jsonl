@@ -1,0 +1,4 @@
+{"type":"session_meta","payload":{"id":"10000000-0000-4000-8000-000000000002","session_id":"10000000-0000-4000-8000-000000000001","source":{"subagent":{"thread_spawn":{"parent_thread_id":"10000000-0000-4000-8000-000000000001","depth":1,"agent_path":"/root/worker","agent_nickname":"FixtureWorker","agent_role":null}}},"cli_version":"0.0.0","timestamp":"2025-01-01T00:00:00Z"}}
+{"type":"response_item","payload":{"type":"message","content":[{"type":"input_text","text":"Sample workflow message."}],"role":"user"}}
+{"type":"response_item","payload":{"type":"agent_message","content":[{"type":"input_text","text":"Sample workflow message."}]}}
+{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"const r = await tools.exec_command({cmd:\"/test/bin/workflow prompt fixture-run --claim 2020202020202020 --state-dir /test/state\",max_output_tokens:4000}); text(r.output);\n"}}

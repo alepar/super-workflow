@@ -1,0 +1,16 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"fixture-tool","name":"SubagentHandback","input":{"message":"Sample work completed."}}],"stop_reason":"tool_use"}}
+{"type":"attachment"}
+{"type":"attachment"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"fixture-tool","content":"Sample tool result."}]},"toolEndsTurn":true}
+{"type":"user","message":{"role":"user","content":"Resume the sample task."}}
+{"type":"attachment"}
+{"type":"api-request-blob"}
+{"type":"api-request-blob"}
+{"type":"api-request"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Consider the fixture request."}],"stop_reason":"tool_use"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"fixture-tool","name":"TaskStop","input":{"task_id":"fixture-task"}}],"stop_reason":"tool_use"}}
+{"type":"attachment"}
+{"type":"attachment"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"fixture-tool","content":"Sample tool result."}]}}
+{"type":"api-request"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Sample work completed."}],"stop_reason":"end_turn"}}

@@ -1,0 +1,1340 @@
+#### lint
+lint agentless: ok
+lint approval: ok
+lint broaden: ok
+lint checkrepair: ok
+lint critique: ok
+lint dispatch: ok
+lint escalation: ok
+lint fanout: ok
+lint feature: ok
+lint gatedchain: ok
+lint noprogress: ok
+lint orchestrator: ok
+lint park: ok
+lint resumable: ok
+lint router: ok
+lint stale: ok
+lint tour: ok
+lint tournament: ok
+  note map-parallel-review tournament/Judges: Parallel(3) caps this Map; keep it only as a semantic limit (one merge at a time, a serial hot file): throughput is the n the coordinator passes to wf next (path: Judges)
+lint typedexit: ok
+lint unavailable: ok
+
+#### graph agentless
+agentless v0 — 7 states, start: Localize
+
+▶ Localize           agent → Suspects
+      prompt: Localize the failing behaviour to suspect files and symbols.
+      route: suspects found
+      ├── no localization [retry ≤2, then recovery offer] ──▶ NoFix
+      ├── suspects found ──▶ Repair
+      └── default blocked route [on blocked] ──▶ NoFix
+  Repair             map over output of Localize by string join all_settled
+      ├── candidates ready ──▶ Validate
+      ├── some candidates missing ──▶ Validate
+      └── default blocked route [on blocked] ──▶ NoFix
+  Validate           command go test ./... -run {candidate}
+      cases validate-exit: 0 → some candidate is green | 1 → no candidate is green
+      ├── some candidate is green ──▶ Rank
+      ├── no candidate is green ──▶ NoFix
+      └── default blocked route [on blocked] ──▶ NoFix
+  Rank               compute → Ranking
+      route: ranked
+      ├── ranked ──▶ Select
+      └── default blocked route [on blocked] ──▶ NoFix
+  Select             compute → Choice
+      route: winner selected | nothing to select
+      ├── winner selected ──▶ Fixed
+      ├── nothing to select ──▶ NoFix
+      └── default blocked route [on blocked] ──▶ NoFix
+  Fixed              terminal ■ success
+  NoFix              terminal ■ stopped
+  ┆ child agentless-repair
+    agentless-repair v0 — 3 states, start: Patch
+
+    ▶ Patch              agent → PatchOut
+          prompt: Propose a minimal patch for {{item}}.
+          inputs: child-input item
+          route: patch proposed
+          ├── no patch [retry ≤2, then recovery offer] ──▶ PatchFail
+          ├── patch proposed ──▶ PatchDone
+          └── default blocked route [on blocked] ──▶ PatchFail
+      PatchDone          terminal ■ success → agentless.Candidate
+      PatchFail          terminal ■ stopped → agentless.Candidate
+
+#### graph approval
+approval v0 — 7 states, start: Draft
+
+▶ Draft              agent → PlanOut
+      prompt: Write the plan to {{run}}/plan.md.
+      produces: plan
+      cases plan-state: ready → plan written | empty → empty plan
+      ├── no plan [retry ≤2, then recovery offer] ──▶ Failed
+      ├── plan written {git.commit key=approval/plan message="plan: awaiting approval" paths=["{run}/plan.md"] worktree="{worktree}"} ──▶ Approve
+      ├── empty plan ──▶ Failed
+      └── default blocked route [on blocked] ──▶ Failed
+  Approve            gate "Run the committed plan?" [reserved]
+      presents: plan
+      cases answer: approve → approved | decline → declined
+      ├── approved ──▶ Execute
+      ├── declined ──▶ Rejected
+      ├── no answer after 48h0m0s ──▶ Expired
+      └── default blocked route [on blocked] ──▶ Failed
+  Execute            agent → Outcome
+      prompt: Execute the approved plan exactly.
+      consumes: plan
+      route: executed
+      ├── execution failed [retry ≤2, then recovery offer] ──▶ Failed
+      ├── executed ──▶ Done
+      └── default blocked route [on blocked] ──▶ Failed
+  Done               terminal ■ success
+  Rejected           terminal ■ stopped
+  Expired            terminal ■ stopped
+  Failed             terminal ■ stopped
+
+#### graph broaden
+broaden v1 — 4 states, start: Answer
+
+▶ Answer             agent → AnswerOut
+      prompt: Answer the question from the narrow context and report your confidence.
+      cases confidence: confident → confident: accept | unsure → unsure: re-run with broadened context
+      ├── answer dead twice: escalate [retry ≤2, then recovery offer] ──▶ Escalated
+      ├── confident: accept ──▶ Accepted
+      ├── unsure: re-run with broadened context ──▶ AnswerWider
+      └── default blocked route [on blocked] ──▶ Escalated
+  AnswerWider        agent → AnswerOut
+      prompt: The first answer was unsure: {{answer}}. Answer again using the wider context {{wider_context}}.
+      inputs: out Answer, param wider_context
+      cases confidence: confident → confident: accept | unsure → still unsure: escalate
+      ├── answer dead twice: escalate [retry ≤2, then recovery offer] ──▶ Escalated
+      ├── confident: accept ──▶ Accepted
+      ├── still unsure: escalate ──▶ Escalated
+      └── default blocked route [on blocked] ──▶ Escalated
+  Accepted           terminal ■ success
+  Escalated          terminal ■ stopped
+
+#### graph checkrepair
+checkrepair v1 — 5 states, start: RunTests
+
+▶ RunTests           command go test ./...
+      cases test-exit: 0 → tests pass | 1 → tests fail: capture stderr
+      ├── tests pass ──▶ Green
+      ├── tests fail: capture stderr ──▶ CaptureFailure
+      └── default blocked route [on blocked] ──▶ GaveUp
+  CaptureFailure     compute → RunResult
+      observes: shell.run argv=["go", "test", "./..."] dir=""
+      route: stderr to the repair agent
+      ├── CaptureFailure failed x1 [retry ≤1] ──▶ GaveUp
+      ├── test run unreadable: give up [on unavailable] ──▶ GaveUp
+      ├── stderr to the repair agent ──▶ Repair
+      └── default blocked route [on blocked] ──▶ GaveUp
+  Repair             agent → Patch
+      prompt: Fix the failing tests. The failing run:
+{{failure}}
+      inputs: out CaptureFailure as failure
+      checks: vet-clean
+      observes: shell.run argv=["go", "vet", "./..."] dir="", fsx.schema_check path="repair.json" schema=fsx.Schema{Name: "patch", Path: "schemas/patch.json"}
+      route: patched: run tests again
+      max visits: 3
+      ├── repairs exhausted [retry ≤3, then recovery offer] ──▶ GaveUp
+      ├── patched: run tests again ──▶ RunTests
+      ├── tests still fail after three repair rounds ──▶ GaveUp
+      └── default blocked route [on blocked] ──▶ GaveUp
+  Green              terminal ■ success
+  GaveUp             terminal ■ stopped
+
+#### graph critique
+critique v0 — 5 states, start: Draft
+
+▶ Draft              agent → Text
+      prompt: Draft or revise the text. Critic notes so far: {{out}}
+      inputs: out Critique as out
+      route: drafted
+      ├── drafter stalled or exhausted [retry ≤3 + rounds, stall after 2, then recovery offer] ──▶ Human
+      ├── blocked [on blocked] ──▶ Human
+      └── drafted ──▶ Critique
+  Critique           agent → Review
+      prompt: Review the draft: {{out}}
+      inputs: out Draft as out
+      cases verdict: approve → approved | revise → revise
+      max visits: 5
+      ├── critic unusable [retry ≤2, then recovery offer] ──▶ Human
+      ├── blocked [on blocked] ──▶ Human
+      ├── approved ──▶ Accepted
+      ├── revise {inc rounds} ──▶ Draft
+      └── round cap reached ──▶ Human
+  Human              gate "The critic and drafter did not converge; accept the draft?" [reserved]
+      cases decision: accept → human accepts | drop → human drops
+      ├── human accepts ──▶ Accepted
+      ├── human drops ──▶ Dropped
+      └── no human answer after 24h0m0s ──▶ Dropped
+  Accepted           terminal ■ success
+  Dropped            terminal ■ stopped
+
+#### graph dispatch
+dispatch v1 — 3 states, start: Fan
+
+▶ Fan                map over fsx.read_json path="work/items.json" pointer="/items" by string join all_settled
+      observes: fsx.read_json path="work/items.json" pointer="/items"
+      ├── all items settled ──▶ Merged
+      └── an item died ──▶ Partial
+  Merged             terminal ■ success
+  Partial            terminal ■ stopped
+  ┆ child dispatch-item
+    dispatch-item v0 — 3 states, start: Review
+
+    ▶ Review             agent → ItemResult
+          prompt: Review {{item}}.
+          inputs: child-input item
+          dispatch: effort=low agent-type=reviewer tier=standard
+          route: reviewed
+          ├── review dead [retry ≤1, then recovery offer] ──▶ ReviewFailed
+          ├── reviewed ──▶ ReviewDone
+          └── default blocked route [on blocked] ──▶ ReviewFailed
+      ReviewDone         terminal ■ success → dispatch.ItemResult
+      ReviewFailed       terminal ■ stopped → dispatch.ItemResult
+
+#### graph escalation
+escalation v0 — 4 states, start: Cheap
+
+▶ Cheap              agent → Attempt
+      prompt: Fix the failing tests with a minimal patch.
+      checks: tests green
+      cases status: fixed → fixed | stuck → cheap tier stuck
+      ├── escalate to the strong tier [retry ≤2, then recovery offer] ──▶ Strong
+      ├── cheap tier refused [on refused] ──▶ Strong
+      ├── cheap tier unavailable [on unavailable] ──▶ Strong
+      ├── blocked [on blocked] ──▶ Strong
+      ├── fixed ──▶ Done
+      └── cheap tier stuck ──▶ Strong
+  Strong             agent → Attempt
+      prompt: The cheap tier failed. Its attempt and failing checks: {{out}}. Fix it properly.
+      inputs: out Cheap as out
+      cases status: fixed → fixed | stuck → strong tier stuck
+      ├── strong tier exhausted [retry ≤2, then recovery offer] ──▶ GaveUp
+      ├── blocked [on blocked] ──▶ GaveUp
+      ├── fixed ──▶ Done
+      └── strong tier stuck ──▶ GaveUp
+  Done               terminal ■ success
+  GaveUp             terminal ■ stopped
+
+#### graph fanout
+fanout v0 — 3 states, start: Fan
+
+▶ Fan                map over bd.ready epic="{epic}" by string join all_settled
+      observes: bd.ready epic="{epic}"
+      ├── all items settled ──▶ Merged
+      └── some items failed ──▶ Partial
+  Merged             terminal ■ success
+  Partial            terminal ■ stopped
+  ┆ child fanout-item
+    fanout-item v0 — 3 states, start: Work
+
+    ▶ Work               agent → WorkOut
+          prompt: Implement the task {{item}} and run its tests.
+          inputs: child-input item
+          checks: tests were run
+          route: verified
+          ├── tests still failing [retry ≤2, then recovery offer] ──▶ ItemFail
+          ├── verified ──▶ ItemDone
+          └── default blocked route [on blocked] ──▶ ItemFail
+      ItemDone           terminal ■ success → fanout.ItemResult
+      ItemFail           terminal ■ stopped → fanout.ItemResult
+
+#### graph feature
+feature v6 — 20 states, start: Setup
+
+▶ Setup              compute → layout
+      observes: shell.run argv=["printf", "%s\n", "{run}"] dir="", shell.run argv=["git", "branch", "--show-current"] dir="{workspace}", git.head worktree="{workspace}", git.status worktree="{workspace}"
+      route: isolated integration workspace
+      ├── setup unavailable [retry ≤2] ──▶ Stopped
+      ├── setup precondition failed: see refusal cause [on refused] ──▶ Stopped
+      ├── isolated integration workspace {git.worktree_add key=feature/{run}/integration base="{baseSHA}" branch="{branch}" path="{integration}"} ──▶ Design
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Design             agent → Plan
+      prompt: Design {{goal}}. Inspect the repo read-only. Return only independent tasks with id, title, files, acceptance (a nonempty list of criteria); IDs use lowercase letters, digits and hyphens. Tasks must be independently implementable from the current base. Write the spec to the allocated spec.md artifact; do not return its path in the result. Prior review: {{review}}.
+      inputs: param goal, out DesignReview as review
+      checks: nonempty independent task contracts
+      produces: spec.md
+      route: review the design
+      max visits: 3
+      ├── design unavailable [retry ≤2, then recovery offer] ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      ├── review the design ──▶ DesignReview
+      ├── design revision cap: retain open reasons ──▶ PrepareTasks
+      ├── default blocked route [on blocked] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  DesignReview       agent → ReviewResult
+      prompt: {{requirements}}
+
+Review the plan against the requirements above. Return one row per listed id: id, met, evidence, tasks (covering task IDs). Do not copy requirement text into the result. Plan: {{plan}}. Spec: {{spec}}. Check exact public API names, exports and signatures, truthful comments/docs, external-package tests, independence and acceptance coverage. A met row must name valid covering tasks. Evidence must cite the spec or task contract; explain gaps in failed rows. Do not edit files.
+      inputs: bound requirements = {goalTable}, out Design as plan, artifact spec.md as spec
+      checks: complete requirement evidence
+      consumes: spec.md
+      cases design-verdict: ok → approved | revise → revise
+      ├── design review unavailable [retry ≤2, then recovery offer] ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      ├── approved ──▶ PrepareTasks
+      ├── revise ──▶ Design
+      ├── default blocked route [on blocked] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  PrepareTasks       compute → taskInput
+      route: dispatch independent tasks
+      ├── dispatch independent tasks ──▶ Tasks
+      ├── cannot prepare tasks [retry ≤2] ──▶ Stopped
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Tasks              map over computed value of PrepareTasks by string join all_ok
+      ├── all tasks merged ──▶ Verify
+      ├── task failed: not ready ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Verify             compute → verifiedTree
+      observes: git.head worktree="{integration}", git.status worktree="{integration}"
+      route: pin clean integration commit for verification
+      ├── pin clean integration commit for verification ──▶ Suite
+      ├── cannot verify integration [retry ≤1] ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Suite              command sh -c {suite} feature-suite (in {integration}) key=feature/{run}/suite idempotent
+      route: suite green | suite red
+      ├── suite unavailable [retry ≤2] ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── suite green ──▶ Quality
+      ├── suite red ──▶ Fix
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Quality            command sh -c files=$(gofmt -l .) && test -z "$files" && go vet ./... (in {integration}) key=feature/{run}/quality idempotent
+      route: format and vet clean | format or vet failed
+      ├── quality checks unavailable [retry ≤2] ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── format and vet clean ──▶ Snapshot
+      ├── format or vet failed ──▶ Fix
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Snapshot           compute → verificationSnapshot
+      observes: shell.run argv=["bash", "-o", "pipefail", "-c", "git ls-files --others --ignored --exclude-standard -z |\nwhile IFS= read -r -d '' path; do\n case \"$path\" in *.go) printf 'ignored Go source is not allowed: %s\\n' \"$path\" >&2; exit 1 ;; esac\n sha256sum -- \"./$path\" || exit\ndone"] dir="{integration}"
+      route: fingerprint ignored files before independent acceptance
+      ├── fingerprint ignored files before independent acceptance ──▶ GoalCheck
+      ├── cannot inspect acceptance checkout [retry ≤1] ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  GoalCheck          agent → GoalTest
+      prompt: {{requirements}}
+
+Write an independent black-box test of these goal requirements in the integrated checkout. Write the test at the allocated goal_test.go path, outside the checkout, and return an empty JSON object. Use an external test package (package <name>_test) that imports this module and calls its public API; the file is compiled standalone, so internal-package names are not in scope. Test public functions, methods and zero values as appropriate. The engine runs the configured test command on that artifact and requires at least one executed passing test. Do not change checkout files. You have only the requirements and checkout, not the design or earlier reviews. Previous engine test result (including compiler diagnostics): {{check}}. If the test did not build, correct the test file at its newly allocated path; do not change product code.
+      inputs: bound requirements = {goalTable}, out RunGoalCheck as check
+      checks: unchanged checkout
+      observes: git.head worktree="{integration}", git.status worktree="{integration}", shell.run argv=["bash", "-o", "pipefail", "-c", "git ls-files --others --ignored --exclude-standard -z |\nwhile IFS= read -r -d '' path; do\n case \"$path\" in *.go) printf 'ignored Go source is not allowed: %s\\n' \"$path\" >&2; exit 1 ;; esac\n sha256sum -- \"./$path\" || exit\ndone"] dir="{integration}"
+      produces: goal_test.go
+      route: run the configured test command
+      max visits: 6
+      ├── goal test unavailable [retry ≤2, then recovery offer] ──▶ Report
+      ├── goal-test authoring cap ──▶ Report
+      ├── run the configured test command ──▶ RunGoalCheck
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  RunGoalCheck       command sh -c set -f
+command=$1
+set -- $command "$2"
+exec "$@" feature-goal-check {goal-check-command} {artifact.goal_test.go} (in {integration}) key=feature/{run}/acceptance idempotent
+      consumes: goal_test.go
+      route: independent acceptance passed | black-box test failed | goal test did not build: correct the test | goal test still does not build: public API may be missing or unexported
+      ├── black-box check unavailable [retry ≤2] ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── independent acceptance passed {inc acceptance-passed} ──▶ Report
+      ├── black-box test failed ──▶ Fix
+      ├── goal test did not build: correct the test {inc goal-test-build-retries} ──▶ GoalCheck
+      ├── goal test still does not build: public API may be missing or unexported ──▶ Fix
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Fix                agent → Patch
+      prompt: Fix integration failures in {{dir}} for {{goal}}. Run {{suite}}, gofmt -l ., and go vet ./... to see current diagnostics. Acceptance artifact: {{test}}. Engine rerun output (exit, stdout and stderr): {{check}}. If the goal test still does not build after its author retried, the public API may be missing or unexported; inspect the compiler output and the required API. Rerun the artifact for diagnostics; a nonzero exit or zero executed tests means verification failed. Make the smallest repair, format Go files, rerun checks and commit. Return summary and full HEAD. Do not modify the original checkout. Never copy the allocated goal_test.go artifact into the product or add/change a file with that name in your commits.
+      inputs: bound dir = {integration}, param goal, param suite, artifact goal_test.go as test, out RunGoalCheck as check
+      checks: committed clean HEAD, goal test stays outside product
+      observes: git.head worktree="{integration}", git.status worktree="{integration}", shell.run argv=["git", "diff", "--name-only", "--diff-filter=ACMRT", "-z", "{verifiedHead}", "HEAD", "--"] dir="{integration}"
+      route: verify repair
+      max visits: 2
+      ├── repair unavailable [retry ≤2, then recovery offer] ──▶ Report
+      ├── verify repair {inc integration-repairs} ──▶ Verify
+      ├── suite repair cap ──▶ Report
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Report             compute → Summary
+      observes: git.head worktree="{integration}", git.status worktree="{integration}", shell.run argv=["bash", "-o", "pipefail", "-c", "git ls-files --others --ignored --exclude-standard -z |\nwhile IFS= read -r -d '' path; do\n case \"$path\" in *.go) printf 'ignored Go source is not allowed: %s\\n' \"$path\" >&2; exit 1 ;; esac\n sha256sum -- \"./$path\" || exit\ndone"] dir="{integration}"
+      route: human reviews readiness | not ready
+      ├── report unavailable [retry ≤1] ──▶ Stopped
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── human reviews readiness ──▶ Approve
+      ├── not ready ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  BaseMerge          compute → struct {}
+      route: merge approved pinned commit
+      ├── base merge unavailable [retry ≤1] ──▶ Recovery
+      ├── resolve base merge failure [on blocked] ──▶ ResolveBaseMerge
+      ├── merge approved pinned commit {git.merge key=feature/{run}/base commit="{reportHead}" into="{baseBranch}" no_ff=false task_ref="" worktree="\x1ewf.path:{workspace}"} ──▶ Done
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  ResolveBaseMerge   agent → Patch
+      prompt: The approved base merge failed: {{cause}}. Work only in {{dir}} on {{branch}}. Merge the current original base branch {{base}} into this integration branch, resolve conflicts with the smallest change, run {{suite}}, and commit. Do not modify the original checkout, merge into base, or push. Never add or change goal_test.go. Return summary and clean full HEAD. The engine reruns all verification and obtains fresh human approval before merging the new commit.
+      inputs: bound cause = {blockedCause}, bound dir = {integration}, bound branch = {branch}, bound base = {baseBranch}, param suite
+      checks: committed clean HEAD, goal test stays outside product
+      observes: git.head worktree="{integration}", git.status worktree="{integration}", shell.run argv=["git", "diff", "--name-only", "--diff-filter=ACMRT", "-z", "{verifiedHead}", "HEAD", "--"] dir="{integration}"
+      route: reverify resolved integration before fresh approval
+      max visits: 2
+      ├── base conflict resolution unavailable [retry ≤2, then recovery offer] ──▶ Recovery
+      ├── reverify resolved integration before fresh approval {inc integration-repairs} ──▶ Verify
+      ├── base conflict resolution cap ──▶ Recovery
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Approve            gate "Inspect Report in the journal and the integration branch. Merge into the original base, or keep for later?" [reserved]
+      cases answer: merge → human approved pinned base merge | keep → keep integration branch
+      ├── human approved pinned base merge ──▶ BaseMerge
+      ├── keep integration branch ──▶ Kept
+      ├── approval expired: keep branch after 24h0m0s ──▶ Kept
+      ├── default blocked route [on blocked] ──▶ Recovery
+      ├── default unavailable route [on unavailable] ──▶ Recovery
+      └── default uncertain route [on uncertain] ──▶ Recovery
+  Done               terminal ■ success
+  Kept               terminal ■ stopped
+  Stopped            terminal ■ stopped
+  Recovery           gate "Recovery needs a person. Inspect the latest blocked/failure record in the journal for the Git cause and affected path. For worktree creation failures, resolve stale paths, worktree locks or disk space before starting a new run. For exhausted merge repair, inspect the retained branches and resolve the conflict manually. Keep the branches and stop this run?" [reserved]
+      cases recovery-answer: keep → person retained branches for recovery
+      ├── person retained branches for recovery ──▶ Stopped
+      └── recovery expired: branches retained after 24h0m0s ──▶ Stopped
+  ┆ child feature-task
+    feature-task v0 — 9 states, start: StartTask
+
+    ▶ StartTask          compute → struct {}
+          route: isolated task workspace
+          ├── task setup failed [retry ≤1] ──▶ TaskStopped
+          ├── isolated task workspace {git.worktree_add key=feature/{run}/{id}/workspace base="{baseSHA}" branch="{taskBranch}" path="{workdir}"} ──▶ Implement
+          ├── default blocked route [on blocked] ──▶ Recovery
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      Implement          agent → Patch
+          prompt: Implement only this task: {{item}}. Work in its workdir. Read the spec reference. Write tests for its acceptance; run the supplied suite for build and tests. Commit on taskBranch and return summary and full HEAD. Prior review: {{review}}. Do not merge or push.
+          inputs: child-input item, out Review as review
+          checks: committed clean HEAD
+          observes: git.head worktree="{workdir}", git.status worktree="{workdir}"
+          route: check committed task
+          max visits: 3
+          ├── implementation unavailable [retry ≤2, then recovery offer] ──▶ TaskStopped
+          ├── check committed task ──▶ Check
+          ├── task repair cap ──▶ TaskStopped
+          ├── default blocked route [on blocked] ──▶ Recovery
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      Check              command sh -c {suite} (in {workdir}) key=feature/{run}/{id}/check idempotent
+          route: tests pass | tests fail: rerun for diagnostics
+          ├── check unavailable [retry ≤2] ──▶ TaskStopped
+          ├── default blocked route [on blocked] ──▶ Recovery
+          ├── tests pass ──▶ Review
+          ├── tests fail: rerun for diagnostics ──▶ Implement
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      Review             agent → ReviewResult
+          prompt: {{criteria}}
+
+    Review the implementation against the criteria above. Return one row per listed id: id, met, evidence (specific code/test locations and results). Do not copy criterion text into the result. Task: {{item}}. Implementation: {{patch}}. Latest conflict resolution (if any): {{resolution}}. Inspect the baseSHA diff and the spec. Check public names, exports, signatures, truthful comments/docs and tests using the API from outside the package. Mark failures met=false with concrete repair evidence. Do not change files.
+          inputs: bound criteria = {criteriaTable}, child-input item, out Implement as patch, out ResolveTaskMerge as resolution
+          checks: complete criterion evidence
+          cases code-verdict: ok → merge reviewed commit under lock | fix → fix review findings
+          ├── review unavailable [retry ≤2, then recovery offer] ──▶ TaskStopped
+          ├── resolve task merge failure [on blocked] ──▶ ResolveTaskMerge
+          ├── merge reviewed commit under lock {git.merge key=feature/{run}/{id}/merge commit="{head}" no_ff=false task_ref="{taskBranch}" worktree="{integration}"} ──▶ Merge
+          ├── fix review findings ──▶ Implement
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      ResolveTaskMerge   agent → Patch
+          prompt: The reviewed task merge failed: {{cause}}. Task: {{item}}. In the task workdir, merge the current integration branch into taskBranch and resolve conflicts while preserving the task contract and the integrated work. Run the supplied suite, commit, and return summary and clean full HEAD. Do not edit the integration checkout, merge into it, or push. The engine reruns tests and independent review before retrying the merge.
+          inputs: bound cause = {blockedCause}, child-input item
+          checks: committed clean HEAD
+          observes: git.head worktree="{workdir}", git.status worktree="{workdir}"
+          route: test and review conflict resolution
+          max visits: 2
+          ├── task conflict resolution unavailable [retry ≤2, then recovery offer] ──▶ Recovery
+          ├── test and review conflict resolution ──▶ Check
+          ├── task conflict resolution cap ──▶ Recovery
+          ├── default blocked route [on blocked] ──▶ Recovery
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      Merge              command sh -c {suite} (in {integration}) key=feature/{run}/{id}/build idempotent
+          route: merged and checked | merge kept: parent suite owns integration repair
+          holds: feature-merge
+          ├── merge build unavailable [retry ≤2] ──▶ TaskStopped
+          ├── default blocked route [on blocked] ──▶ Recovery
+          ├── merged and checked ──▶ TaskDone
+          ├── merge kept: parent suite owns integration repair {inc integration-build-red} ──▶ TaskDone
+          ├── default unavailable route [on unavailable] ──▶ Recovery
+          └── default uncertain route [on uncertain] ──▶ Recovery
+      TaskDone           terminal ■ success → feature.taskResult
+      TaskStopped        terminal ■ stopped → feature.taskResult
+      Recovery           gate "Recovery needs a person. Inspect the latest blocked/failure record in the journal for the Git cause and affected path. For worktree creation failures, resolve stale paths, worktree locks or disk space before starting a new run. For exhausted merge repair, inspect the retained branches and resolve the conflict manually. Keep the branches and stop this run?" [reserved]
+          cases recovery-answer: keep → person retained branches for recovery
+          ├── person retained branches for recovery ──▶ TaskStopped
+          └── recovery expired: branches retained after 24h0m0s ──▶ TaskStopped
+
+#### graph gatedchain
+gatedchain v1 — 6 states, start: Draft
+
+▶ Draft              agent → Outline
+      prompt: prompts/draft-outline.md
+      inputs: param topic
+      checks: outline matches schema
+      observes: fsx.schema_check path="{run}/outline.json" schema=fsx.Schema{Name: "outline", Path: "schemas/outline.schema.json"}
+      route: outline accepted
+      ├── outline fails schema twice [retry ≤2, then recovery offer] ──▶ SchemaRejected
+      ├── blocked [on blocked] ──▶ SchemaRejected
+      └── outline accepted ──▶ Vet
+  Vet                command scripts/vet-outline {run}/outline.json
+      cases vet-exit: 0 → vet passed | 1 → vet failed
+      ├── vet passed ──▶ Expand
+      └── vet failed ──▶ VetRejected
+  Expand             agent → Expansion
+      prompt: Expand the vetted outline into the full text: {{out}}
+      inputs: out Draft as out
+      route: expanded
+      ├── expansion not accepted [retry ≤2, then recovery offer] ──▶ VetRejected
+      ├── blocked [on blocked] ──▶ VetRejected
+      └── expanded ──▶ Done
+  Done               terminal ■ success
+  SchemaRejected     terminal ■ stopped
+  VetRejected        terminal ■ stopped
+
+#### graph noprogress
+noprogress v1 — 4 states, start: Fix
+
+▶ Fix                agent → FixOut
+      prompt: Fix the failing checks; the previous attempt's failures are repeated in the refusal.
+      checks: checks-green
+      route: checks green
+      ├── five attempts used [retry ≤5, stall after 2, then recovery offer] ──▶ GaveUp
+      ├── same failures twice: stalled [stalled] ──▶ StalledAt
+      ├── checks green ──▶ Fixed
+      └── default blocked route [on blocked] ──▶ GaveUp
+  Fixed              terminal ■ success
+  GaveUp             terminal ■ stopped
+  StalledAt          terminal ■ stalled
+
+#### graph orchestrator
+orchestrator v0 — 5 states, start: Lead
+
+▶ Lead               agent → Plan
+      prompt: Break the goal into independent tasks.
+      route: tasks listed
+      ├── no usable task list [retry ≤2, then recovery offer] ──▶ Failed
+      ├── tasks listed ──▶ Fan
+      └── default blocked route [on blocked] ──▶ Failed
+  Fan                map over output of Lead by string join all_ok
+      ├── all workers succeeded ──▶ Synthesize
+      ├── a worker failed ──▶ Failed
+      └── default blocked route [on blocked] ──▶ Failed
+  Synthesize         compute → int
+      route: synthesized
+      ├── synthesized ──▶ Done
+      └── default blocked route [on blocked] ──▶ Failed
+  Done               terminal ■ success
+  Failed             terminal ■ stopped
+  ┆ child orchestrator-worker
+    orchestrator-worker v0 — 3 states, start: Worker
+
+    ▶ Worker             agent → WorkerOut
+          prompt: Do this task and report: {{item}}
+          inputs: child-input item
+          route: task done
+          ├── worker gave up [retry ≤2, then recovery offer] ──▶ WorkerFail
+          ├── task done ──▶ WorkerDone
+          └── default blocked route [on blocked] ──▶ WorkerFail
+      WorkerDone         terminal ■ success → orchestrator.TaskResult
+      WorkerFail         terminal ■ stopped → orchestrator.TaskResult
+
+#### graph park
+park v1 — 3 states, start: Release
+
+▶ Release            gate "Ship the release now?" [policy-answerable]
+      cases choice: ship → ship | hold → hold: parked for a human
+      policy: hold when Autonomous=true (park: release held for human sign-off; ship manually when ready)
+      ├── ship ──▶ Shipped
+      └── hold: parked for a human ──▶ Held
+  Shipped            terminal ■ success
+  Held               terminal ■ stopped
+
+#### graph resumable
+resumable v3 — 6 states, start: Fetch
+
+▶ Fetch              command scripts/fetch {dataset}
+      observes: fsx.exists path="work/{dataset}/raw.json"
+      done when: raw.json exists
+      cases stage-exit: 0 → fetched | 1 → fetch failed
+      ├── fetched ──▶ Transform
+      ├── fetch failed ──▶ Failed
+      └── default blocked route [on blocked] ──▶ Failed
+  Transform          command scripts/transform {dataset}
+      observes: fsx.exists path="work/{dataset}/shaped.json"
+      done when: shaped.json exists
+      cases stage-exit: 0 → transformed | 1 → transform failed
+      ├── transformed ──▶ Publish
+      ├── transform failed ──▶ Failed
+      └── default blocked route [on blocked] ──▶ Failed
+  Publish            command scripts/publish {dataset}
+      observes: fsx.hash path="work/{dataset}/published.json"
+      done when: published.json digest recorded
+      cases stage-exit: 0 → published | 1 → publish failed
+      ├── published {shell.run key=stamp/{dataset} argv=["scripts/stamp", "{dataset}"] dir=""} ──▶ Done
+      ├── publish failed ──▶ Failed
+      ├── publish failed [retry ≤1] ──▶ Failed
+      ├── crash window: verify before repeating [on uncertain] {shell.run key=non-idempotent argv=["scripts/note-uncertain", "{dataset}"] dir=""} ──▶ Verify
+      └── default blocked route [on blocked] ──▶ Failed
+  Verify             agent → Verified
+      prompt: Check whether the upload landed for {{dataset}}.
+      inputs: param dataset
+      route: landed: done | did not land
+      ├── cannot verify [retry ≤1, then recovery offer] ──▶ Failed
+      ├── landed: done ──▶ Done
+      ├── did not land ──▶ Failed
+      └── default blocked route [on blocked] ──▶ Failed
+  Done               terminal ■ success
+  Failed             terminal ■ stopped
+
+#### graph router
+router v0 — 5 states, start: Classify
+
+▶ Classify           agent → Verdict
+      prompt: Classify the request as bug, feature or question.
+      cases kind: bug → bug | feature → feature | question → question | otherwise → unrecognised kind
+      ├── no usable classification [retry ≤2, then recovery offer] ──▶ Unclear
+      ├── bug ──▶ Bug
+      ├── feature ──▶ Feature
+      ├── question ──▶ Question
+      ├── unrecognised kind ──▶ Unclear
+      └── default blocked route [on blocked] ──▶ Unclear
+  Bug                terminal ■ success
+  Feature            terminal ■ success
+  Question           terminal ■ success
+  Unclear            terminal ■ stopped
+
+#### graph stale
+stale v2 — 5 states, start: AwaitHead
+
+▶ AwaitHead          wait head moved past the reviewed commit (poll 30s)
+      observes: git.head worktree="."
+      ├── head moved ──▶ Review
+      ├── no new commit in a day after 24h0m0s ──▶ TimedOut
+      └── default blocked route [on blocked] ──▶ GaveUp
+  Review             agent → Verdict
+      prompt: Review the commits up to the observed head.
+      checks: head-unchanged
+      observes: git.head worktree="."
+      route: reviewed
+      max visits: 3
+      ├── review failed twice [retry ≤2, then recovery offer] ──▶ GaveUp
+      ├── head moved under the review: observe again [on stale] ──▶ AwaitHead
+      ├── reviewed ──▶ Reviewed
+      ├── head kept moving across three reviews ──▶ GaveUp
+      └── default blocked route [on blocked] ──▶ GaveUp
+  Reviewed           terminal ■ success
+  TimedOut           terminal ■ stopped
+  GaveUp             terminal ■ stopped
+
+#### graph tour
+tour v0 — 6 states, start: Plan
+
+▶ Plan               agent → PlanOut
+      prompt: Split this goal into small independent tasks: {{goal}}. Previous review evidence: {{notes}}. Write the plan and acceptance criteria to the allocated plan.md artifact; do not return its path.
+      inputs: param goal, out Review as notes
+      checks: at least one task
+      produces: plan.md
+      route: planned
+      max visits: 3
+      ├── no usable plan [retry ≤2, then recovery offer] ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Stopped
+      ├── planned ──▶ Review
+      ├── revision cap: build the latest plan ──▶ Build
+      ├── default blocked route [on blocked] ──▶ Stopped
+      └── default uncertain route [on uncertain] ──▶ Stopped
+  Review             agent → ReviewOut
+      prompt: Review this plan for the goal {{goal}}: {{plan}}. Read {{document}}. Return one evidence row for each criterion: goal (tasks cover the goal), independent (tasks can be implemented independently). Each row has id, met, and evidence citing plan.md; explain missing coverage in false rows. Do not choose a verdict.
+      inputs: param goal, out Plan as plan, artifact plan.md as document
+      checks: complete review evidence
+      consumes: plan.md
+      cases verdict: ok → approved | revise → revise
+      ├── reviewer unusable: build the plan as it is [retry ≤2, then recovery offer] ──▶ Build
+      ├── default unavailable route [on unavailable] ──▶ Stopped
+      ├── approved ──▶ Build
+      ├── revise {inc revisions} ──▶ Plan
+      ├── default blocked route [on blocked] ──▶ Stopped
+      └── default uncertain route [on uncertain] ──▶ Stopped
+  Build              map over output of Plan by string join all_ok
+      ├── default blocked route [on blocked] ──▶ Stopped
+      ├── every task built ──▶ Ship
+      ├── a task gave up ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Stopped
+      └── default uncertain route [on uncertain] ──▶ Stopped
+  Ship               gate "All tasks built and tested. Ship it?" [reserved]
+      presents: plan.md
+      cases answer: ship → person approved | hold → person held it
+      ├── person approved ──▶ Shipped
+      ├── person held it ──▶ Stopped
+      ├── nobody answered after 24h0m0s ──▶ Stopped
+      ├── default blocked route [on blocked] ──▶ Stopped
+      ├── default unavailable route [on unavailable] ──▶ Stopped
+      └── default uncertain route [on uncertain] ──▶ Stopped
+  Shipped            terminal ■ success
+  Stopped            terminal ■ stopped
+  ┆ child tour-task
+    tour-task v0 — 4 states, start: Implement
+
+    ▶ Implement          agent → Patch
+          prompt: Implement and commit this task: {{item}}. Last test output: {{test}}
+          inputs: child-input item, out Test as test
+          route: implemented
+          max visits: 3
+          ├── no usable patch [retry ≤2, then recovery offer] ──▶ TaskGaveUp
+          ├── implemented ──▶ Test
+          ├── repair cap ──▶ TaskGaveUp
+          ├── default blocked route [on blocked] ──▶ TaskGaveUp
+          ├── default unavailable route [on unavailable] ──▶ TaskGaveUp
+          └── default uncertain route [on uncertain] ──▶ TaskGaveUp
+      Test               command sh -c {suite} tour-suite key=tour/{run}/{id}/test idempotent
+          route: tests pass | tests fail: repair
+          ├── suite would not run [retry ≤2] ──▶ TaskGaveUp
+          ├── default blocked route [on blocked] ──▶ TaskGaveUp
+          ├── tests pass ──▶ TaskDone
+          ├── tests fail: repair ──▶ Implement
+          ├── default unavailable route [on unavailable] ──▶ TaskGaveUp
+          └── default uncertain route [on uncertain] ──▶ TaskGaveUp
+      TaskDone           terminal ■ success → tour.TaskResult
+      TaskGaveUp         terminal ■ stopped → tour.TaskResult
+
+#### graph tournament
+tournament v0 — 3 states, start: Judges
+
+▶ Judges             map over bd.list label="candidate" by string ×3 join quorum(2)
+      observes: bd.list label="candidate"
+      ├── two of three judges voted ──▶ Decided
+      └── quorum not reached ──▶ NoQuorum
+  Decided            terminal ■ success
+  NoQuorum           terminal ■ stopped
+  ┆ child tournament-judge
+    tournament-judge v0 — 3 states, start: Judge
+
+    ▶ Judge              agent → Ballot
+          prompt: Judge candidate {{item}} with sampling seed {{seed}}.
+          inputs: child-input item, param seed
+          route: ballot cast
+          ├── judge produced no ballot [retry ≤2, then recovery offer] ──▶ JudgeLost
+          ├── ballot cast ──▶ JudgeDone
+          └── default blocked route [on blocked] ──▶ JudgeLost
+      JudgeDone          terminal ■ success → tournament.Vote
+      JudgeLost          terminal ■ stopped → tournament.Vote
+
+#### graph typedexit
+typedexit v1 — 6 states, start: Work
+
+▶ Work               agent → StepOut
+      prompt: Work the task; end with one typed exit.
+      cases exit: submitted → submitted | limits_exceeded → limits exceeded | format_error_repeated → format error repeated | blocked → blocked | continue → next step
+      max visits: 8
+      ├── no valid exit twice: format error repeated [retry ≤2, then recovery offer] ──▶ FormatStop
+      ├── submitted ──▶ Done
+      ├── limits exceeded ──▶ LimitsStop
+      ├── format error repeated ──▶ FormatStop
+      ├── blocked ──▶ BlockedStop
+      ├── next step ──▶ Next
+      ├── visit cap reached before the step ──▶ LimitsStop
+      └── default blocked route [on blocked] ──▶ FormatStop
+  Next               compute → struct {}
+      route: back to work
+      ├── back to work ──▶ Work
+      └── default blocked route [on blocked] ──▶ FormatStop
+  Done               terminal ■ success
+  LimitsStop         terminal ■ stopped
+  FormatStop         terminal ■ stopped
+  BlockedStop        terminal ■ stopped
+
+#### graph unavailable
+unavailable v1 — 4 states, start: Triage
+
+▶ Triage             agent → TriageOut
+      prompt: Triage the report with the triage tool.
+      checks: verdict-present
+      route: triaged
+      ├── three semantic failures [retry ≤3, then recovery offer] ──▶ NotConverged
+      ├── tool unavailable: file a blocker [on unavailable] {bd.create key=bd/blocker/triage tool unavailable issue=bd.Issue{ID: "", Title: "triage tool unavailable", Description: "The triage tool could not be reached; the run stopped without a semantic verdict.", Type: "task", Status: "", Priority: 0, Labels: ["blocker"], Parent: "", NoInheritLabels: false, RootLabel: ""}} ──▶ ToolBlocked
+      ├── triaged ──▶ TriageDone
+      └── default blocked route [on blocked] ──▶ NotConverged
+  TriageDone         terminal ■ success
+  ToolBlocked        terminal ■ stopped
+  NotConverged       terminal ■ stopped
+
+#### mermaid agentless
+stateDiagram-v2
+  [*] --> Localize
+  Localize --> NoFix : no localization
+  Localize --> Repair : suspects found
+  Localize --> NoFix : default blocked route
+  Repair --> Validate : candidates ready
+  Repair --> Validate : some candidates missing
+  Repair --> NoFix : default blocked route
+  note right of Repair : map agentless-repair
+  Validate --> Rank : some candidate is green
+  Validate --> NoFix : no candidate is green
+  Validate --> NoFix : default blocked route
+  Rank --> Select : ranked
+  Rank --> NoFix : default blocked route
+  Select --> Fixed : winner selected
+  Select --> NoFix : nothing to select
+  Select --> NoFix : default blocked route
+  Fixed --> [*]
+  NoFix --> [*]
+  state agentless_repair {
+    [*] --> agentless_repair_Patch
+    agentless_repair_Patch --> agentless_repair_PatchFail : no patch
+    agentless_repair_Patch --> agentless_repair_PatchDone : patch proposed
+    agentless_repair_Patch --> agentless_repair_PatchFail : default blocked route
+    agentless_repair_PatchDone --> [*]
+    agentless_repair_PatchFail --> [*]
+  }
+
+#### mermaid approval
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> Failed : no plan
+  Draft --> Approve : plan written
+  Draft --> Failed : empty plan
+  Draft --> Failed : default blocked route
+  Approve --> Execute : approved
+  Approve --> Rejected : declined
+  Approve --> Expired : no answer after 48h0m0s
+  Approve --> Failed : default blocked route
+  note right of Approve : reserved
+  Execute --> Failed : execution failed
+  Execute --> Done : executed
+  Execute --> Failed : default blocked route
+  Done --> [*]
+  Rejected --> [*]
+  Expired --> [*]
+  Failed --> [*]
+
+#### mermaid broaden
+stateDiagram-v2
+  [*] --> Answer
+  Answer --> Escalated : answer dead twice: escalate
+  Answer --> Accepted : confident: accept
+  Answer --> AnswerWider : unsure: re-run with broadened context
+  Answer --> Escalated : default blocked route
+  AnswerWider --> Escalated : answer dead twice: escalate
+  AnswerWider --> Accepted : confident: accept
+  AnswerWider --> Escalated : still unsure: escalate
+  AnswerWider --> Escalated : default blocked route
+  Accepted --> [*]
+  Escalated --> [*]
+
+#### mermaid checkrepair
+stateDiagram-v2
+  [*] --> RunTests
+  RunTests --> Green : tests pass
+  RunTests --> CaptureFailure : tests fail: capture stderr
+  RunTests --> GaveUp : default blocked route
+  CaptureFailure --> GaveUp : CaptureFailure failed x1
+  CaptureFailure --> GaveUp : test run unreadable: give up
+  CaptureFailure --> Repair : stderr to the repair agent
+  CaptureFailure --> GaveUp : default blocked route
+  Repair --> GaveUp : repairs exhausted
+  Repair --> RunTests : patched: run tests again
+  Repair --> GaveUp : tests still fail after three repair rounds
+  Repair --> GaveUp : default blocked route
+  Green --> [*]
+  GaveUp --> [*]
+
+#### mermaid critique
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> Human : drafter stalled or exhausted
+  Draft --> Human : blocked
+  Draft --> Critique : drafted
+  Critique --> Human : critic unusable
+  Critique --> Human : blocked
+  Critique --> Accepted : approved
+  Critique --> Draft : revise
+  Critique --> Human : round cap reached
+  Human --> Accepted : human accepts
+  Human --> Dropped : human drops
+  Human --> Dropped : no human answer after 24h0m0s
+  note right of Human : reserved
+  Accepted --> [*]
+  Dropped --> [*]
+
+#### mermaid dispatch
+stateDiagram-v2
+  [*] --> Fan
+  Fan --> Merged : all items settled
+  Fan --> Partial : an item died
+  note right of Fan : map dispatch-item
+  Merged --> [*]
+  Partial --> [*]
+  state dispatch_item {
+    [*] --> dispatch_item_Review
+    dispatch_item_Review --> dispatch_item_ReviewFailed : review dead
+    dispatch_item_Review --> dispatch_item_ReviewDone : reviewed
+    dispatch_item_Review --> dispatch_item_ReviewFailed : default blocked route
+    dispatch_item_ReviewDone --> [*]
+    dispatch_item_ReviewFailed --> [*]
+  }
+
+#### mermaid escalation
+stateDiagram-v2
+  [*] --> Cheap
+  Cheap --> Strong : escalate to the strong tier
+  Cheap --> Strong : cheap tier refused
+  Cheap --> Strong : cheap tier unavailable
+  Cheap --> Strong : blocked
+  Cheap --> Done : fixed
+  Cheap --> Strong : cheap tier stuck
+  Strong --> GaveUp : strong tier exhausted
+  Strong --> GaveUp : blocked
+  Strong --> Done : fixed
+  Strong --> GaveUp : strong tier stuck
+  Done --> [*]
+  GaveUp --> [*]
+
+#### mermaid fanout
+stateDiagram-v2
+  [*] --> Fan
+  Fan --> Merged : all items settled
+  Fan --> Partial : some items failed
+  note right of Fan : map fanout-item
+  Merged --> [*]
+  Partial --> [*]
+  state fanout_item {
+    [*] --> fanout_item_Work
+    fanout_item_Work --> fanout_item_ItemFail : tests still failing
+    fanout_item_Work --> fanout_item_ItemDone : verified
+    fanout_item_Work --> fanout_item_ItemFail : default blocked route
+    fanout_item_ItemDone --> [*]
+    fanout_item_ItemFail --> [*]
+  }
+
+#### mermaid feature
+stateDiagram-v2
+  [*] --> Setup
+  Setup --> Stopped : setup unavailable
+  Setup --> Stopped : setup precondition failed: see refusal cause
+  Setup --> Design : isolated integration workspace
+  Setup --> Recovery : default blocked route
+  Setup --> Recovery : default unavailable route
+  Setup --> Recovery : default uncertain route
+  Design --> Stopped : design unavailable
+  Design --> Recovery : default unavailable route
+  Design --> DesignReview : review the design
+  Design --> PrepareTasks : design revision cap: retain open reasons
+  Design --> Recovery : default blocked route
+  Design --> Recovery : default uncertain route
+  DesignReview --> Stopped : design review unavailable
+  DesignReview --> Recovery : default unavailable route
+  DesignReview --> PrepareTasks : approved
+  DesignReview --> Design : revise
+  DesignReview --> Recovery : default blocked route
+  DesignReview --> Recovery : default uncertain route
+  PrepareTasks --> Tasks : dispatch independent tasks
+  PrepareTasks --> Stopped : cannot prepare tasks
+  PrepareTasks --> Recovery : default blocked route
+  PrepareTasks --> Recovery : default unavailable route
+  PrepareTasks --> Recovery : default uncertain route
+  Tasks --> Verify : all tasks merged
+  Tasks --> Report : task failed: not ready
+  Tasks --> Recovery : default blocked route
+  Tasks --> Recovery : default unavailable route
+  Tasks --> Recovery : default uncertain route
+  note right of Tasks : map feature-task
+  Verify --> Suite : pin clean integration commit for verification
+  Verify --> Report : cannot verify integration
+  Verify --> Recovery : default blocked route
+  Verify --> Recovery : default unavailable route
+  Verify --> Recovery : default uncertain route
+  Suite --> Report : suite unavailable
+  Suite --> Recovery : default blocked route
+  Suite --> Quality : suite green
+  Suite --> Fix : suite red
+  Suite --> Recovery : default unavailable route
+  Suite --> Recovery : default uncertain route
+  Quality --> Report : quality checks unavailable
+  Quality --> Recovery : default blocked route
+  Quality --> Snapshot : format and vet clean
+  Quality --> Fix : format or vet failed
+  Quality --> Recovery : default unavailable route
+  Quality --> Recovery : default uncertain route
+  Snapshot --> GoalCheck : fingerprint ignored files before independent acceptance
+  Snapshot --> Report : cannot inspect acceptance checkout
+  Snapshot --> Recovery : default blocked route
+  Snapshot --> Recovery : default unavailable route
+  Snapshot --> Recovery : default uncertain route
+  GoalCheck --> Report : goal test unavailable
+  GoalCheck --> Report : goal-test authoring cap
+  GoalCheck --> RunGoalCheck : run the configured test command
+  GoalCheck --> Recovery : default blocked route
+  GoalCheck --> Recovery : default unavailable route
+  GoalCheck --> Recovery : default uncertain route
+  RunGoalCheck --> Report : black-box check unavailable
+  RunGoalCheck --> Recovery : default blocked route
+  RunGoalCheck --> Report : independent acceptance passed
+  RunGoalCheck --> Fix : black-box test failed
+  RunGoalCheck --> GoalCheck : goal test did not build: correct the test
+  RunGoalCheck --> Fix : goal test still does not build: public API may be missing or unexported
+  RunGoalCheck --> Recovery : default unavailable route
+  RunGoalCheck --> Recovery : default uncertain route
+  Fix --> Report : repair unavailable
+  Fix --> Verify : verify repair
+  Fix --> Report : suite repair cap
+  Fix --> Recovery : default blocked route
+  Fix --> Recovery : default unavailable route
+  Fix --> Recovery : default uncertain route
+  Report --> Stopped : report unavailable
+  Report --> Recovery : default blocked route
+  Report --> Approve : human reviews readiness
+  Report --> Stopped : not ready
+  Report --> Recovery : default unavailable route
+  Report --> Recovery : default uncertain route
+  BaseMerge --> Recovery : base merge unavailable
+  BaseMerge --> ResolveBaseMerge : resolve base merge failure
+  BaseMerge --> Done : merge approved pinned commit
+  BaseMerge --> Recovery : default unavailable route
+  BaseMerge --> Recovery : default uncertain route
+  ResolveBaseMerge --> Recovery : base conflict resolution unavailable
+  ResolveBaseMerge --> Verify : reverify resolved integration before fresh approval
+  ResolveBaseMerge --> Recovery : base conflict resolution cap
+  ResolveBaseMerge --> Recovery : default blocked route
+  ResolveBaseMerge --> Recovery : default unavailable route
+  ResolveBaseMerge --> Recovery : default uncertain route
+  Approve --> BaseMerge : human approved pinned base merge
+  Approve --> Kept : keep integration branch
+  Approve --> Kept : approval expired: keep branch after 24h0m0s
+  Approve --> Recovery : default blocked route
+  Approve --> Recovery : default unavailable route
+  Approve --> Recovery : default uncertain route
+  note right of Approve : reserved
+  Done --> [*]
+  Kept --> [*]
+  Stopped --> [*]
+  Recovery --> Stopped : person retained branches for recovery
+  Recovery --> Stopped : recovery expired: branches retained after 24h0m0s
+  note right of Recovery : reserved
+  state feature_task {
+    [*] --> feature_task_StartTask
+    feature_task_StartTask --> feature_task_TaskStopped : task setup failed
+    feature_task_StartTask --> feature_task_Implement : isolated task workspace
+    feature_task_StartTask --> feature_task_Recovery : default blocked route
+    feature_task_StartTask --> feature_task_Recovery : default unavailable route
+    feature_task_StartTask --> feature_task_Recovery : default uncertain route
+    feature_task_Implement --> feature_task_TaskStopped : implementation unavailable
+    feature_task_Implement --> feature_task_Check : check committed task
+    feature_task_Implement --> feature_task_TaskStopped : task repair cap
+    feature_task_Implement --> feature_task_Recovery : default blocked route
+    feature_task_Implement --> feature_task_Recovery : default unavailable route
+    feature_task_Implement --> feature_task_Recovery : default uncertain route
+    feature_task_Check --> feature_task_TaskStopped : check unavailable
+    feature_task_Check --> feature_task_Recovery : default blocked route
+    feature_task_Check --> feature_task_Review : tests pass
+    feature_task_Check --> feature_task_Implement : tests fail: rerun for diagnostics
+    feature_task_Check --> feature_task_Recovery : default unavailable route
+    feature_task_Check --> feature_task_Recovery : default uncertain route
+    feature_task_Review --> feature_task_TaskStopped : review unavailable
+    feature_task_Review --> feature_task_ResolveTaskMerge : resolve task merge failure
+    feature_task_Review --> feature_task_Merge : merge reviewed commit under lock
+    feature_task_Review --> feature_task_Implement : fix review findings
+    feature_task_Review --> feature_task_Recovery : default unavailable route
+    feature_task_Review --> feature_task_Recovery : default uncertain route
+    feature_task_ResolveTaskMerge --> feature_task_Recovery : task conflict resolution unavailable
+    feature_task_ResolveTaskMerge --> feature_task_Check : test and review conflict resolution
+    feature_task_ResolveTaskMerge --> feature_task_Recovery : task conflict resolution cap
+    feature_task_ResolveTaskMerge --> feature_task_Recovery : default blocked route
+    feature_task_ResolveTaskMerge --> feature_task_Recovery : default unavailable route
+    feature_task_ResolveTaskMerge --> feature_task_Recovery : default uncertain route
+    feature_task_Merge --> feature_task_TaskStopped : merge build unavailable
+    feature_task_Merge --> feature_task_Recovery : default blocked route
+    feature_task_Merge --> feature_task_TaskDone : merged and checked
+    feature_task_Merge --> feature_task_TaskDone : merge kept: parent suite owns integration repair
+    feature_task_Merge --> feature_task_Recovery : default unavailable route
+    feature_task_Merge --> feature_task_Recovery : default uncertain route
+    feature_task_TaskDone --> [*]
+    feature_task_TaskStopped --> [*]
+    feature_task_Recovery --> feature_task_TaskStopped : person retained branches for recovery
+    feature_task_Recovery --> feature_task_TaskStopped : recovery expired: branches retained after 24h0m0s
+    note right of feature_task_Recovery : reserved
+  }
+
+#### mermaid gatedchain
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> SchemaRejected : outline fails schema twice
+  Draft --> SchemaRejected : blocked
+  Draft --> Vet : outline accepted
+  Vet --> Expand : vet passed
+  Vet --> VetRejected : vet failed
+  Expand --> VetRejected : expansion not accepted
+  Expand --> VetRejected : blocked
+  Expand --> Done : expanded
+  Done --> [*]
+  SchemaRejected --> [*]
+  VetRejected --> [*]
+
+#### mermaid noprogress
+stateDiagram-v2
+  [*] --> Fix
+  Fix --> GaveUp : five attempts used
+  Fix --> StalledAt : same failures twice: stalled
+  Fix --> Fixed : checks green
+  Fix --> GaveUp : default blocked route
+  Fixed --> [*]
+  GaveUp --> [*]
+  StalledAt --> [*]
+
+#### mermaid orchestrator
+stateDiagram-v2
+  [*] --> Lead
+  Lead --> Failed : no usable task list
+  Lead --> Fan : tasks listed
+  Lead --> Failed : default blocked route
+  Fan --> Synthesize : all workers succeeded
+  Fan --> Failed : a worker failed
+  Fan --> Failed : default blocked route
+  note right of Fan : map orchestrator-worker
+  Synthesize --> Done : synthesized
+  Synthesize --> Failed : default blocked route
+  Done --> [*]
+  Failed --> [*]
+  state orchestrator_worker {
+    [*] --> orchestrator_worker_Worker
+    orchestrator_worker_Worker --> orchestrator_worker_WorkerFail : worker gave up
+    orchestrator_worker_Worker --> orchestrator_worker_WorkerDone : task done
+    orchestrator_worker_Worker --> orchestrator_worker_WorkerFail : default blocked route
+    orchestrator_worker_WorkerDone --> [*]
+    orchestrator_worker_WorkerFail --> [*]
+  }
+
+#### mermaid park
+stateDiagram-v2
+  [*] --> Release
+  Release --> Shipped : ship
+  Release --> Held : hold: parked for a human
+  note right of Release : policy-answerable
+  Shipped --> [*]
+  Held --> [*]
+
+#### mermaid resumable
+stateDiagram-v2
+  [*] --> Fetch
+  Fetch --> Transform : fetched
+  Fetch --> Failed : fetch failed
+  Fetch --> Failed : default blocked route
+  Transform --> Publish : transformed
+  Transform --> Failed : transform failed
+  Transform --> Failed : default blocked route
+  Publish --> Done : published
+  Publish --> Failed : publish failed
+  Publish --> Failed : publish failed
+  Publish --> Verify : crash window: verify before repeating
+  Publish --> Failed : default blocked route
+  Verify --> Failed : cannot verify
+  Verify --> Done : landed: done
+  Verify --> Failed : did not land
+  Verify --> Failed : default blocked route
+  Done --> [*]
+  Failed --> [*]
+
+#### mermaid router
+stateDiagram-v2
+  [*] --> Classify
+  Classify --> Unclear : no usable classification
+  Classify --> Bug : bug
+  Classify --> Feature : feature
+  Classify --> Question : question
+  Classify --> Unclear : unrecognised kind
+  Classify --> Unclear : default blocked route
+  Bug --> [*]
+  Feature --> [*]
+  Question --> [*]
+  Unclear --> [*]
+
+#### mermaid stale
+stateDiagram-v2
+  [*] --> AwaitHead
+  AwaitHead --> Review : head moved
+  AwaitHead --> TimedOut : no new commit in a day after 24h0m0s
+  AwaitHead --> GaveUp : default blocked route
+  Review --> GaveUp : review failed twice
+  Review --> AwaitHead : head moved under the review: observe again
+  Review --> Reviewed : reviewed
+  Review --> GaveUp : head kept moving across three reviews
+  Review --> GaveUp : default blocked route
+  Reviewed --> [*]
+  TimedOut --> [*]
+  GaveUp --> [*]
+
+#### mermaid tour
+stateDiagram-v2
+  [*] --> Plan
+  Plan --> Stopped : no usable plan
+  Plan --> Stopped : default unavailable route
+  Plan --> Review : planned
+  Plan --> Build : revision cap: build the latest plan
+  Plan --> Stopped : default blocked route
+  Plan --> Stopped : default uncertain route
+  Review --> Build : reviewer unusable: build the plan as it is
+  Review --> Stopped : default unavailable route
+  Review --> Build : approved
+  Review --> Plan : revise
+  Review --> Stopped : default blocked route
+  Review --> Stopped : default uncertain route
+  Build --> Stopped : default blocked route
+  Build --> Ship : every task built
+  Build --> Stopped : a task gave up
+  Build --> Stopped : default unavailable route
+  Build --> Stopped : default uncertain route
+  note right of Build : map tour-task
+  Ship --> Shipped : person approved
+  Ship --> Stopped : person held it
+  Ship --> Stopped : nobody answered after 24h0m0s
+  Ship --> Stopped : default blocked route
+  Ship --> Stopped : default unavailable route
+  Ship --> Stopped : default uncertain route
+  note right of Ship : reserved
+  Shipped --> [*]
+  Stopped --> [*]
+  state tour_task {
+    [*] --> tour_task_Implement
+    tour_task_Implement --> tour_task_TaskGaveUp : no usable patch
+    tour_task_Implement --> tour_task_Test : implemented
+    tour_task_Implement --> tour_task_TaskGaveUp : repair cap
+    tour_task_Implement --> tour_task_TaskGaveUp : default blocked route
+    tour_task_Implement --> tour_task_TaskGaveUp : default unavailable route
+    tour_task_Implement --> tour_task_TaskGaveUp : default uncertain route
+    tour_task_Test --> tour_task_TaskGaveUp : suite would not run
+    tour_task_Test --> tour_task_TaskGaveUp : default blocked route
+    tour_task_Test --> tour_task_TaskDone : tests pass
+    tour_task_Test --> tour_task_Implement : tests fail: repair
+    tour_task_Test --> tour_task_TaskGaveUp : default unavailable route
+    tour_task_Test --> tour_task_TaskGaveUp : default uncertain route
+    tour_task_TaskDone --> [*]
+    tour_task_TaskGaveUp --> [*]
+  }
+
+#### mermaid tournament
+stateDiagram-v2
+  [*] --> Judges
+  Judges --> Decided : two of three judges voted
+  Judges --> NoQuorum : quorum not reached
+  note right of Judges : map tournament-judge
+  Decided --> [*]
+  NoQuorum --> [*]
+  state tournament_judge {
+    [*] --> tournament_judge_Judge
+    tournament_judge_Judge --> tournament_judge_JudgeLost : judge produced no ballot
+    tournament_judge_Judge --> tournament_judge_JudgeDone : ballot cast
+    tournament_judge_Judge --> tournament_judge_JudgeLost : default blocked route
+    tournament_judge_JudgeDone --> [*]
+    tournament_judge_JudgeLost --> [*]
+  }
+
+#### mermaid typedexit
+stateDiagram-v2
+  [*] --> Work
+  Work --> FormatStop : no valid exit twice: format error repeated
+  Work --> Done : submitted
+  Work --> LimitsStop : limits exceeded
+  Work --> FormatStop : format error repeated
+  Work --> BlockedStop : blocked
+  Work --> Next : next step
+  Work --> LimitsStop : visit cap reached before the step
+  Work --> FormatStop : default blocked route
+  Next --> Work : back to work
+  Next --> FormatStop : default blocked route
+  Done --> [*]
+  LimitsStop --> [*]
+  FormatStop --> [*]
+  BlockedStop --> [*]
+
+#### mermaid unavailable
+stateDiagram-v2
+  [*] --> Triage
+  Triage --> NotConverged : three semantic failures
+  Triage --> ToolBlocked : tool unavailable: file a blocker
+  Triage --> TriageDone : triaged
+  Triage --> NotConverged : default blocked route
+  TriageDone --> [*]
+  ToolBlocked --> [*]
+  NotConverged --> [*]
+
+#### hash
+agentless sha256:e2634802e889362c
+approval sha256:0b8ff9c7852d133c
+broaden sha256:a6a7374e544b3644
+checkrepair sha256:7ee66d6cae1f66d9
+critique sha256:b905b7aaf6407134
+dispatch sha256:b3c2c686f7c1720b
+escalation sha256:5545634d29c31bdb
+fanout sha256:b6a7563019c40566
+feature sha256:8a4b9c74d205baa9
+gatedchain sha256:decdbb9adc68355c
+noprogress sha256:e4fdf066f33c68a1
+orchestrator sha256:0c28f4c9146fc87a
+park sha256:36f91bf486abcbdb
+resumable sha256:8206ecbc17d360af
+router sha256:8488bc4d070fbc50
+stale sha256:e016cadef9b798d7
+tour sha256:d4505783bbba8d35
+tournament sha256:9ae56e08d486985c
+typedexit sha256:3a654c58f5a38b6f
+unavailable sha256:0db74e9b65bfb0df
+
+#### go test
+?   	github.com/alepar/super-workflow/docs/proposals/go-api	[no test files]
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/bad
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/bd
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/cmd/wfcheck	[no test files]
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/cmd/workflow
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/agentless
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/approval
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/broaden
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/checkrepair
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/critique
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/dispatch
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/escalation
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/fanout
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/feature
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/examples/feature/checker	[no test files]
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/gatedchain
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/noprogress
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/orchestrator
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/park
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/resumable
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/router
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/stale
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour/checker	[no test files]
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour/cmd/workflow	[no test files]
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tournament
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/typedexit
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/unavailable
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/fsx
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/gh
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/git
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/harness
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/shell
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/tools/reanchor
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/wf
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/wftest
+

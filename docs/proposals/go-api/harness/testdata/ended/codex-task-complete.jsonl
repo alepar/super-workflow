@@ -1,0 +1,10 @@
+{"type":"token_usage_record","payload":{"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"fixture-call","output":"Sample output."}}
+{"type":"event_msg","payload":{"type":"token_count"}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Sample work completed."}]}}
+{"type":"token_usage_record","payload":{"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"event_msg","payload":{"type":"token_count"}}
+{"type":"event_msg","payload":{"type":"task_complete"}}

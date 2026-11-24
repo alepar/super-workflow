@@ -1,0 +1,4 @@
+{"type":"session_meta","payload":{"id":"10000000-0000-4000-8000-000000000001","session_id":"10000000-0000-4000-8000-000000000001","source":"cli","cli_version":"0.0.0","timestamp":"2025-01-01T00:00:00Z"}}
+{"type":"response_item","payload":{"type":"message","content":[{"type":"input_text","text":"Sample workflow message."}],"role":"user"}}
+{"type":"response_item","payload":{"type":"message","content":[{"type":"input_text","text":"Sample workflow message."}],"role":"user"}}
+{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"const r = await tools.exec_command({cmd:\"printf sample\"}); text(r.output);\n"}}

@@ -1,0 +1,10 @@
+{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"fixture-call","output":"Sample output."}}
+{"type":"event_msg","payload":{"type":"token_count"}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"response_item","payload":{"type":"reasoning","summary":[]}}
+{"type":"response_item","payload":{"type":"custom_tool_call","call_id":"fixture-call","name":"exec","input":"text(await tools.exec_command({cmd:\"printf sample\"}));"}}
+{"type":"token_usage_record","payload":{"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"event_msg","payload":{"type":"item_completed"}}
+{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"fixture-call","output":"Sample output."}}
+{"type":"event_msg","payload":{"type":"token_count"}}

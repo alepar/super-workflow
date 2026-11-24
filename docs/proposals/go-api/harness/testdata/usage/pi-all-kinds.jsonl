@@ -1,0 +1,8 @@
+{"type":"session","version":3,"id":"usage-fixture","timestamp":"2026-11-19T00:00:00.000Z","cwd":"/work"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-11-19T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"go"}]}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-11-19T00:00:02.000Z","message":{"role":"assistant","provider":"openrouter","model":"deepseek/deepseek-v4.1-flash-1017","stopReason":"toolUse","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"usage":{"input":100,"output":20,"cacheRead":1000,"cacheWrite":5,"reasoning":7,"totalTokens":1125}}}
+{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-11-19T00:00:03.000Z","message":{"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"a"}],"usage":{"input":7,"output":3,"cacheRead":50,"cacheWrite":1}}}
+{"type":"usage","id":"u1","parentId":"m3","timestamp":"2026-11-19T00:00:04.000Z","kind":"auxiliary","provider":"openrouter","model":"deepseek/deepseek-v4.1-flash-1017","usage":{"input":11,"output":13,"cacheRead":900,"cacheWrite":2}}
+{"type":"compaction","id":"k1","parentId":"u1","timestamp":"2026-11-19T00:00:05.000Z","summary":"s","usage":{"input":300,"output":40,"cacheRead":0,"cacheWrite":0}}
+{"type":"branch_summary","id":"b1","parentId":"k1","timestamp":"2026-11-19T00:00:06.000Z","summary":"s","usage":{"input":17,"output":19,"cacheRead":400,"cacheWrite":23}}
+{"type":"message","id":"m4","parentId":"b1","timestamp":"2026-11-19T00:00:07.000Z","message":{"role":"assistant","provider":"openrouter","model":"deepseek/deepseek-v4.1-flash-1017","stopReason":"stop","content":[{"type":"text","text":"done"}]}}
