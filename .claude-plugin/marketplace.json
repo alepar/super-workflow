@@ -1,0 +1,21 @@
+{
+  "description": "Author and drive Go super-workflow definitions.",
+  "name": "super-workflow-framework",
+  "owner": {
+    "name": "super-workflow"
+  },
+  "plugins": [
+    {
+      "description": "Author and drive Go super-workflow definitions.",
+      "license": "MIT OR Apache-2.0",
+      "name": "super-workflow",
+      "source": {
+        "path": "plugins/super-workflow",
+        "ref": "plugin-v0.1.0",
+        "source": "git-subdir",
+        "url": "https://github.com/alepar/super-workflow.git"
+      },
+      "version": "0.1.0"
+    }
+  ]
+}

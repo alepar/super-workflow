@@ -21,8 +21,9 @@ when a change affects the generated examples. The excerpt test compares
 the checked-in file with fresh output.
 
 From the repository root, run `bash scripts/test-authoring-skill.sh` and
-`python3 scripts/test-package-plugin.py` for changes to the packaged skill
-or release tooling. Both tests read from the committed tree. The
+`python3 scripts/test-package-plugin.py` for any change to a file listed
+in `packaging/payload-files.txt`, the packaged skill, the plugin manifests
+or the release tooling. Both tests read from the committed tree. The
 [release guide](packaging/README.md) covers the staged checkers and
 native install smoke.
 

@@ -2,6 +2,7 @@
 """Verify that the native catalogs and ZIP agree on the release payload."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -58,6 +59,38 @@ with tempfile.TemporaryDirectory(prefix=".test-package-", dir=repo) as scratch:
             assert hashlib.sha256(content).hexdigest() == digest
     verify = plugin / "skills/super-workflow/verify-release.py"
     snapshot = Path(scratch) / "saved-release"
+    # The root catalogs install the staged tree from its orphan release tag.
+    clone = Path(scratch) / "clone"
+    subprocess.run(["git", "clone", "-q", "--shared", "--no-tags", "--no-checkout", repo, clone], check=True)
+    (clone / "scripts").mkdir()
+    (clone / "scripts/package-plugin.py").write_bytes((repo / "scripts/package-plugin.py").read_bytes())
+    for mode in ("--catalogs", "--publish-ref", "--publish-ref"):
+        subprocess.run([sys.executable, clone / "scripts/package-plugin.py", "--ref", commit, mode],
+                       check=True, stdout=subprocess.DEVNULL)
+    tag = f'plugin-v{release["version"]}'
+    def log(fmt, rev):
+        return subprocess.check_output(["git", "-C", clone, "log", "-1", f"--format={fmt}", rev], text=True)
+    release_identity = "super-workflow release <release@super-workflow.invalid>"
+    assert log("%an <%ae>|%cn <%ce>", tag).strip() == f"{release_identity}|{release_identity}"
+    assert log("%ad %cd", tag) == log("%ad %cd", commit)
+    tagged = Path(scratch) / "tagged"
+    tagged.mkdir()
+    subprocess.run(f'git -C "{clone}" archive {tag} | tar -x -C "{tagged}"', shell=True, check=True)
+    assert {p.relative_to(tagged).as_posix(): p.read_bytes() for p in tagged.rglob("*") if p.is_file()} == {
+        f"{location[2:]}/{p.relative_to(plugin).as_posix()}": p.read_bytes()
+        for p in plugin.rglob("*") if p.is_file()}
+    subprocess.run(["git", "-C", clone, "tag", "-f", tag, commit], stdout=subprocess.DEVNULL, check=True)
+    result = subprocess.run([sys.executable, clone / "scripts/package-plugin.py", "--ref", commit,
+                             "--publish-ref"], capture_output=True, text=True)
+    assert result.returncode != 0 and "different plugin tree" in result.stderr, result.stderr
+    for name in (".codex-plugin/plugin.json", ".claude-plugin/plugin.json"):
+        manifest = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=repo)
+        assert json.loads(manifest)["version"] == release["version"], name
+    for name in (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"):
+        committed = subprocess.run(["git", "show", f"{commit}:{name}"], cwd=repo, capture_output=True)
+        if committed.returncode == 0:  # releases before the GitHub route have no root catalogs
+            assert committed.stdout == (clone / name).read_bytes(), f"{name} is stale; rerun --catalogs"
+            assert tag in committed.stdout.decode(), name
     subprocess.run([sys.executable, verify, "--snapshot", snapshot], check=True)
     subprocess.run([sys.executable, snapshot / verify.relative_to(plugin)], check=True)
     extra = plugin / "docs/proposals/go-api/wf/unlisted.go"
@@ -68,4 +101,16 @@ with tempfile.TemporaryDirectory(prefix=".test-package-", dir=repo) as scratch:
     (plugin / "docs/proposals/go-api/go.mod").write_text("module wrong\n")
     result = subprocess.run([sys.executable, verify], capture_output=True, text=True)
     assert result.returncode != 0 and "digest mismatch" in result.stderr
+    if not os.environ.get("SW_PACKAGE_TEST_NESTED"):
+        # A published tag for this version with a different payload must not fail the gate.
+        tagged_repo = Path(scratch) / "tagged-repo"
+        subprocess.run(["git", "clone", "-q", "--shared", "--no-checkout", repo, tagged_repo], check=True)
+        subprocess.run(["git", "-C", tagged_repo, "tag", "-f", tag, commit],
+                       check=True, stdout=subprocess.DEVNULL)
+        (tagged_repo / "scripts").mkdir()
+        for script in ("package-plugin.py", "test-package-plugin.py"):
+            (tagged_repo / "scripts" / script).write_bytes((repo / "scripts" / script).read_bytes())
+        subprocess.run([sys.executable, tagged_repo / "scripts/test-package-plugin.py", commit],
+                       check=True, stdout=subprocess.DEVNULL,
+                       env={**os.environ, "SW_PACKAGE_TEST_NESTED": "1"})
 print("Plugin payload, manifests, reproducible ZIP and snapshot verified.")

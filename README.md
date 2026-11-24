@@ -8,28 +8,41 @@ so a later session can resume the run.
 
 ## Install the plugin
 
-Unpack the marketplace release and set `marketplace` to the absolute path of
-its `marketplace` directory, which contains both catalogs. Keep it at that
-path while registered. Install with Claude Code 2.1.331 or later or Codex
-CLI 0.171.0 or later on Linux or macOS ARM.
+Install with Claude Code 2.1.331 or later or Codex CLI 0.171.0 or later on
+Linux or macOS ARM. The repository is a marketplace for both harnesses, so
+you can add it straight from GitHub. It installs the release that the catalogs
+on `main` pin.
 
 Claude Code:
 
 ```sh
-claude plugin marketplace add "$marketplace"
+claude plugin marketplace add alepar/super-workflow
 claude plugin install super-workflow@super-workflow-framework
 ```
 
 Codex:
 
 ```sh
-codex plugin marketplace add "$marketplace"
+codex plugin marketplace add alepar/super-workflow
 codex plugin add super-workflow@super-workflow-framework
 ```
 
 Open a fresh session and invoke `/super-workflow:super-workflow` in Claude
-Code or `$super-workflow` in Codex. The rootless Codex ZIP contains the
-plugin payload. Use the unpacked marketplace for the CLI installation.
+Code or `$super-workflow` in Codex.
+
+To install from a release instead, unpack the marketplace release and set
+`marketplace` to the absolute path of its `marketplace` directory, which
+contains both catalogs. Keep it at that path while registered.
+
+```sh
+claude plugin marketplace add "$marketplace"
+claude plugin install super-workflow@super-workflow-framework
+codex plugin marketplace add "$marketplace"
+codex plugin add super-workflow@super-workflow-framework
+```
+
+The rootless Codex ZIP contains the plugin payload. Use the unpacked
+marketplace for the CLI installation.
 
 ## Run a one-off workflow
 
