@@ -35,7 +35,7 @@ var allRules = []wf.RuleID{
 	wf.RuleInputUnresolved, wf.RuleAgentRetry, wf.RuleGateAnswers, wf.RuleCaseUncovered,
 	wf.RuleCaseUnknownValue, wf.RuleCaseNoOtherwise, wf.RuleCaseDuplicate, wf.RuleMapItemKey, wf.RuleMapJoin,
 	wf.RuleMapPartialFailure, wf.RuleMapWriteOverlap, wf.RuleSubExitUnmapped,
-	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNotExported,
+	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNameDuplicate, wf.RuleChildNotExported,
 	wf.RuleHoldEffectOutside, wf.RuleComputeUnavailable, wf.RuleRouteNoCandidates,
 	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge,
 	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath,
@@ -317,6 +317,17 @@ var ruleCases = []struct {
 	{wf.RuleSubRecursive, func() *wf.Def {
 		d := wf.New("recursive")
 		wf.NewSub[rSub](d, wf.Typed[rItem, rRes](d), func(wf.Ctx) rItem { return rItem{} })
+		return d
+	}},
+	{wf.RuleChildNameDuplicate, func() *wf.Def {
+		d, _, end, _ := okDef("dupchild")
+		in := func(wf.Ctx) rItem { return rItem{} }
+		a := wf.NewSub[rSub](d, childOf("kid"), in)
+		other := childOf("kid")
+		other.Def().Version(2) // differs from the Sub's "kid"
+		b := wf.NewMap[rMap](d, wf.FromObservation(wf.Observe[[]rItem]("bd", "ready", nil)), func(i rItem) string { return i.ID }, other)
+		a.Exits(wf.OnExit[rChild](a.To(b, "sub done")))
+		b.Join(wf.AllOK(), b.To(end, "ok"), b.To(end, "partial"))
 		return d
 	}},
 	{wf.RuleChildNotExported, func() *wf.Def {

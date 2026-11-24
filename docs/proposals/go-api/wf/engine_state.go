@@ -685,6 +685,12 @@ func (st *runState) apply(r JournalRecord) error {
 			if p := st.insts[i.Parent]; p != nil && i.Spawner != "" {
 				if to, ok := st.renamesFor(p, d.States)[i.Spawner]; ok {
 					i.Spawner = to
+					// The child folded at its spawner's old name, which a
+					// swap or reuse may give a sibling now: re-resolve it
+					// at the new name.
+					if ch := p.def.spawnedChild(to, i.DefName); ch != nil {
+						i.def = ch
+					}
 				}
 			}
 		}
@@ -701,7 +707,7 @@ func (st *runState) apply(r JournalRecord) error {
 		if parent == nil {
 			return corrupt(r, "child of unknown instance %q", r.Instance)
 		}
-		child := parent.def.child(d.Def)
+		child := parent.def.spawnedChild(d.State, d.Def)
 		if child == nil {
 			return corrupt(r, "unknown child definition %q", d.Def)
 		}
@@ -1344,4 +1350,19 @@ func (in *instance) statusReason() string {
 		return strings.Join(in.LastFailure, "; ")
 	}
 	return in.Reason
+}
+
+// spawnedChild is the child definition a child_spawned record of d names:
+// the one its spawning state runs, so siblings sharing a name (identical in
+// shape, perhaps not in closures) each fold to their own. By name when that
+// state is gone or runs another definition now: a journal of an older shape.
+func (d *Def) spawnedChild(state, name string) *Def {
+	if n := d.find(state); n != nil {
+		if k, ok := n.kind.(interface{ childDef() *Def }); ok {
+			if ch := k.childDef(); ch != nil && ch.name == name {
+				return ch
+			}
+		}
+	}
+	return d.child(name)
 }

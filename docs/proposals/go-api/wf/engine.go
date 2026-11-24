@@ -583,6 +583,9 @@ func (c *cycle) nextSeq() int64 { return int64(len(c.recs) + 1) }
 
 // Run implements Executor.
 func (e *Engine) Run(d *Def, params map[string]string, options any) (RunID, error) {
+	if xs := childNameClashes(d); len(xs) > 0 {
+		return "", fmt.Errorf("definition %s (%s): %s; start, re-attach or replay refused (a replay would only repeat the shadowing); existing runs resume through next/resume", d.name, RuleChildNameDuplicate, xs[0])
+	}
 	e.mu.Lock()
 	e.defs[d.name] = d
 	e.mu.Unlock()

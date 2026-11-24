@@ -339,6 +339,7 @@ const (
 	RuleSubExitUnmapped     RuleID = "sub-exit-unmapped"
 	RuleSubResultType       RuleID = "sub-result-type"
 	RuleSubRecursive        RuleID = "sub-recursive"
+	RuleChildNameDuplicate  RuleID = "child-name-duplicate"
 	RuleChildNotExported    RuleID = "child-artifact-not-exported"
 	RuleHoldEffectOutside   RuleID = "hold-effect-outside"
 	RuleMapParallelReview   RuleID = "map-parallel-review" // a note, not an error

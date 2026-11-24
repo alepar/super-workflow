@@ -40,6 +40,7 @@ var rules = []rule{
 	ruleReservedPolicy,
 	ruleInputUnresolved,
 	ruleSubRecursive,
+	ruleChildNameDuplicate,
 	ruleHoldEffectOutside,
 	ruleRouteCandidates,
 	ruleArtifactName,
@@ -809,6 +810,87 @@ func ruleSubRecursive(c *lintCtx) []Problem {
 		return nil
 	}
 	return []Problem{defProblem(c.d, RuleSubRecursive, "definition includes itself: %s -> %s", c.d.name, strings.Join(path, " -> "))}
+}
+
+// ruleChildNameDuplicate is RuleChildNameDuplicate, checked once at the root:
+// two definitions in one tree share a name but differ. A name identifies one
+// definition where the engine keys by it (status paths, the migration shape,
+// adoption's lookup), so definitions sharing a name must be identical; the
+// fold tells identical siblings apart by the state that spawned each.
+func ruleChildNameDuplicate(c *lintCtx) []Problem {
+	if len(c.ancestors) > 0 {
+		return nil
+	}
+	var out []Problem
+	for _, x := range childNameClashes(c.d) {
+		out = append(out, defProblem(c.d, RuleChildNameDuplicate, "%s", x))
+	}
+	return out
+}
+
+// nameClash is one name two differing definitions of a tree share, with where
+// each is used: the root's name, or the chain of Sub and Map states that runs
+// it (root/State/State).
+type nameClash struct{ name, first, second string }
+
+func (x nameClash) String() string {
+	return fmt.Sprintf("two definitions named %q differ, at %s and at %s: definitions that share a name must be identical, since the engine keys status paths and migration shapes by name. Give the child definitions distinct names", x.name, x.first, x.second)
+}
+
+// childNameClashes is each name that two differing definitions in d's tree
+// (d and its Sub and Map children, recursively) share, in first-use order,
+// with the first two places they are used. Definitions are compared by their
+// structural hash and their resolved asset root (own or inherited), which the
+// run also keys by name: a helper built twice by one constructor is one
+// definition here, and closures, which no hash sees, are kept apart by the
+// fold.
+func childNameClashes(d *Def) []nameClash {
+	type first struct {
+		identity string
+		where    string
+	}
+	byName := map[string]first{}
+	hashes := map[*Def]string{}
+	identity := func(x *Def, root string) string {
+		h, ok := hashes[x]
+		if !ok {
+			h = hashView(inspectStructure(x))
+			hashes[x] = h
+		}
+		return h + "\x00" + root
+	}
+	clashed := map[string]bool{}
+	type visit struct {
+		d    *Def
+		root string
+	}
+	seen := map[visit]bool{}
+	var out []nameClash
+	var walk func(x *Def, where, inherited string)
+	walk = func(x *Def, where, inherited string) {
+		root := inherited
+		if x.assets != "" {
+			root = effectiveAssets(x, "")
+		}
+		id := identity(x, root)
+		if f, ok := byName[x.name]; !ok {
+			byName[x.name] = first{id, where}
+		} else if f.identity != id && !clashed[x.name] {
+			clashed[x.name] = true
+			out = append(out, nameClash{x.name, f.where, where})
+		}
+		if seen[visit{x, root}] {
+			return
+		}
+		seen[visit{x, root}] = true
+		for _, n := range x.nodes {
+			if k, ok := n.kind.(interface{ childDef() *Def }); ok && k.childDef() != nil {
+				walk(k.childDef(), where+"/"+n.name, root)
+			}
+		}
+	}
+	walk(d, d.name, "")
+	return out
 }
 
 // ruleMapParallelReview notes a Map capped by Parallel(n) with n > 1: the cap

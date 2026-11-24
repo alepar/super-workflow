@@ -959,8 +959,12 @@ func (d *manufactureDriver) scan() error {
 			var c ChildSpawnedData
 			if json.Unmarshal(r.Data, &c) == nil {
 				d.defs[c.ID] = d.defs[r.Instance] + "/" + c.Def
+				// The driver reads only structure through defObjs
+				// (stateNode), which siblings sharing a name share
+				// (child-name-duplicate), so this resolves as the fold
+				// does without a closure-visible difference.
 				if parent := d.defObjs[r.Instance]; parent != nil {
-					d.defObjs[c.ID] = parent.child(c.Def)
+					d.defObjs[c.ID] = parent.spawnedChild(c.State, c.Def)
 				}
 			}
 		case JournalGateOffered:
