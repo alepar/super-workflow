@@ -11,11 +11,11 @@
       "name": "super-workflow",
       "source": {
         "path": "plugins/super-workflow",
-        "ref": "plugin-v0.1.0",
+        "ref": "plugin-v0.2.0",
         "source": "git-subdir",
         "url": "https://github.com/alepar/super-workflow.git"
       },
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
