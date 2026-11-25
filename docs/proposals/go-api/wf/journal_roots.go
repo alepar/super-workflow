@@ -1,6 +1,7 @@
 package wf
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -129,6 +130,11 @@ func (j *rootedJournal) rooted(recs []JournalRecord) (_ []JournalRecord, roots P
 		out[0].Roots = &origin
 	}
 	for i := range out {
+		// Every token holds a NUL, which JSON can only spell as an escape:
+		// a relative record with no \u0000 has nothing to convert back.
+		if out[i].RelativePaths && !bytes.Contains(out[i].Data, []byte(`\u0000`)) {
+			continue
+		}
 		convert := func(s string) string {
 			if out[i].RelativePaths {
 				return strings.NewReplacer(workspacePathToken, roots.Workspace, statePathToken, roots.State, literalNullToken, "\x00").Replace(s)

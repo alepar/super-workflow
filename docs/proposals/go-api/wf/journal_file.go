@@ -30,7 +30,11 @@ var fileLockWait = 2 * time.Minute
 // progress line naming the holder.
 var lockProgressAfter = 5 * time.Second
 
-const fileLockPoll = 50 * time.Millisecond
+// fileLockPoll is how often a waiting call tries the run lock (and the gate
+// before it). Every call of a run is serialised on that lock, so the time a
+// lock sits free before the next waiter sees it adds to every handover; a
+// try is one flock syscall.
+const fileLockPoll = 5 * time.Millisecond
 
 // fileWatchPoll is how often Watch stats the journal file.
 var fileWatchPoll = 500 * time.Millisecond

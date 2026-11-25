@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -161,7 +162,24 @@ func (cfg MainConfig) stateDir() string {
 
 // MainWith runs the CLI over os.Args and exits with its code.
 func MainWith(cfg MainConfig) {
+	TuneGCForCLI()
 	os.Exit(CLI(cfg, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// cliGCPercent is the collector's target for a CLI process; see TuneGCForCLI.
+const cliGCPercent = 400
+
+// TuneGCForCLI sets the garbage collector for a process that runs one CLI
+// call, as MainWith does: a workflow binary whose main calls CLI itself calls
+// it first. A call is short and allocation-heavy (it reads the journal and
+// walks the definition), so collecting when the heap reaches five times its
+// live size instead of twice saves about a quarter of its CPU, for a peak RSS
+// up to about twice as high.
+// A GOGC set in the environment is kept.
+func TuneGCForCLI() {
+	if _, set := os.LookupEnv("GOGC"); !set {
+		debug.SetGCPercent(cliGCPercent)
+	}
 }
 
 // ExitCode is one row of the CLI's exit code table.

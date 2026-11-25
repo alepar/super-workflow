@@ -222,7 +222,11 @@ func inspectDef(d *Def, prefix, assetRoot string, onPath map[*Def]bool, withAsse
 		}
 		v.Policy = append(v.Policy, PolicyView{Gate: g, Answer: r.answer, When: r.when.String(), Park: r.park})
 	}
-	v.States = inspectStates(d, prefix+d.name)
+	if prefix == "" && !withAssets {
+		v.States = ownStates(d) // read-only, as every structural view
+	} else {
+		v.States = inspectStates(d, prefix+d.name)
+	}
 	if d.assets != "" {
 		assetRoot = d.assets
 	}
@@ -259,6 +263,22 @@ func optionFields(t reflect.Type) []string {
 	}
 	return out
 }
+
+// ownStates is inspectStates(d, d.name), the state views under d's own
+// name, walked once per process for a frozen definition (see
+// inspectStructure). The slice is shared: callers only read it.
+func ownStates(d *Def) []StateView {
+	if !d.frozen.Load() {
+		return inspectStates(d, d.name)
+	}
+	if v, ok := ownStateViews.Load(d); ok {
+		return v.([]StateView)
+	}
+	v, _ := ownStateViews.LoadOrStore(d, inspectStates(d, d.name))
+	return v.([]StateView)
+}
+
+var ownStateViews sync.Map // frozen *Def to its ownStates
 
 // inspectStates is the one walk over a definition's own states (no children).
 func inspectStates(d *Def, path string) []StateView {

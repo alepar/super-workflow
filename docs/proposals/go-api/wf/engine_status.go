@@ -187,7 +187,7 @@ func (c *cycle) firstAgentClass(in *instance, child *Def) string {
 	if child == nil || len(child.nodes) == 0 {
 		return ""
 	}
-	if sv := inspectStates(child, child.name)[0]; sv.Kind == "agent" {
+	if sv := ownStates(child)[0]; sv.Kind == "agent" {
 		return strings.Join(append(c.st.defPath(in), child.name, sv.Name), "/")
 	}
 	return ""
@@ -289,7 +289,7 @@ func (c *cycle) unconditionalAgents(in *instance) (out []string, end bool) {
 // definition already being walked, as computeDepths does; visited keeps a loop
 // inside one definition linear.
 func (c *cycle) walkFrom(d *Def, prefix, start string, includeStart bool, onPath map[*Def]bool) (out []string, end bool) {
-	states := inspectStates(d, d.name)
+	states := ownStates(d)
 	byName := make(map[string]StateView, len(states))
 	for _, sv := range states {
 		byName[sv.Name] = sv
@@ -484,7 +484,7 @@ func (c *cycle) settledUnits(lastAt map[string]time.Time) []settledUnit {
 // itself only when includeStart), descending into Sub and Map child
 // definitions; inDefs guards a definition already being walked.
 func agentsAhead(d *Def, start string, includeStart bool, inDefs map[*Def]bool) int {
-	states := inspectStates(d, d.name)
+	states := ownStates(d)
 	byName := make(map[string]StateView, len(states))
 	for _, sv := range states {
 		byName[sv.Name] = sv

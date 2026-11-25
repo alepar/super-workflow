@@ -54,7 +54,7 @@ func (c *cycle) adoptBindingProblems(def *Def, stateName func(*instance, string)
 		pending := in.Phase != phaseTransition
 		workNext := in.Phase == phaseReady || in.Phase == phaseBackoff || in.Phase == phaseHalted
 		s := c.scope(in)
-		views := inspectStates(d, d.name)
+		views := ownStates(d)
 		routes := bindingRoutes(views)
 		for _, b := range reachableBindings(views, start, workNext, in.Phase == phaseIssued) {
 			if s.adoptionBuiltinOrParam(b.name) {

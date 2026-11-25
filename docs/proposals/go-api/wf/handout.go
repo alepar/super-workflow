@@ -1002,7 +1002,7 @@ func (e *Engine) defDepths(d *Def) *defDepths {
 func computeDepths(d *Def, defPath map[*Def]bool) *defDepths {
 	defPath[d] = true
 	defer delete(defPath, d)
-	states := inspectStates(d, d.name)
+	states := ownStates(d)
 	index := make(map[string]int, len(states))
 	for i, sv := range states {
 		index[sv.Name] = i

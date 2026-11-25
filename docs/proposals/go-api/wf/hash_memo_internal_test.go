@@ -157,3 +157,24 @@ func TestUnfrozenDefinitionIsNotMemoised(t *testing.T) {
 		t.Fatalf("frozen hash %s, want %s", got, after)
 	}
 }
+
+// A frozen definition's own state views are walked once; an unfrozen one's
+// afresh.
+func TestOwnStatesWalkedOncePerFrozenDef(t *testing.T) {
+	d := New("own-states")
+	NewCommand[pfAssetCommand](d, "true")
+	if a, b := ownStates(d), ownStates(d); &a[0] == &b[0] {
+		t.Fatal("an unfrozen definition's states were kept")
+	}
+	d.freeze()
+	a, b := ownStates(d), ownStates(d)
+	if &a[0] != &b[0] {
+		t.Fatal("a frozen definition's states were walked again")
+	}
+	if a[0].Path != "own-states/"+a[0].Name {
+		t.Fatalf("path %q, want the definition's own name as prefix", a[0].Path)
+	}
+	if v := inspectStructure(d); &v.States[0] != &a[0] {
+		t.Fatal("the structural view walked the root's states again")
+	}
+}

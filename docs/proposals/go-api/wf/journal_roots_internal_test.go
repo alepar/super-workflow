@@ -98,3 +98,39 @@ func TestCommandDirectoryIsTheOnlyRelocatableEffectArgument(t *testing.T) {
 		}
 	}
 }
+
+// A relative record with no path token reads back byte for byte; one with a
+// token in a mapped field is still converted.
+func TestRootedReadSkipsRecordsWithoutTokens(t *testing.T) {
+	raw := MemJournal()
+	writer := &rootedJournal{Journal: raw, workspace: "/old/work", state: "/old/state", active: map[RunID]PathRoots{}}
+	unlock, err := writer.Lock("r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []JournalRecord{
+		{Kind: JournalRunStarted, Run: "r", Data: json.RawMessage(`{"Workspace":"/old/work"}`)},
+		{Kind: JournalInstructionIssued, Run: "r", Data: json.RawMessage(`{"Workspace":"/elsewhere","Prompt":"a <prompt>"}`)},
+		{Kind: JournalInstructionIssued, Run: "r", Data: json.RawMessage(`{"Workspace":"/old/work/sub"}`)},
+	} {
+		if err := writer.Append(rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored, err := raw.Records("r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &rootedJournal{Journal: raw, workspace: "/new/work", state: "/new/state", active: map[RunID]PathRoots{}}
+	got, err := reader.Records("r")
+	unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got[1].Data, stored[1].Data) {
+		t.Fatalf("token-free record changed: %s, stored %s", got[1].Data, stored[1].Data)
+	}
+	if !bytes.Contains(got[2].Data, []byte(`"/new/work/sub"`)) {
+		t.Fatalf("tokened record not converted: %s", got[2].Data)
+	}
+}

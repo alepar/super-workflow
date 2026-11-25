@@ -255,7 +255,7 @@ func defShape(d *Def) map[string]string {
 			return
 		}
 		seen[d] = true
-		views := inspectStates(d, d.name)
+		views := ownStates(d)
 		if len(views) > 0 {
 			out[d.name+"/"] = views[0].Name
 		}
