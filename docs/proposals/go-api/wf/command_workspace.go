@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // workspaceCommand anchors a shell command to the stable run root. The tool
@@ -16,7 +17,7 @@ func workspaceCommand(harnessName, workspace, command string) string {
 	if adapter, ok := harness.For(harnessName).(interface{ UnchainedCommands() bool }); ok && adapter.UnchainedCommands() {
 		return command
 	}
-	return "cd " + shellQuote(workspace) + " && " + command
+	return "cd " + sink.Quote(workspace) + " && " + command
 }
 
 const toolWorkdirAdviceHead = "For workflow commands, set the shell tool working-directory (workdir/cwd) to "

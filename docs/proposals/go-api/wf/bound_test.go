@@ -114,8 +114,9 @@ func TestBoundLeavesOtherBracketsAlone(t *testing.T) {
 	if !strings.HasPrefix(got, "[Must-fix] [ ] [x] [--stalled <phase>] 3 [SEV]") {
 		t.Errorf("only the named token may change: %q", got)
 	}
-	// A value is not rescanned.
-	if got := boundPrompt(t, "[A] [B]", wf.Bound("A", "[B]"), wf.Bound("B", "b")); !strings.HasPrefix(got, "[B] b") {
+	// A value is not rescanned. (Mid-sentence: at the start of a line a
+	// value opening with [ is fenced, since it could start a block.)
+	if got := boundPrompt(t, "See [A] [B]", wf.Bound("A", "[B]"), wf.Bound("B", "b")); !strings.HasPrefix(got, "See [B] b") {
 		t.Errorf("a value was rescanned: %q", got)
 	}
 }

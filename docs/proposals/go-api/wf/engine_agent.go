@@ -153,10 +153,10 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 			k, base, strings.TrimPrefix(pred.Predecessor, base+"#"), c.workdir(in))
 	}
 	if why := previousRefusal(in); why != nil {
-		fmt.Fprintf(&b, "Your predecessor's output was refused: %s. Avoid this.\n\n", strings.Join(why, "; "))
+		b.WriteString(attemptNote("Your predecessor's output was refused", why, "Avoid this."))
 	}
 	if why := previousBlocked(in); why != nil {
-		fmt.Fprintf(&b, "The attempt before yours ended blocked: %s. The unit was started again with that known: if the same thing still blocks you, run failed again saying what you need.\n\n", strings.Join(why, "; "))
+		b.WriteString(attemptNote("The attempt before yours ended blocked", why, "The unit was started again with that known: if the same thing still blocks you, run failed again saying what you need."))
 	}
 	b.WriteString(strings.TrimRight(text, "\n"))
 	if blk := inputsBlock(ins, used); blk != "" {
@@ -191,6 +191,20 @@ func previousRefusal(in *instance) []string {
 		return in.LastRefusal
 	}
 	return nil
+}
+
+// attemptNote is the paragraph that tells a later attempt why the one before
+// it ended: lead, the reasons, then tail. The reasons are model text (a
+// blocked cause is the child's own words, and a refusal can quote its
+// output), so they must not add prompt structure. Reasons that fit on one
+// line stay in the sentence, where inline text cannot start a block; any
+// other reasons go one per line in a fence after lead (fenceValue), carried
+// verbatim.
+func attemptNote(lead string, why []string, tail string) string {
+	if joined := strings.Join(why, "; "); !strings.ContainsAny(joined, "\r\n") {
+		return lead + ": " + joined + ". " + tail + "\n\n"
+	}
+	return lead + ":\n\n" + fenceValue(strings.Join(why, "\n")) + "\n\n" + tail + "\n\n"
 }
 
 // previousBlocked is the cause a later attempt of the state is shown when

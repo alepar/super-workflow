@@ -125,6 +125,18 @@ func MergeInto(key wf.Key, worktree, branch, into string, noFF bool) wf.External
 // Idempotent by key. already_done: the adapter finds a commit on HEAD whose
 // message carries the key trailer; otherwise a clean tree means there is
 // nothing to commit and the effect is a no-op.
+//
+// Each path names one file, matched literally: a * or [ in a path (often a
+// bound value) is part of its name. CommitGlob matches patterns.
 func Commit(key wf.Key, worktree, message string, paths ...string) wf.ExternalEffect {
 	return wf.ExternalEffect{Adapter: "git", Op: "commit", Args: map[string]any{"worktree": worktree, "message": message, "paths": paths}, Key: key}
+}
+
+// CommitGlob is Commit with git glob patterns (* within a path component, **
+// across them) in place of literal paths: it commits every changed file a
+// pattern matches. A pattern that matches no file fails the effect, as git
+// add does. Use it only for a pattern the definition writes; a value bound
+// into it is matched as a pattern too.
+func CommitGlob(key wf.Key, worktree, message string, patterns ...string) wf.ExternalEffect {
+	return wf.ExternalEffect{Adapter: "git", Op: "commit", Args: map[string]any{"worktree": worktree, "message": message, "globs": patterns}, Key: key}
 }

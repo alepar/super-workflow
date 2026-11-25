@@ -525,13 +525,14 @@ resume. A transcript not flushed yet is searched again later.
   offer prints it, as one bash call of three lines:
 
   ```
-  SUPER_PI_CHILD=wf-<claim> SUPER_PI_PARENT="$PI_SESSION_ID" nohup pi -p -ne --session-id wf-<claim> [--model M] [--thinking E] <<'WF_BRIEF' >/dev/null 2><state dir>/child-logs/<run>/wf-<claim>.stderr &
+  SUPER_PI_CHILD='wf-<claim>' SUPER_PI_PARENT="$PI_SESSION_ID" nohup pi -p -ne --session-id 'wf-<claim>' [--model M] [--thinking E] <<'WF_BRIEF' >/dev/null 2>'<state dir>/child-logs/<run>/wf-<claim>.stderr' &
   <brief>
   WF_BRIEF
   ```
 
   with the brief pasted unchanged as the middle line or lines: a quoted
-  here-document, so nothing in it needs quoting. Each part
+  here-document, so nothing in it needs quoting. The values around it are
+  shell-quoted where they need it, as above. Each part
   is there for a reason. `SUPER_PI_CHILD` puts the child's session id in its
   environment, so its processes can be found (pi retitles its process `pi`).
   `-ne` keeps the coordinator's extensions out of the child. The brief goes on stdin, which print-mode pi reads to its

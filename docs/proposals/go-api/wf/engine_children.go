@@ -657,7 +657,13 @@ func (o mapOps[S, I, K, R]) items(c *cycle, in *instance, n *node, kids []*insta
 		if err != nil {
 			return nil, "", true, o.failParent(c, in, n, Refused, []string{"map item: " + err.Error()})
 		}
-		items = append(items, mapItem{key: fmt.Sprint(key(item)), raw: raw, writes: o.writes(item), waiting: waitingOnDeps(item) || waitingOnDeps(&item)})
+		itemKey := fmt.Sprint(key(item))
+		// The key names the child (and its directories and command lines), so
+		// a control byte in it is refused here, where it enters from the item.
+		if hasControlByte(itemKey) {
+			return nil, "", true, o.failParent(c, in, n, Refused, []string{fmt.Sprintf("map item key %q holds a control character", itemKey)})
+		}
+		items = append(items, mapItem{key: itemKey, raw: raw, writes: o.writes(item), waiting: waitingOnDeps(item) || waitingOnDeps(&item)})
 	}
 	return items, "", false, nil
 }

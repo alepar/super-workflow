@@ -3,6 +3,8 @@ package wf
 import (
 	"fmt"
 	"strings"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // GateIntValueView describes an answer's integer range. Proposal is present
@@ -87,6 +89,10 @@ func (k *gateKind) lintIntValues(n *node) []Problem {
 			out = append(out, n.problem(RuleGateAnswers, "integer answer %q has min greater than max", answer))
 		case spec.proposal == nil:
 			out = append(out, n.problem(RuleGateAnswers, "integer answer %q requires a proposal", answer))
+		case escapeControl(answer) != answer:
+			// The answer is named in a prose line of the gate's instructions
+			// (gateIntInstructions), which escapes it to keep it on that line.
+			out = append(out, n.problem(RuleGateAnswers, "integer answer %q holds a control character or invalid UTF-8", answer))
 		}
 	}
 	return out
@@ -156,8 +162,10 @@ func gateIntInstructions(views []GateIntValueView, submit string) string {
 		if v.Proposal == nil {
 			continue
 		}
-		line := strings.Replace(submit, "<value>", shellQuote(v.Answer), 1)
-		fmt.Fprintf(&b, "\nFor %s, the proposed number is %d (allowed %d..%d). Omit --number to accept the proposal; to use the person's number, run:\n%s --number <integer>", v.Answer, *v.Proposal, v.Min, v.Max, line)
+		// The command line carries the answer as one shell word; the prose
+		// line names it escaped, so a line break in it cannot add a line.
+		line := strings.Replace(submit, "<value>", sink.Quote(v.Answer), 1)
+		fmt.Fprintf(&b, "\nFor %s, the proposed number is %d (allowed %d..%d). Omit --number to accept the proposal; to use the person's number, run:\n%s --number <integer>", escapeControl(v.Answer), *v.Proposal, v.Min, v.Max, line)
 	}
 	return b.String()
 }

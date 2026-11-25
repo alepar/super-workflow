@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -300,19 +301,12 @@ func reservedGateText(in wf.Instruction) string {
 		if value.Proposal == nil {
 			continue
 		}
-		command := strings.Replace(in.Submit, "<value>", protocolShellQuote(value.Answer), 1)
+		// The engine names the answer escaped in the prose line; lint refuses
+		// an integer answer the escape would change, so it prints unchanged.
+		command := strings.Replace(in.Submit, "<value>", sink.Quote(value.Answer), 1)
 		text += fmt.Sprintf("\nFor %s, the proposed number is %d (allowed %d..%d). Omit --number to accept the proposal; to use the person's number, run:\n%s --number <integer>", value.Answer, *value.Proposal, value.Min, value.Max, command)
 	}
 	return text
-}
-
-func protocolShellQuote(s string) string {
-	if s != "" && s[0] != '#' && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_-./:=@%+,#", r))
-	}) < 0 {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // Parse only the literal shell quoting emitted by the CLI; never run a shell.

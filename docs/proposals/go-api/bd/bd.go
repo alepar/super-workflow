@@ -9,6 +9,7 @@
 package bd
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
@@ -31,6 +32,11 @@ const (
 // parent's labels, and RootLabel is a label the client's ready query scopes
 // by. They are typed fields the adapter always renders, so a client that
 // relies on them cannot forget one.
+//
+// Create sends each of Labels and RootLabel through sink.NewLabel, which
+// percent-encodes what bd's label parsing would split or trim, so a label
+// reads back in that encoded form. An empty label in Labels, or one holding
+// a NUL byte, is refused.
 type Issue struct {
 	ID              string
 	Title           string
@@ -62,11 +68,21 @@ func Ready(epic string) wf.Observation[[]Issue] {
 // ReadyIn observes `bd ready --json`: open, unblocked beads that are not epics
 // or gates. A non-empty label keeps only beads carrying it; excludeLabels drop
 // beads carrying any of them. Which labels scope and exclude work is the
-// client's convention.
+// client's convention. Labels are the values as given to Create: the adapter
+// encodes each one, and refuses an empty exclude label or one holding a NUL
+// byte.
 func ReadyIn(label string, excludeLabels ...string) wf.Observation[[]Issue] {
 	args := map[string]any{"label": label}
 	if len(excludeLabels) > 0 {
-		args["exclude_labels"] = strings.Join(excludeLabels, ",")
+		// Exclusions holding no comma are recorded joined, as they always
+		// were, so a journal's recorded read keeps its descriptor; a comma
+		// in one would be ambiguous there, so then they are recorded as a
+		// list.
+		if slices.ContainsFunc(excludeLabels, func(l string) bool { return strings.Contains(l, ",") }) {
+			args["exclude_labels"] = slices.Clone(excludeLabels)
+		} else {
+			args["exclude_labels"] = strings.Join(excludeLabels, ",")
+		}
 	}
 	return wf.Observe[[]Issue]("bd", "ready", args)
 }
@@ -76,7 +92,8 @@ func Show(id string) wf.Observation[Issue] {
 	return wf.Observe[Issue]("bd", "show", map[string]any{"id": id})
 }
 
-// ListByLabel observes `bd list --label <label> --json`.
+// ListByLabel observes `bd list --label <label> --json`. label is the value
+// as given to Create; the adapter encodes it, and refuses an empty one.
 func ListByLabel(label string) wf.Observation[[]Issue] {
 	return wf.Observe[[]Issue]("bd", "list", map[string]any{"label": label})
 }
@@ -105,11 +122,13 @@ func UpdateStatus(key wf.Key, id string, s Status) wf.ExternalEffect {
 	return wf.ExternalEffect{Adapter: "bd", Op: "update_status", Args: map[string]any{"id": id, "status": s}, Key: key}
 }
 
-// SetMetadata sets metadata fields on a bead: `bd update <id> --set-metadata
-// <key>=<value>` for each, the keys sorted. The adapter builds the argv, so a
-// value (free text, JSON) is only ever the part after its key's '=' and is
-// never read as an option or a command (reference workflow S3a). A key must
-// be a plain word.
+// SetMetadata sets metadata fields on a bead: `bd update --metadata <json>
+// -- <id>`, the fields as one JSON object bd merges into the bead's
+// metadata. The adapter builds the argv, so a value (free text, JSON) is only
+// ever a value inside that object and is never read as an option or a
+// command (reference workflow S3a). A value is stored as --set-metadata k=v
+// stored it: the words true, false and null and a JSON number typed, any
+// other value as the string. A key must be a plain word.
 //
 // Idempotent: the same values are written again.
 func SetMetadata(key wf.Key, id string, fields map[string]string) wf.ExternalEffect {

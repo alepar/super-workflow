@@ -495,6 +495,28 @@ func (e *Engine) allocatedOutputFor(verb string, run RunID, name string) (string
 	return output, err
 }
 
+// allocatedArtifacts is the allocated path of each artifact the claimed
+// unit's state produces, by name: what its prompt's Artifacts section prints,
+// computed from the run's state rather than read back from the prompt.
+func (e *Engine) allocatedArtifacts(run RunID, name string) (map[string]string, error) {
+	out := map[string]string{}
+	err := e.withDryRun(run, func(c *cycle) error {
+		in, _, err := c.claimedUnit("prompt", name)
+		if err != nil {
+			return err
+		}
+		for _, a := range allocatedOf(in.node()) {
+			p, err := c.allocatedPath(in, a)
+			if err != nil {
+				return err
+			}
+			out[a.name] = p
+		}
+		return nil
+	})
+	return out, err
+}
+
 // Done implements Executor.
 func (e *Engine) Done(run RunID, name string, s Submission) (SubmitResult, error) {
 	return e.DoneEscalated(run, name, s, nil)

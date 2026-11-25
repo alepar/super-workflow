@@ -60,7 +60,7 @@ func renderView(v DefView) string {
 			line("cases "+name, strings.Join(parts, " | "))
 		}
 		if s.Route != nil {
-			line("route", strings.Join(s.Route, " | "))
+			line("route", escapeControl(strings.Join(s.Route, " | "))) // edge labels
 		}
 		if s.Kind == "gate" {
 			for _, value := range s.IntValues {
@@ -99,7 +99,8 @@ func renderView(v DefView) string {
 			if j == len(s.Edges)-1 {
 				br = "└"
 			}
-			fmt.Fprintf(&b, "%s%s── %s ──▶ %s\n", in, br, edgeText(s, e), e.To)
+			// An edge label is definition text: escaped, so it stays on its line.
+			fmt.Fprintf(&b, "%s%s── %s ──▶ %s\n", in, br, escapeControl(edgeText(s, e)), e.To)
 		}
 	}
 	for _, c := range v.Children {

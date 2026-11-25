@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"io"
 	"maps"
 	"os"
@@ -1307,7 +1308,7 @@ func (c *cycle) fixLines() (out, notes []string) {
 		}
 		retry := c.verbLine("retry")
 		if id != "" {
-			retry += " --child " + shellQuote(id)
+			retry += " --child " + sink.Quote(id)
 		}
 		out, notes = append(out, retry), append(notes, "one more attempt")
 		if edge := c.stopEdge(in); edge != "" {

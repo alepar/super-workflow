@@ -12,6 +12,7 @@ import (
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/git"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/shell"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -54,12 +55,13 @@ func criteria(items []string) []requirement {
 }
 
 // requirementTable keeps the engine-assigned inventory visible to reviewers.
+// Each cell is sink.Text, so a requirement (user goal or model plan text)
+// reads back as itself: line breaks, pipes and Markdown syntax included.
 func requirementTable(items []requirement) string {
-	escape := strings.NewReplacer("\r\n", "<br>", "\r", "<br>", "\n", "<br>", "|", "\\|")
 	var table strings.Builder
 	table.WriteString("| ID | Requirement |\n| --- | --- |\n")
 	for _, item := range items {
-		fmt.Fprintf(&table, "| %s | %s |\n", escape.Replace(item.id), escape.Replace(item.text))
+		table.WriteString(string(sink.Row(sink.Text(item.id), sink.Text(item.text))) + "\n")
 	}
 	return table.String()
 }

@@ -815,7 +815,7 @@ func TestMergeTaskRefRead(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 	bin := filepath.Join(t.TempDir(), "git")
-	script := "#!/bin/sh\ncase \"$*\" in *'--quiet task-a^{commit}'*) echo boom >&2; exit 128;; esac\nexec " + realGit + " \"$@\"\n"
+	script := "#!/bin/sh\ncase \"$*\" in *'--quiet --end-of-options task-a^{commit}'*) echo boom >&2; exit 128;; esac\nexec " + realGit + " \"$@\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

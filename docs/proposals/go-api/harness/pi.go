@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // pi is the pi coding agent (@earendil-works/pi-coding-agent). It has no
@@ -115,23 +117,23 @@ func (pi) Tiers() map[string]Tier {
 func (pi) SpawnLine(s Spawn) string {
 	var b strings.Builder
 	if s.Claim != "" {
-		b.WriteString(piChildMarker(piSessionID(s.Claim)) + " ")
+		b.WriteString(piChildMarkerWord(piSessionID(s.Claim)) + " ")
 	}
 	b.WriteString(`SUPER_PI_PARENT="$PI_SESSION_ID" nohup pi -p -ne`)
 	if s.Claim != "" {
-		b.WriteString(" --session-id " + piSessionID(s.Claim))
+		b.WriteString(" --session-id " + sink.Quote(piSessionID(s.Claim)))
 	}
 	if s.Model != "" {
-		b.WriteString(" --model " + s.Model)
+		b.WriteString(" --model " + sink.Quote(s.Model))
 	}
 	if s.Effort != "" && !(s.Effort == "off" && strings.Contains(s.Model, "glm")) {
-		b.WriteString(" --thinking " + s.Effort)
+		b.WriteString(" --thinking " + sink.Quote(s.Effort))
 	}
 	errLog := s.ErrLog
 	if errLog == "" {
 		errLog = "/dev/null"
 	}
-	b.WriteString(piHeredoc + " >/dev/null 2>" + errLog + " &\n" + s.Brief + "\n" + piBriefEnd)
+	b.WriteString(piHeredoc + " >/dev/null 2>" + sink.Quote(errLog) + " &\n" + s.Brief + "\n" + piBriefEnd)
 	return b.String()
 }
 
@@ -149,9 +151,14 @@ func (pi) SpawnSession(claim string) string { return piSessionID(claim) }
 
 // piChildMarker is the environment entry that names a child's session id
 // (the launch's first word). It is the one place the entry is spelled:
-// SpawnLine and ResumeLine write it, and the engine's liveness
+// SpawnLine and ResumeLine write it (through piChildMarkerWord, which
+// quotes only the value), and the engine's liveness
 // check looks for exactly this string among a process's environment entries.
 func piChildMarker(id string) string { return "SUPER_PI_CHILD=" + id }
+
+// piChildMarkerWord is the marker as the launch line's assignment word: the
+// value quoted, the name bare, so the shell still reads it as an assignment.
+func piChildMarkerWord(id string) string { return "SUPER_PI_CHILD=" + sink.Quote(id) }
 
 // piBriefProblem is why pi would not take brief verbatim as the here-document
 // of the launch line, or "" when it would: no line that is the delimiter
@@ -195,8 +202,10 @@ func (pi) StartLog(errLog string) string {
 // finds for the working directory) with message, in the background again.
 // Its stderr stays merged into the dropped output: a resume has no log file.
 func (pi) ResumeLine(agent, message string) string {
-	quoted := strings.ReplaceAll(message, "'", `'\''`)
-	return fmt.Sprintf(`%s SUPER_PI_PARENT="$PI_SESSION_ID" nohup pi -p -ne --session-id %s -- '%s' </dev/null >/dev/null 2>&1 &`, piChildMarker(agent), agent, quoted)
+	if agent == "" {
+		return ""
+	}
+	return fmt.Sprintf(`%s SUPER_PI_PARENT="$PI_SESSION_ID" nohup pi -p -ne --session-id %s -- %s </dev/null >/dev/null 2>&1 &`, piChildMarkerWord(agent), sink.Quote(agent), sink.Quote(message))
 }
 
 // ResumeNote: pi finds a session id only in the session folder of the

@@ -2,6 +2,7 @@ package wf
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -300,12 +301,13 @@ func writesTracker(v StateView) bool {
 	return false
 }
 
-// bdWrite matches a bd write command in a script: bd followed by a verb
-// that changes the tracker.
-var bdWrite = regexp.MustCompile(`(^|[^A-Za-z0-9_-])bd\s+(create|update|close|reopen|delete|supersede|dep\s+(add|remove|rm)|label\s+(add|remove))\b`)
-
 // shellWritesTracker reports whether a shell effect's argv writes the
-// tracker.
+// tracker: a bd write as the command (bd by any path, read through env and
+// the wrappers commandWords knows), or one in the program of a shell call
+// (shellCall, the shape manufacture also reads), at any nesting. It is lint guidance, so it reads the argv the
+// way a definition plausibly spells one, not as a shell would: a bd write
+// that is only data (a grep pattern, a quoted string, a positional
+// argument) is not a write.
 func shellWritesTracker(argv any) bool {
 	var args []string
 	switch a := argv.(type) {
@@ -317,18 +319,155 @@ func shellWritesTracker(argv any) bool {
 			args = append(args, s)
 		}
 	}
+	return argvWritesTracker(args)
+}
+
+// shellWord is an assignment (NAME=value) or a keyword that may come before
+// a command's name in a script.
+var (
+	shellAssign   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	shellKeywords = map[string]bool{"!": true, "if": true, "then": true, "else": true, "elif": true, "do": true, "while": true, "until": true, "time": true, "exec": true, "{": true}
+)
+
+// argvWritesTracker is shellWritesTracker for one command's words.
+func argvWritesTracker(args []string) bool {
+	for len(args) > 0 && (shellKeywords[args[0]] || shellAssign.MatchString(args[0])) {
+		args = args[1:]
+	}
+	args, _ = commandWords(args)
 	if len(args) == 0 {
 		return false
 	}
-	if args[0] == "bd" {
-		return bdWrite.MatchString(strings.Join(args, " "))
+	if path.Base(args[0]) == "bd" {
+		return bdWrites(args[1:])
 	}
-	for i, a := range args {
-		if a == "-c" && i+1 < len(args) && bdWrite.MatchString(args[i+1]) {
-			return true
+	if prog, ok := shellProgram(args); ok {
+		for _, cmd := range scriptCommands(prog) {
+			if argvWritesTracker(cmd) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// bdValueFlags are bd's global flags that take a value as the word after
+// them (bd --help); the value is not the verb.
+var bdValueFlags = map[string]bool{"--actor": true, "--database": true, "--db": true, "-C": true, "--directory": true, "--dolt-auto-commit": true, "--mem-profile": true}
+
+// bdWrites reports whether bd's arguments (after the command name) are a
+// verb that changes the tracker, after the global flags and their values.
+func bdWrites(args []string) bool {
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		f := args[0]
+		args = args[1:]
+		if f == "--" {
+			break
+		}
+		// A value flag takes the next word, also at the end of a cluster of
+		// short flags (-qC dir); --db=x and -Cdir carry their own.
+		if (bdValueFlags[f] || !strings.HasPrefix(f, "--") && strings.HasSuffix(f, "C")) && len(args) > 0 {
+			args = args[1:]
+		}
+	}
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "create", "update", "close", "reopen", "delete", "supersede":
+		return true
+	case "dep":
+		return len(args) > 1 && (args[1] == "add" || args[1] == "remove" || args[1] == "rm")
+	case "label":
+		return len(args) > 1 && (args[1] == "add" || args[1] == "remove")
+	}
+	return false
+}
+
+// scriptCommands splits a shell program into its simple commands' words,
+// with quotes removed: commands end at ; & | ( ) ` and line breaks, a #
+// that starts a word comments out the rest of its line, and a $(..) or
+// `..` inside double quotes is read as commands of its own. It is a lint's
+// reading, not a shell parser: no expansion, no here-documents.
+func scriptCommands(script string) [][]string {
+	var cmds, inner [][]string
+	var words []string
+	var w strings.Builder
+	inWord := false
+	endWord := func() {
+		if inWord {
+			words = append(words, w.String())
+			w.Reset()
+			inWord = false
+		}
+	}
+	endCmd := func() {
+		endWord()
+		if len(words) > 0 {
+			cmds = append(cmds, words)
+			words = nil
+		}
+	}
+	for i := 0; i < len(script); i++ {
+		c := script[i]
+		switch {
+		case c == '\'':
+			j := strings.IndexByte(script[i+1:], '\'')
+			if j < 0 {
+				j = len(script) - i - 1
+			}
+			w.WriteString(script[i+1 : i+1+j])
+			inWord = true
+			i += j + 1
+		case c == '"':
+			inWord = true
+			for i++; i < len(script) && script[i] != '"'; i++ {
+				switch {
+				case script[i] == '\\' && i+1 < len(script):
+					i++
+				case strings.HasPrefix(script[i:], "$(") || script[i] == '`':
+					// A command substitution runs as code even in quotes.
+					open, depth, j := script[i], 0, i
+					for ; j < len(script) && script[j] != '"'; j++ {
+						if open == '`' && j > i && script[j] == '`' {
+							break
+						}
+						if open != '`' && script[j] == '(' {
+							depth++
+						}
+						if open != '`' && script[j] == ')' {
+							if depth--; depth == 0 {
+								break
+							}
+						}
+					}
+					inner = append(inner, scriptCommands(script[i+1:min(j, len(script))])...)
+				}
+				if i < len(script) {
+					w.WriteByte(script[i])
+				}
+			}
+		case c == '\\' && i+1 < len(script):
+			i++
+			if script[i] != '\n' {
+				w.WriteByte(script[i])
+				inWord = true
+			}
+		case c == ' ' || c == '\t':
+			endWord()
+		case strings.IndexByte(";&|\n()`", c) >= 0:
+			endCmd()
+		case c == '#' && !inWord:
+			for i+1 < len(script) && script[i+1] != '\n' {
+				i++
+			}
+		default:
+			w.WriteByte(c)
+			inWord = true
+		}
+	}
+	endCmd()
+	return append(cmds, inner...)
 }
 
 // sccs is the strongly connected components of the definition's own graph

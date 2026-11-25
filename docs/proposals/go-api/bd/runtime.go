@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -78,6 +81,13 @@ func (runtime) Ops() []string {
 
 // run invokes bd in workspace and returns its stdout.
 func (r runtime) run(workspace string, args ...string) ([]byte, error) {
+	// No process can receive a NUL byte; a value holding one (free text, an
+	// id) is refused here, before any call, with the argument named.
+	for _, a := range args {
+		if err := sink.CheckArg(a); err != nil {
+			return nil, fmt.Errorf("bd %s: argument %q: %w", args[0], a, err)
+		}
+	}
 	// bd's first call under a fresh HOME prints a metrics notice that would
 	// prefix every error the adapter quotes; metrics are off for the adapter.
 	tool := wf.Tool{Bin: r.bin, Dir: workspace, Timeout: r.timeout, Env: []string{"BD_DISABLE_METRICS=1"}}
@@ -128,8 +138,8 @@ func transient(diag string) bool {
 // "timed out" that is not found is a permanent failure). With --json bd
 // reports it as the "error" field of a JSON object on stdout; otherwise it is
 // stderr less its Hint: lines. Every argument of the call is cut out of it
-// where it stands as a whole token, so a short argument ("a") never erases
-// part of a word.
+// where it stands as a whole token (cutToken), so a short argument ("a")
+// never erases part of a word.
 func diagnostic(stdout, stderr string, args []string) string {
 	var out struct{ Error string }
 	diag := ""
@@ -145,12 +155,43 @@ func diagnostic(stdout, stderr string, args []string) string {
 		diag = strings.Join(lines, "\n")
 	}
 	for _, a := range args {
-		if a != "" {
-			token := regexp.MustCompile(`(^|[^A-Za-z0-9_.:-])` + regexp.QuoteMeta(a) + `($|[^A-Za-z0-9_.:-])`)
-			diag = token.ReplaceAllString(diag, "$1$2")
-		}
+		diag = cutToken(diag, a)
 	}
 	return diag
+}
+
+// cutToken removes each occurrence of tok in s that stands as a whole token:
+// the byte before and the byte after it in s, where there is one, are not
+// word bytes. Both are judged in s itself, never in a remainder, so a match
+// that is not whole cannot make the next one look as if it stood at a
+// boundary. It works on bytes, not a pattern built from tok, so an argument
+// of any content (invalid UTF-8 included) cannot make it fail.
+func cutToken(s, tok string) string {
+	if tok == "" {
+		return s
+	}
+	var b strings.Builder
+	last := 0 // s[:last] is written or cut
+	for from := 0; ; {
+		j := strings.Index(s[from:], tok)
+		if j < 0 {
+			b.WriteString(s[last:])
+			return b.String()
+		}
+		i, end := from+j, from+j+len(tok)
+		if (i == 0 || !wordByte(s[i-1])) && (end == len(s) || !wordByte(s[end])) {
+			b.WriteString(s[last:i])
+			last, from = end, end
+		} else {
+			from = i + 1
+		}
+	}
+}
+
+// wordByte reports a byte that continues a token: the ones an id, a label or
+// a key is made of.
+func wordByte(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("_.:-", c) >= 0
 }
 
 // rawIssue is bd's lower-snake JSON shape for a bead.
@@ -184,7 +225,7 @@ func beads(out []byte) ([]rawIssue, error) {
 }
 
 func (r runtime) show(workspace, id string) (rawIssue, error) {
-	out, err := r.run(workspace, "show", id, "--json")
+	out, err := r.run(workspace, "show", "--json", "--", id)
 	if err != nil {
 		return rawIssue{}, err
 	}
@@ -206,16 +247,33 @@ func issues(v []rawIssue) []Issue {
 	return out
 }
 
+// jsonText is s as the journal delivers it: invalid UTF-8 (which bd's store
+// refuses) is what a JSON round trip makes of it, so a first apply and a
+// replay send bd the same text. issueArg does the same for an Issue.
+func jsonText(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	b, _ := json.Marshal(s)
+	var out string
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+// argStr is arg k as text (jsonText).
 func argStr(args map[string]any, k string) string {
 	switch v := args[k].(type) {
 	case nil:
 		return ""
 	case string:
-		return v
+		return jsonText(v)
 	default:
 		return fmt.Sprint(v)
 	}
 }
+
+// keyID is the effect's key as text (jsonText).
+func keyID(e wf.ExternalEffect) string { return jsonText(e.KeyID()) }
 
 // issueArg reads the "issue" arg, which is an Issue in process and a decoded
 // map after a journal round trip.
@@ -231,25 +289,138 @@ func issueArg(args map[string]any) (Issue, error) {
 	return is, nil
 }
 
-// keyLabel is the label a created bead is stamped with. bd parses --label and
-// --labels as CSV, so every CSV-special character in the key (it can hold a
-// title) is percent-encoded: a comma, a double quote, CR and LF
-// (labelEscaper; a key with none of them is stamped as it always was). bd
-// caps a label at 255 characters, so a key whose escaped label would pass
-// maxKeyLabel is replaced by the SHA-256 of the key; Apply and Check share
-// this derivation.
-func keyLabel(e wf.ExternalEffect) string {
-	l := "key:" + labelEscaper.Replace(e.KeyID())
+// keyLabel is the label a created bead is stamped with: "key:" and the key
+// (it can hold a title) as a sink.Label, which encodes what bd's CSV label
+// parsing would split, unquote or trim. bd caps a label at 255 characters,
+// so a key whose encoded label would pass maxKeyLabel is replaced by the
+// SHA-256 of the key; Apply and Check share this derivation. A key holding
+// a NUL byte is refused.
+func keyLabel(e wf.ExternalEffect) (sink.Label, error) {
+	l, err := sink.NewLabel("key:" + keyID(e))
+	if err != nil {
+		return sink.Label{}, fmt.Errorf("bd: key label for %q: %w", keyID(e), err)
+	}
+	if len(l.String()) > maxKeyLabel {
+		return sink.MustLabel(hashedKeyLabel(e)), nil
+	}
+	return l, nil
+}
+
+// hashedKeyLabel is the bounded key label: hex holds nothing a label encodes.
+// It hashes keyID(e), the key as valid UTF-8 (invalid bytes as U+FFFD, the
+// form a journal round trip gives), so a first apply and a replay agree.
+func hashedKeyLabel(e wf.ExternalEffect) string {
+	sum := sha256.Sum256([]byte(keyID(e)))
+	return "key:sha256-" + hex.EncodeToString(sum[:])
+}
+
+// legacyKeyLabel is the key label before sink.Label: only a comma, a double
+// quote, CR and LF were encoded, so a key holding % or ending in whitespace
+// was stamped differently. Check also looks a bead up by it where that is
+// unambiguous (legacyKeyLookup), so such a create made before the change is
+// found and not filed twice.
+func legacyKeyLabel(e wf.ExternalEffect) string {
+	l := "key:" + legacyLabelEscaper.Replace(keyID(e))
 	if len(l) > maxKeyLabel {
-		sum := sha256.Sum256([]byte(e.KeyID()))
-		return "key:sha256-" + hex.EncodeToString(sum[:])
+		return hashedKeyLabel(e)
 	}
 	return l
 }
 
-// labelEscaper percent-encodes the characters bd's CSV label parsing gives a
-// meaning to.
-var labelEscaper = strings.NewReplacer(",", "%2C", `"`, "%22", "\r", "%0D", "\n", "%0A")
+var legacyLabelEscaper = strings.NewReplacer(",", "%2C", `"`, "%22", "\r", "%0D", "\n", "%0A")
+
+// legacyKeyLookup is the legacy label Check also looks a create up by, and
+// false when there is none to consult: the legacy label is the current
+// label, or a bead carrying it may be another key's. That is so in three
+// cases:
+//   - bd trimmed it: key "x\t" was stamped key:x, the stamp of key "x";
+//   - it holds a sequence the old escaper wrote (%2C %22 %0D %0A), so two
+//     old keys share it: "a,%" and "a%2C%" were both stamped key:a%2C%;
+//   - it is the current label of another key: key "a%2cb"'s legacy label
+//     key:a%2cb is not, but key "100%25"'s legacy label key:100%25 is the
+//     current label of key "100%".
+//
+// A legacy label with a stray % (key:100% done) is none of these: a
+// current label never holds one, and the old escaper wrote none, so it is
+// consulted. A match in an ambiguous case could make Check skip a create
+// that never happened; not looking costs at most a duplicate bead for such
+// a create in flight across the change.
+func legacyKeyLookup(e wf.ExternalEffect, current string) (string, bool) {
+	l := legacyKeyLabel(e)
+	if l == current || strings.TrimRightFunc(l, unicode.IsSpace) != l {
+		return "", false
+	}
+	for _, seq := range []string{"%2C", "%22", "%0D", "%0A"} {
+		if strings.Contains(l, seq) {
+			return "", false
+		}
+	}
+	if d, err := url.PathUnescape(l); err == nil && d != "key:"+keyID(e) {
+		if other, err := sink.NewLabel(d); err == nil && other.String() == l {
+			return "", false
+		}
+	}
+	return l, true
+}
+
+// label is v as one bd label, refused when empty or holding a NUL byte.
+func label(v string) (string, error) {
+	l, err := sink.NewLabel(v)
+	if err != nil {
+		return "", fmt.Errorf("bd: label %q: %w", v, err)
+	}
+	return l.String(), nil
+}
+
+// labelList is the labels in v as one bd label-list value, each encoded by
+// sink.NewLabel. v is the exclude_labels arg: a list, or (as ReadyIn records
+// labels holding no comma, and the deprecated Ready its fixed exclusion) one
+// comma-separated string.
+func labelList(v any) (string, error) {
+	var vals []string
+	switch x := v.(type) {
+	case string:
+		vals = strings.Split(x, ",")
+	case []string:
+		vals = x
+	case []any:
+		for _, e := range x {
+			s, ok := e.(string)
+			if !ok {
+				return "", fmt.Errorf("bd: label %v is not a string", e)
+			}
+			vals = append(vals, s)
+		}
+	default:
+		return "", fmt.Errorf("bd: labels %v are not a list", v)
+	}
+	ls := make([]sink.Label, 0, len(vals))
+	for _, s := range vals {
+		s = jsonText(s)
+		l, err := sink.NewLabel(s)
+		if err != nil {
+			return "", fmt.Errorf("bd: label %q: %w", s, err)
+		}
+		ls = append(ls, l)
+	}
+	return sink.Labels(ls...), nil
+}
+
+// metadataValue is v as bd update --set-metadata k=v stored it (bd 1.3.1),
+// the path set_metadata replaced, so a reader sees the same types: the
+// exact words true, false and null, and a JSON number (JSON whitespace
+// around it allowed), are stored typed; anything else is the string v.
+func metadataValue(v string) any {
+	switch v {
+	case "true", "false", "null":
+		return json.RawMessage(v)
+	}
+	var f float64
+	if t := strings.Trim(v, " \t\r\n"); t != "null" && json.Unmarshal([]byte(v), &f) == nil {
+		return json.RawMessage(t)
+	}
+	return v
+}
 
 // maxKeyLabel stays under bd's 255-character label limit.
 const maxKeyLabel = 200
@@ -270,7 +441,7 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 			}
 			return r.ready(workspace, label, legacyReadyExclude)
 		}
-		return r.ready(workspace, argStr(d.Args, "label"), argStr(d.Args, "exclude_labels"))
+		return r.ready(workspace, argStr(d.Args, "label"), d.Args["exclude_labels"])
 	case "show":
 		b, err := r.show(workspace, argStr(d.Args, "id"))
 		if err != nil {
@@ -278,7 +449,11 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 		}
 		return json.Marshal(b.issue())
 	case "list":
-		out, err := r.run(workspace, "list", "--label", argStr(d.Args, "label"), "--all", "--limit", "0", "--json")
+		l, err := label(argStr(d.Args, "label"))
+		if err != nil {
+			return nil, err
+		}
+		out, err := r.run(workspace, "list", "--label", l, "--all", "--limit", "0", "--json")
 		if err != nil {
 			return nil, err
 		}
@@ -298,19 +473,28 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 	return nil, fmt.Errorf("bd: unknown read op %q", d.Op)
 }
 
-// ready returns the claimable work carrying label (all of it when empty) and
-// none of the comma-separated exclude labels, widening the limit while the
-// result fills it.
-func (r runtime) ready(workspace, label, exclude string) (json.RawMessage, error) {
+// ready returns the claimable work carrying scope (all of it when empty) and
+// none of the exclude labels (labelList; none when nil), widening the limit
+// while the result fills it. Each label is encoded as it was when stamped.
+func (r runtime) ready(workspace, scope string, exclude any) (json.RawMessage, error) {
+	var base []string
+	if exclude != nil {
+		ex, err := labelList(exclude)
+		if err != nil {
+			return nil, err
+		}
+		base = append(base, "--exclude-label", ex)
+	}
+	if scope != "" {
+		l, err := label(scope)
+		if err != nil {
+			return nil, err
+		}
+		base = append(base, "--label", l)
+	}
 	limit := readyLimit
 	for attempt := 0; ; attempt++ {
-		args := []string{"ready", "--exclude-type=epic,gate"}
-		if exclude != "" {
-			args = append(args, "--exclude-label", exclude)
-		}
-		if label != "" {
-			args = append(args, "--label", label)
-		}
+		args := append([]string{"ready", "--exclude-type=epic,gate"}, base...)
 		out, err := r.run(workspace, append(args, "--limit", fmt.Sprint(limit), "--json")...)
 		if err != nil {
 			return nil, err
@@ -362,20 +546,22 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 	case "set_metadata":
 		id := argStr(e.Args, "id")
 		fields, _ := e.Args["fields"].(map[string]any)
-		keys := make([]string, 0, len(fields))
-		for k := range fields {
+		md := make(map[string]any, len(fields))
+		for k, v := range fields {
 			if !metadataKey.MatchString(k) {
 				return nil, fmt.Errorf("bd set_metadata: key %q is not a plain word", k)
 			}
-			keys = append(keys, k)
+			s, _ := v.(string)
+			md[k] = metadataValue(s)
 		}
-		sort.Strings(keys)
-		argv := []string{"update", id}
-		for _, k := range keys {
-			v, _ := fields[k].(string)
-			argv = append(argv, "--set-metadata", k+"="+v)
+		// --metadata merges a JSON object (keys sorted by encoding/json) into
+		// the bead's metadata and keeps each string exactly; --set-metadata
+		// k=v rewrites a CRLF in the value as LF.
+		obj, err := json.Marshal(md)
+		if err != nil {
+			return nil, err
 		}
-		if _, err := r.run(workspace, append(argv, "--json")...); err != nil {
+		if _, err := r.run(workspace, "update", "--metadata", string(obj), "--json", "--", id); err != nil {
 			return nil, err
 		}
 		b, err := r.show(workspace, id)
@@ -390,7 +576,7 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 			return nil, err
 		}
 		if b.Status != status {
-			if _, err := r.run(workspace, "update", id, "--status", status, "--json"); err != nil {
+			if _, err := r.run(workspace, "update", "--status", status, "--json", "--", id); err != nil {
 				return nil, err
 			}
 			b.Status = status
@@ -403,7 +589,7 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 			return nil, err
 		}
 		if b.Status != string(Closed) {
-			if _, err := r.run(workspace, "close", id, "--reason", argStr(e.Args, "reason"), "--json"); err != nil {
+			if _, err := r.run(workspace, "close", "--reason", argStr(e.Args, "reason"), "--json", "--", id); err != nil {
 				return nil, err
 			}
 			b.Status = string(Closed)
@@ -428,11 +614,11 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 				if d.Type != "blocks" {
 					return nil, fmt.Errorf("bd supersede: %s already depends on %s with type %q; superseding would replace that link, so it is refused", argStr(e.Args, "old"), d.ID, d.Type)
 				}
-				if _, err := r.run(workspace, "dep", "remove", argStr(e.Args, "old"), argStr(e.Args, "new")); err != nil {
+				if _, err := r.run(workspace, "dep", "remove", "--", argStr(e.Args, "old"), argStr(e.Args, "new")); err != nil {
 					return nil, err
 				}
 			}
-			if _, err := r.run(workspace, "supersede", argStr(e.Args, "old"), "--with", argStr(e.Args, "new")); err != nil {
+			if _, err := r.run(workspace, "supersede", "--with", argStr(e.Args, "new"), "--", argStr(e.Args, "old")); err != nil {
 				return nil, err
 			}
 			b, done, err = r.supersedeState(workspace, e)
@@ -451,9 +637,11 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 	return nil, fmt.Errorf("bd: unknown effect op %q", e.Op)
 }
 
-// create files the bead with the I3 triple and the key label.
+// create files the bead with the I3 triple and the key label. The title goes
+// as --title=: bd refuses a positional title that starts with '-', even
+// after "--".
 func (r runtime) create(workspace string, e wf.ExternalEffect, is Issue) (json.RawMessage, error) {
-	args := []string{"create", is.Title, "--json"}
+	args := []string{"create", "--title=" + is.Title, "--json"}
 	if is.Type != "" {
 		args = append(args, "--type", is.Type)
 	}
@@ -463,15 +651,27 @@ func (r runtime) create(workspace string, e wf.ExternalEffect, is Issue) (json.R
 	if is.Priority > 0 {
 		args = append(args, "--priority", fmt.Sprint(is.Priority))
 	}
-	labels := append([]string(nil), is.Labels...)
+	vals := append([]string(nil), is.Labels...)
 	if is.RootLabel != "" {
-		labels = append(labels, is.RootLabel)
+		vals = append(vals, is.RootLabel)
+	}
+	labels := make([]sink.Label, 0, len(vals)+1)
+	for _, v := range vals {
+		l, err := sink.NewLabel(v)
+		if err != nil {
+			return nil, fmt.Errorf("bd create: label %q: %w", v, err)
+		}
+		labels = append(labels, l)
 	}
 	if e.KeyID() != "" {
-		labels = append(labels, keyLabel(e))
+		k, err := keyLabel(e)
+		if err != nil {
+			return nil, err
+		}
+		labels = append(labels, k)
 	}
 	if len(labels) > 0 {
-		args = append(args, "--labels", strings.Join(labels, ","))
+		args = append(args, "--labels", sink.Labels(labels...))
 	}
 	if is.Parent != "" {
 		args = append(args, "--parent", is.Parent)
@@ -502,16 +702,16 @@ func (r runtime) depAdd(workspace string, e wf.ExternalEffect) (json.RawMessage,
 		return nil, err
 	}
 	if !blocks(b, blocker) {
-		if _, err := r.run(workspace, "dep", "add", dependent, blocker); err != nil {
+		if _, err := r.run(workspace, "dep", "add", "--", dependent, blocker); err != nil {
 			return nil, err
 		}
 	}
-	if reason != "" && !hasLine(b.Description, reason) {
+	if reason != "" && !hasReason(b.Description, reason) {
 		desc := reason
 		if b.Description != "" {
 			desc = strings.TrimRight(b.Description, "\n") + "\n" + reason
 		}
-		if _, err := r.run(workspace, "update", dependent, "--description", desc, "--json"); err != nil {
+		if _, err := r.run(workspace, "update", "--description", desc, "--json", "--", dependent); err != nil {
 			return nil, err
 		}
 	}
@@ -531,9 +731,22 @@ func blocks(b rawIssue, blocker string) bool {
 	return false
 }
 
-func hasLine(text, line string) bool {
-	for _, l := range strings.Split(text, "\n") {
-		if strings.TrimSpace(l) == strings.TrimSpace(line) {
+// hasReason reports whether text holds reason as whole lines: the reason's
+// lines, consecutive and each compared without its surrounding space. A
+// multi-line reason is compared as one block, so a replay that finds it
+// already recorded does not append it again.
+func hasReason(text, reason string) bool {
+	want := strings.Split(strings.TrimSpace(reason), "\n")
+	have := strings.Split(text, "\n")
+	for i := 0; i+len(want) <= len(have); i++ {
+		match := true
+		for j, w := range want {
+			if strings.TrimSpace(have[i+j]) != strings.TrimSpace(w) {
+				match = false
+				break
+			}
+		}
+		if match {
 			return true
 		}
 	}
@@ -571,17 +784,27 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 		if err != nil {
 			return wf.EffectUnknown, err
 		}
-		out, err := r.run(workspace, "list", "--label", keyLabel(e), "--all", "--limit", "0", "--json")
+		l, err := keyLabel(e)
 		if err != nil {
 			return wf.EffectUnknown, err
 		}
-		v, err := beads(out)
-		if err != nil {
-			return wf.EffectUnknown, err
+		labels := []string{l.String()}
+		if legacy, ok := legacyKeyLookup(e, l.String()); ok {
+			labels = append(labels, legacy)
 		}
-		for _, x := range v {
-			if x.Title == is.Title && (is.Parent == "" || x.Parent == is.Parent) {
-				return wf.EffectDone, nil
+		for _, l := range labels {
+			out, err := r.run(workspace, "list", "--label", l, "--all", "--limit", "0", "--json")
+			if err != nil {
+				return wf.EffectUnknown, err
+			}
+			v, err := beads(out)
+			if err != nil {
+				return wf.EffectUnknown, err
+			}
+			for _, x := range v {
+				if x.Title == is.Title && (is.Parent == "" || x.Parent == is.Parent) {
+					return wf.EffectDone, nil
+				}
 			}
 		}
 		return wf.EffectNotDone, nil
@@ -606,7 +829,7 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 		// An edge without its reason line is not done: recovery re-applies
 		// the idempotent depAdd.
 		reason := argStr(e.Args, "reason")
-		return yes(blocks(b, argStr(e.Args, "blocker")) && (reason == "" || hasLine(b.Description, reason))), nil
+		return yes(blocks(b, argStr(e.Args, "blocker")) && (reason == "" || hasReason(b.Description, reason))), nil
 	}
 	return wf.EffectUnknown, fmt.Errorf("bd: unknown effect op %q", e.Op)
 }
@@ -616,7 +839,7 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 // dependent (one superseded earlier, often onto the same replacement) carries
 // no work: it is neither moved nor waited for.
 func (r runtime) blockingDependents(workspace, id, except string) ([]string, error) {
-	out, err := r.run(workspace, "dep", "list", id, "--direction=up", "-t", "blocks", "--json")
+	out, err := r.run(workspace, "dep", "list", "--direction=up", "-t", "blocks", "--json", "--", id)
 	if err != nil {
 		return nil, err
 	}
@@ -650,10 +873,10 @@ func (r runtime) repointDependents(workspace, oldID, newID string) error {
 		// already waits on d) or when d is the replacement's parent. Then d
 		// cannot wait on the replacement at all; it still leaves the closed
 		// bead, which no longer stands for any work.
-		if _, err := r.run(workspace, "dep", "add", d, newID); err != nil && !edgeRefused(err) {
+		if _, err := r.run(workspace, "dep", "add", "--", d, newID); err != nil && !edgeRefused(err) {
 			return err
 		}
-		if _, err := r.run(workspace, "dep", "remove", d, oldID); err != nil {
+		if _, err := r.run(workspace, "dep", "remove", "--", d, oldID); err != nil {
 			return err
 		}
 	}

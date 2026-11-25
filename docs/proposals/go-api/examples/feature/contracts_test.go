@@ -24,7 +24,7 @@ func TestRowsReportIDProblemsWithInventory(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid IDs accepted")
 			}
-			for _, part := range append(tc.problems, "g1", "Export Add", "g2", "  Return the sum") {
+			for _, part := range append(tc.problems, "g1", "Export Add", "g2", "&#32;&#32;Return the sum") {
 				if !strings.Contains(err.Error(), part) {
 					t.Errorf("diagnostic %q missing %q", err, part)
 				}
@@ -69,7 +69,7 @@ func TestGoalLineEndingNormalization(t *testing.T) {
 
 func TestRequirementTableEscapesCellBoundaries(t *testing.T) {
 	got := requirementTable([]requirement{{"g1", "Choose A | B"}, {"g2", "First\r\nsecond\nthird\rfourth"}})
-	for _, part := range []string{"| ID | Requirement |", "| g1 | Choose A \\| B |", "| g2 | First<br>second<br>third<br>fourth |"} {
+	for _, part := range []string{"| ID | Requirement |", "| g1 | Choose A \\| B |", "| g2 | First&#13;&#10;second&#10;third&#13;fourth |"} {
 		if !strings.Contains(got, part) {
 			t.Errorf("table %q missing %q", got, part)
 		}

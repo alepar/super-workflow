@@ -11,7 +11,7 @@ import (
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
-// shellWords splits a line the engine printed with shellQuote: words
+// shellWords splits a line the engine printed with sink.Quote: words
 // separated by spaces, each bare or single-quoted ('\” inside quotes).
 func shellWords(t *testing.T, line string) []string {
 	t.Helper()

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // A sandboxed run (a fork: EffectContext.Sandboxed) puts a run-owned bd
@@ -88,7 +90,7 @@ for v in $(env | grep -E '^(BEADS|BD|DOLT)_[A-Za-z0-9_]*=' | cut -d= -f1); do
 done
 # Metrics off: bd's first-run notice would prefix the errors callers quote.
 export BD_DISABLE_METRICS=1
-exec ` + shellQuote(real) + ` --sandbox "$@"
+exec ` + sink.Quote(real) + ` --sandbox "$@"
 `
 }
 

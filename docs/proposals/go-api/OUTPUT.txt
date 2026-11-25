@@ -1333,8 +1333,12 @@ ok  	github.com/alepar/super-workflow/docs/proposals/go-api/fsx
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/gh
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/git
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/harness
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/harness/agytest
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/internal/harnessfixture	[no test files]
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/shell
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/sink
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/tools/reanchor
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/wf
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/wftest
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/wftest/hostile	[no test files]
 

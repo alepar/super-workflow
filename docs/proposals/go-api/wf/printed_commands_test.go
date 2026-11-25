@@ -107,7 +107,7 @@ func (r *cmdRecorder) check(t *testing.T, where, text string, exempt ...string) 
 	return seen
 }
 
-// quoteLike is how the engine quotes the run root (shellQuote).
+// quoteLike is how the engine quotes the run root (sink.Quote).
 func quoteLike(s string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(wf.WorkspaceCommand(s, "x"), "cd "), " && x")
 }

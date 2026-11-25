@@ -3,9 +3,11 @@ package gh
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
@@ -64,8 +66,11 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 	repo := str(d.Args, "repo")
 	switch d.Op {
 	case "plugin_json":
-		out, err := r.run(workspace, "api", "repos/"+repo+"/contents/.claude-plugin/plugin.json?ref="+str(d.Args, "ref"),
-			"-H", "Accept: application/vnd.github.raw")
+		ep, err := pluginEndpoint(repo, str(d.Args, "ref"))
+		if err != nil {
+			return nil, err
+		}
+		out, err := r.run(workspace, "api", ep, "-H", "Accept: application/vnd.github.raw")
 		if err != nil {
 			return nil, err
 		}
@@ -89,9 +94,56 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 	return nil, fmt.Errorf("gh: unknown observation %q", d.Op)
 }
 
+// pluginEndpoint is the API path of repo's plugin.json at ref. The repo must
+// be exactly owner/name, so it fills the two path segments it names and no
+// other (a "..", a "?" or a "#" in it would reach another endpoint); the ref
+// is query-escaped, so it is the whole value of the ref parameter.
+func pluginEndpoint(repo, ref string) (string, error) {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || !repoComponent(owner) || !repoComponent(name) {
+		return "", fmt.Errorf("gh plugin_json: repo %q is not owner/name", repo)
+	}
+	return "repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) +
+		"/contents/.claude-plugin/plugin.json?ref=" + url.QueryEscape(ref), nil
+}
+
+// repoComponent reports whether s can be a GitHub owner or repository name:
+// letters, digits, '-', '_' and '.', and not a dot segment.
+func repoComponent(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	return strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
+	}) < 0
+}
+
 // marker is the body text that lets Check find an issue created for a key.
 func marker(e wf.ExternalEffect) string {
-	return "<!-- effect-key: " + e.KeyID() + " -->"
+	return "<!-- effect-key: " + markerKey(e.KeyID()) + " -->"
+}
+
+// markerKey is key as it is written in the marker. The marker must stay one
+// HTML comment ('>' could close it) and one quoted search phrase ('"' or '\'
+// would break the phrase, so Check would miss the issue and create a
+// duplicate), and GitHub must store it byte for byte (it rewrites control
+// characters and invalid UTF-8). Each such byte is percent-encoded, '%' too so
+// the form decodes back to the key. Only those bytes change: a key without
+// them keeps the marker issues were created with before the encoding.
+func markerKey(key string) string {
+	var b strings.Builder
+	for i := 0; i < len(key); {
+		r, size := utf8.DecodeRuneInString(key[i:])
+		if r == utf8.RuneError && size == 1 || r < 0x20 || r == 0x7f || strings.ContainsRune(`%"\<>`, r) {
+			for _, c := range []byte(key[i : i+size]) {
+				fmt.Fprintf(&b, "%%%02X", c)
+			}
+		} else {
+			b.WriteString(key[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
 }
 
 func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, error) {

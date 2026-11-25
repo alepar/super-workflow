@@ -3,6 +3,8 @@ package wf
 import (
 	"fmt"
 	"strings"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // wfLine is the command line of one `wf` verb of a single-registration binary:
@@ -12,18 +14,18 @@ import (
 // act on another run (item 70). It comes last so the verb's own arguments keep
 // their places.
 func wfLine(bin, stateDir string, run RunID, verb string, args ...string) string {
-	parts := []string{shellQuote(bin), "wf", verb}
+	parts := []string{sink.Quote(bin), "wf", verb}
 	// Keep prompt claims inside harness kickoff previews, before long paths.
 	if verb == "prompt" && len(args) >= 2 && args[0] == "--claim" {
 		parts = append(parts, "--claim", lineArg(args[1]))
 		args = args[2:]
 	}
-	parts = append(parts, "--state-dir", shellQuote(stateDir))
+	parts = append(parts, "--state-dir", sink.Quote(stateDir))
 	for _, a := range args {
 		parts = append(parts, lineArg(a))
 	}
 	if run != "" {
-		parts = append(parts, "--run-id", shellQuote(string(run)))
+		parts = append(parts, "--run-id", sink.Quote(string(run)))
 	}
 	return strings.Join(parts, " ")
 }

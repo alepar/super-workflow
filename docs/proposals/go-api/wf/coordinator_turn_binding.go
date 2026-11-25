@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 const turnBindingDir = "super-workflow/coordinator-stop"
@@ -295,7 +297,7 @@ func (c *cli) nativeTurnResult(hook, workspace string, input io.Reader) (continu
 		decision.command(e.opts.caller.Executable, binding.StateRoot, binding.Run, binding.Assets, c.cfg.named())
 		parts := make([]string, len(decision.Argv))
 		for i, arg := range decision.Argv {
-			parts[i] = shellQuote(arg)
+			parts[i] = sink.Quote(arg)
 		}
 		return toolWorkdirAdvice(decision.WorkingDir) + "Continue the workflow with:\n" +
 			workspaceCommand(hook, decision.WorkingDir, strings.Join(parts, " ")), ""

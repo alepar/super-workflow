@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -144,41 +145,209 @@ func (s *ManufactureScript) staticCommands() error {
 }
 
 // staticCommand refuses a template where an expanded value would be
-// parsed as code, or could change what is: the executable, and any shell
-// (sh, bash, zsh, dash) call but one exact shape. A shell call with a
-// template must be [shell, one option cluster such as -c, -ec or -eu (only
-// the letters c, e, u, x and v, so no option takes a value), the literal
-// program text, positional data...]: a value goes in as positional data
-// (sh -c '... "$1"' x {{item.id}}), which the shell never parses.
+// parsed as code, or could change what is: the executable, a prefix
+// command's words (env, its options and assignments, and the wrappers
+// commandWords reads through: a value there can set PATH, or name the
+// command), and any shell (sh, bash, zsh, dash) call but one shape,
+// shellCall's, with every template after the program: [shell, options with
+// -c, the literal program text, positional data...]. A value goes in as
+// positional data (sh -c '... "$1"' x {{item.id}}), which the shell never
+// parses.
 func staticCommand(argv []string) error {
-	if len(argv) == 0 {
+	words, prefix := commandWords(argv)
+	if slices.ContainsFunc(prefix, templateVar.MatchString) {
+		return fmt.Errorf("a template in a command prefix (%s and its options); pass values as positional arguments", filepath.Base(prefix[0]))
+	}
+	if len(words) == 0 {
 		return nil
 	}
-	if templateVar.MatchString(argv[0]) {
+	if templateVar.MatchString(words[0]) {
 		return fmt.Errorf("a template in the executable; pass values as positional arguments")
 	}
-	shell := filepath.Base(argv[0])
-	switch shell {
-	case "sh", "bash", "zsh", "dash":
-	default:
+	shell := filepath.Base(words[0])
+	if !shellNames[shell] || !slices.ContainsFunc(words[1:], templateVar.MatchString) {
 		return nil
 	}
-	templated := false
-	for _, a := range argv[1:] {
-		templated = templated || templateVar.MatchString(a)
-	}
-	if !templated {
+	if prog, ok := shellCall(words); ok && !slices.ContainsFunc(words[1:prog+1], templateVar.MatchString) {
 		return nil
 	}
-	if len(argv) >= 3 && shellCluster.MatchString(argv[1]) && !templateVar.MatchString(argv[2]) {
-		return nil
-	}
-	return fmt.Errorf("a template in a %s call of another shape; use [%s, -c (or -ec, -eu), literal program, positional values...]: pass values as positional arguments, read as \"$1\"", shell, shell)
+	return fmt.Errorf("a template in a %s call of another shape; use [%s, -c (or -ec, -euo pipefail -c), literal program, positional values...]: pass values as positional arguments, read as \"$1\"", shell, shell)
 }
 
-// shellCluster is the one option cluster a templated shell call may carry:
-// it holds c and no letter that takes a value.
-var shellCluster = regexp.MustCompile(`^-[euxv]*c[euxv]*$`)
+// shellNames are the shells whose -c program is read as code.
+var shellNames = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true}
+
+// shellLongValued are the long options of those shells that take the next
+// word as their value.
+var shellLongValued = map[string]bool{"--rcfile": true, "--init-file": true}
+
+// prefixCommand is how commandWords reads a command that runs the command
+// after its own options and operands.
+type prefixCommand struct {
+	// valued are the short options that take a value: the rest of their
+	// cluster, else the next word.
+	valued string
+	// long are the long options that take a value: after = in the same
+	// word, else the next word.
+	long map[string]bool
+	// operands is how many words come between the options and the command
+	// (timeout's duration).
+	operands int
+}
+
+// prefixCommands are env and the wrappers a definition plausibly puts
+// before a command, with their GNU options that take a value. Each stops
+// reading options at its first operand, as their getopt does.
+var prefixCommands = map[string]prefixCommand{
+	"env":     {valued: "uCS", long: map[string]bool{"--unset": true, "--chdir": true, "--split-string": true}},
+	"timeout": {valued: "ks", long: map[string]bool{"--kill-after": true, "--signal": true}, operands: 1},
+	"nice":    {valued: "n", long: map[string]bool{"--adjustment": true}},
+	"nohup":   {},
+	"command": {},
+	"xargs": {valued: "adEILnPs", long: map[string]bool{"--arg-file": true, "--delimiter": true, "--eof": true, "--max-lines": true,
+		"--max-args": true, "--max-procs": true, "--max-chars": true, "--process-slot-var": true}},
+}
+
+// commandWords is the command argv runs once its prefix commands (env and
+// prefixCommands' wrappers, by any path, nested in any order) are read
+// through, and prefix, the words those took: their names, options, option
+// values and operands, and env's NAME=value assignments. env -S's string is
+// split into words (scriptCommands' reading) that come before the rest.
+// command -v or -V runs nothing, so words is empty. xargs's command gets
+// its input as more arguments, which are data.
+func commandWords(argv []string) (words, prefix []string) {
+	words = argv
+	for len(words) > 0 {
+		name := filepath.Base(words[0])
+		pc, ok := prefixCommands[name]
+		if !ok {
+			break
+		}
+		var split []string
+		runs := true
+		i := 1
+		value := func(opt string, v string) {
+			if opt == "S" || opt == "--split-string" {
+				if cmds := scriptCommands(v); len(cmds) > 0 {
+					split = append(split, cmds[0]...)
+				}
+			}
+		}
+		for i < len(words) {
+			w := words[i]
+			if w == "--" {
+				i++
+				break
+			}
+			if w == "-" && name == "env" {
+				// env's lone - is -i.
+				i++
+				continue
+			}
+			if len(w) < 2 || w[0] != '-' {
+				break
+			}
+			i++
+			if strings.HasPrefix(w, "--") {
+				opt, v, inline := strings.Cut(w, "=")
+				if pc.long[opt] && !inline && i < len(words) {
+					v = words[i]
+					i++
+				}
+				value(opt, v)
+				continue
+			}
+			for j := 1; j < len(w); j++ {
+				if name == "command" && (w[j] == 'v' || w[j] == 'V') {
+					runs = false
+				}
+				if strings.IndexByte(pc.valued, w[j]) < 0 {
+					continue
+				}
+				v := w[j+1:]
+				if v == "" && i < len(words) {
+					v = words[i]
+					i++
+				}
+				value(w[j:j+1], v)
+				break
+			}
+		}
+		for name == "env" && i < len(words) && strings.Contains(words[i], "=") {
+			i++
+		}
+		i = min(i+pc.operands, len(words))
+		prefix = append(prefix, words[:i]...)
+		words = append(split, words[i:]...)
+		if !runs {
+			return nil, append(prefix, words...)
+		}
+	}
+	return words, prefix
+}
+
+// shellCall reads words, a command after commandWords, as a shell call
+// whose program is read: [sh, bash, zsh or dash by any path, options,
+// program, positional data...]. The options run to the first word that is
+// not one or to -- (or a lone -); one of them is a - cluster holding c. An
+// o or O ending a - or + cluster, and shellLongValued, take the next word as
+// a value; an o or O inside a cluster is read differently by bash and zsh,
+// so that call is of no shape.
+// prog is the index of the program, the first word after the options; ok
+// is false for any other shape. It is the one shape manufacture lets a
+// template into and the one the tracker-write lint reads a script from.
+func shellCall(words []string) (prog int, ok bool) {
+	if len(words) == 0 || !shellNames[filepath.Base(words[0])] {
+		return 0, false
+	}
+	c := false
+	i := 1
+	for i < len(words) {
+		w := words[i]
+		if w == "--" || w == "-" {
+			i++
+			break
+		}
+		if len(w) < 2 || w[0] != '-' && w[0] != '+' {
+			break
+		}
+		i++
+		if strings.HasPrefix(w, "--") {
+			if shellLongValued[w] {
+				i++
+			}
+			continue
+		}
+		for j := 1; j < len(w); j++ {
+			switch w[j] {
+			case 'c':
+				c = c || w[0] == '-'
+			case 'o', 'O':
+				if j < len(w)-1 {
+					// bash takes the next word as the value and reads on
+					// in the cluster; zsh takes the rest of the cluster.
+					return 0, false
+				}
+				i++
+			}
+		}
+	}
+	if !c || i >= len(words) {
+		return 0, false
+	}
+	return i, true
+}
+
+// shellProgram is the program text of a shell call, read through prefix
+// commands (commandWords) in shellCall's shape; ok is false for any other
+// argv.
+func shellProgram(argv []string) (string, bool) {
+	words, _ := commandWords(argv)
+	if i, ok := shellCall(words); ok {
+		return words[i], true
+	}
+	return "", false
+}
 
 // ManufactureReport is what a manufacture drive did (MANUFACTURE.md, Report).
 type ManufactureReport struct {

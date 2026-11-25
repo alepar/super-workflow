@@ -876,8 +876,14 @@ func (r *replay) act(in Instruction, a replayAction) (bool, error) {
 		if then != "" && then != now {
 			r.report.Stale = append(r.report.Stale, ReplayDifference{Kind: "prompt", Instance: in.Child, State: lastSegment(in.State), Then: then, Now: now})
 		}
-		if err := r.writeArtifacts(fetched.Prompt, a.artifacts); err != nil {
-			return false, err
+		if len(a.artifacts) > 0 {
+			alloc, err := r.engine.allocatedArtifacts(r.run, in.Name)
+			if err != nil {
+				return false, fmt.Errorf("replay: artifacts %s: %w", in.Name, err)
+			}
+			if err := r.writeArtifacts(alloc, a.artifacts); err != nil {
+				return false, err
+			}
 		}
 		if a.kind == "validate" {
 			res, err := r.engine.Validate(r.run, in.Name, Submission{Output: a.output})
@@ -934,29 +940,19 @@ func (r *replay) act(in Instruction, a replayAction) (bool, error) {
 }
 
 // writeArtifacts copies each recorded artifact's file to the path this
-// replay's engine allocated for it (the prompt's final Artifacts section).
-func (r *replay) writeArtifacts(prompt string, refs map[string]ArtifactRef) error {
-	if len(refs) == 0 {
-		return nil
-	}
-	marker := "\n## Artifacts\n"
-	i := strings.LastIndex(prompt, marker)
-	if i < 0 {
-		return nil
-	}
-	block, _, _ := strings.Cut(prompt[i+len(marker):], "\n## ")
+// replay's engine allocated for it (alloc, by name). The paths come from the
+// engine's allocation, never from the rendered prompt, whose input values
+// are model text that could spell an Artifacts section of their own. A
+// recorded artifact with no allocated path (one bound from a template) is
+// the agent's to write and is left alone, as in the run.
+func (r *replay) writeArtifacts(alloc map[string]string, refs map[string]ArtifactRef) error {
 	names := make([]string, 0, len(refs))
 	for name := range refs {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		path := ""
-		for _, line := range strings.Split(block, "\n") {
-			if p, ok := strings.CutPrefix(line, "- "+name+": "); ok {
-				path = strings.TrimSuffix(p, " (optional: leave it unwritten when there is nothing to record)")
-			}
-		}
+		path := alloc[name]
 		if path == "" {
 			continue
 		}

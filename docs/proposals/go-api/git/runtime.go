@@ -53,6 +53,7 @@ type args struct {
 	Into                      string
 	Message                   string
 	Paths                     []string
+	Globs                     []string
 }
 
 func decode(m map[string]any) (a args, err error) {
@@ -77,7 +78,7 @@ func resolve(workspace, p string) string {
 // error, so callers that read exit codes as data (merge-base --is-ancestor)
 // can; the others use must.
 func (r runtime) git(dir string, argv ...string) (out string, exit int, err error) {
-	tool := wf.Tool{Bin: r.bin, Args: argv, Dir: dir, Timeout: r.timeout}
+	tool := wf.Tool{Bin: r.bin, Args: argv, Dir: dir, Timeout: r.timeout, UnsetEnv: pathspecEnv}
 	if r.snapshot {
 		tool = r.snapshotTool(dir, argv, nil)
 	}
@@ -90,6 +91,12 @@ func (r runtime) git(dir string, argv ...string) (out string, exit int, err erro
 	}
 	return res.Stdout, 0, nil
 }
+
+// pathspecEnv are the variables that change how git reads every pathspec.
+// Inherited, GIT_LITERAL_PATHSPECS=1 would make :(literal) and :(glob) part
+// of the path and GIT_GLOB_PATHSPECS=1 would glob a literal path, so the
+// adapter's calls run without them; each pathspec says how it matches.
+var pathspecEnv = []string{"GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"}
 
 // must runs git and treats a non-zero exit as failure, returning trimmed stdout.
 func (r runtime) must(dir string, argv ...string) (string, error) {
@@ -106,19 +113,21 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 	switch d.Op {
 	case "head":
 		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "HEAD")
+	// A ref is a value from the definition or model output: --end-of-options
+	// makes git read it as a revision even when it starts with a dash.
 	case "rev_parse":
-		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", a.Ref)
+		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref)
 	case "resolve_commit":
-		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", a.Ref+"^{commit}")
+		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref+"^{commit}")
 	case "is_ancestor":
 		var exit int
-		_, exit, err = r.git(resolve(workspace, a.Worktree), "merge-base", "--is-ancestor", a.A, a.B)
+		_, exit, err = r.git(resolve(workspace, a.Worktree), "merge-base", "--is-ancestor", "--end-of-options", a.A, a.B)
 		v = err == nil
 		if exit == 1 {
 			err = nil
 		}
 	case "merge_base":
-		v, err = r.must(resolve(workspace, a.Worktree), "merge-base", a.A, a.B)
+		v, err = r.must(resolve(workspace, a.Worktree), "merge-base", "--end-of-options", a.A, a.B)
 	case "status":
 		v, err = r.status(resolve(workspace, a.Worktree))
 	case "worktree_list":
@@ -133,15 +142,28 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 }
 
 func (r runtime) status(dir string) (StatusResult, error) {
-	// Not must: trimming would eat the leading space of " M path".
-	out, _, err := r.git(dir, "status", "--porcelain")
+	// -z prints each path as it is, NUL-terminated: without it git C-quotes a
+	// path holding a quote, a control character or a non-ASCII byte. Not must:
+	// trimming would eat the leading space of " M path".
+	out, _, err := r.git(dir, "status", "--porcelain", "-z")
 	if err != nil {
 		return StatusResult{}, err
 	}
 	res := StatusResult{Paths: []string{}}
-	for _, line := range strings.Split(out, "\n") {
-		if len(line) > 3 {
-			res.Paths = append(res.Paths, line[3:])
+	fields := strings.Split(out, "\x00")
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if len(f) < 4 {
+			continue
+		}
+		res.Paths = append(res.Paths, f[3:])
+		// A rename or copy record is followed by its source path as a field
+		// of its own; the source changed too, so it is listed after it.
+		if strings.ContainsAny(f[:2], "RC") && i+1 < len(fields) {
+			i++
+			if fields[i] != "" {
+				res.Paths = append(res.Paths, fields[i])
+			}
 		}
 	}
 	res.Clean = len(res.Paths) == 0
@@ -149,14 +171,17 @@ func (r runtime) status(dir string) (StatusResult, error) {
 }
 
 func (r runtime) worktrees(dir string) ([]Worktree, error) {
-	out, err := r.must(dir, "worktree", "list", "--porcelain")
+	// -z ends each attribute with a NUL and each record with one more, so a
+	// newline in a worktree path stays in its path instead of starting a
+	// phantom record. Not must: trimming would eat a path's trailing space.
+	out, _, err := r.git(dir, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, err
 	}
 	list := []Worktree{}
-	for _, rec := range strings.Split(out, "\n\n") {
+	for _, rec := range strings.Split(out, "\x00\x00") {
 		var w Worktree
-		for _, line := range strings.Split(rec, "\n") {
+		for _, line := range strings.Split(rec, "\x00") {
 			key, val, _ := strings.Cut(line, " ")
 			switch key {
 			case "worktree":
@@ -411,14 +436,28 @@ func (r runtime) abortMerge(dir string) error {
 	return nil
 }
 
-// commit stages the named paths (all tracked changes when none), and commits
-// them with the key trailer. Nothing staged is a no-op. It returns HEAD.
+// commit stages the named paths and globs (all tracked changes when there
+// are none), and commits them with the key trailer. Nothing staged is a
+// no-op. It returns HEAD.
+//
+// A path names one file: the :(literal) magic keeps git from reading it as a
+// glob or another magic pathspec, which would commit every file it matches.
+// A glob is matched as one, by :(glob), only because the definition asked
+// for it with CommitGlob. The message is recorded verbatim: git's default
+// cleanup would trim its whitespace and collapse its blank lines.
 func (r runtime) commit(dir, key string, a args) (string, error) {
 	add := []string{"add", "-u"}
 	var only []string
-	if len(a.Paths) > 0 {
-		add = append([]string{"add", "--"}, a.Paths...)
-		only = append([]string{"--"}, a.Paths...)
+	if len(a.Paths)+len(a.Globs) > 0 {
+		specs := make([]string, 0, len(a.Paths)+len(a.Globs))
+		for _, p := range a.Paths {
+			specs = append(specs, ":(literal)"+p)
+		}
+		for _, g := range a.Globs {
+			specs = append(specs, ":(glob)"+g)
+		}
+		add = append([]string{"add", "--"}, specs...)
+		only = append([]string{"--"}, specs...)
 	}
 	if _, err := r.must(dir, add...); err != nil {
 		return "", err
@@ -434,7 +473,7 @@ func (r runtime) commit(dir, key string, a args) (string, error) {
 	if key != "" {
 		msg += "\n\n" + trailer + key
 	}
-	if _, err := r.must(dir, append([]string{"commit", "-q", "-m", msg}, only...)...); err != nil {
+	if _, err := r.must(dir, append([]string{"commit", "-q", "--cleanup=verbatim", "-m", msg}, only...)...); err != nil {
 		return "", err
 	}
 	return r.must(dir, "rev-parse", "HEAD")
@@ -552,13 +591,13 @@ func (r runtime) postDoneMutation(dir, taskRef, commit string) (*wf.PostDoneMuta
 	if taskRef == "" {
 		return nil, nil
 	}
-	want, err := r.must(dir, "rev-parse", "--verify", commit+"^{commit}")
+	want, err := r.must(dir, "rev-parse", "--verify", "--end-of-options", commit+"^{commit}")
 	if errors.Is(err, wf.ErrUnavailable) {
 		return nil, err
 	} else if err != nil {
 		return nil, nil
 	}
-	out, exit, err := r.git(dir, "rev-parse", "--verify", "--quiet", taskRef+"^{commit}")
+	out, exit, err := r.git(dir, "rev-parse", "--verify", "--quiet", "--end-of-options", taskRef+"^{commit}")
 	got := strings.TrimSpace(out)
 	switch {
 	case exit == 1:

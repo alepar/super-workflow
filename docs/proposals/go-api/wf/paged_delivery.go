@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // PromptPageRequest selects one page. Code is printed on its predecessor only.
@@ -415,7 +416,7 @@ func isCommandLine(line, commandPrefix string) bool {
 
 func (e *Engine) pagedCommandPrefix() string {
 	if bin := e.opts.caller.Executable; bin != "" {
-		return shellQuote(bin) + " "
+		return sink.Quote(bin) + " "
 	}
 	return ""
 }

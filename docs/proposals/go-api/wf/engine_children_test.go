@@ -1026,6 +1026,31 @@ func TestMapSourceFailureTakesPartial(t *testing.T) {
 	}
 }
 
+// A Map key names its child, so a key holding a control byte (here a NUL
+// and a line break, from the item) is refused where it enters: no child is
+// spawned and the refusal says why.
+func TestMapRefusesControlByteKey(t *testing.T) {
+	for _, key := range []string{"a\x00b", "a\nb"} {
+		d := wf.New("ctl-key")
+		m := wf.NewMap[chFan, chItem, string, chRes](d, chItems(1), func(chItem) string { return key }, chChild())
+		merged := wf.NewTerminal[chMerged](d, wf.Success)
+		partial := wf.NewTerminal[chPartial](d, wf.Stopped)
+		m.Parallel(1).Join(wf.AllOK(), m.To(merged, "met"), m.To(partial, "partial"))
+		h := newHarness(t, d, newWorld())
+		run := h.run(d, nil)
+		if ins := h.next(run); len(ins) != 0 {
+			t.Fatalf("key %q: instructions = %v, want none", key, childIDs(ins))
+		}
+		if n := len(h.kind(run, wf.JournalChildSpawned)); n != 0 {
+			t.Fatalf("key %q: child_spawned = %d, want 0", key, n)
+		}
+		st := h.status(run)
+		if !strings.Contains(fmt.Sprint(st), "control character") {
+			t.Fatalf("key %q: status does not name the refusal: %+v", key, st)
+		}
+	}
+}
+
 func TestMapRequeryFailureWaitsForActiveThenPartial(t *testing.T) {
 	d := srcDef("requery-fail")
 	w := newWorld()

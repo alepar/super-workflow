@@ -799,62 +799,244 @@ func (s scope) promptDocument(raw json.RawMessage, field string) (string, error)
 // binding scope, then the next Out input not yet bound, in declaration order.
 // An unbound {{records}} is an error, never filled from an Out input.
 // It also reports which inputs a token consumed: their values are in the text,
-// so the Inputs block leaves them out.
+// so the Inputs block leaves them out. Each value goes in through
+// substitute, so model text cannot add prompt structure; a Bound input's
+// value is the definition's prose.
 func (s scope) bindPrompt(text string, ins []promptInput) (string, []bool, error) {
 	used := make([]bool, len(ins))
 	var missing string
-	bindToken := func(m string) string {
-		name := promptPattern.FindStringSubmatch(m)[1]
+	// bindToken is the value of the token naming name, and whether it is a
+	// Bound input's prose; ok is false for a token that stays as written.
+	bindToken := func(name string) (value string, prose, ok bool) {
 		if name == scratchName {
 			// The engine's directory, never a prompt input named scratch.
-			if v, ok := s.lookup(name); ok {
-				return v
-			}
-			if missing == "" {
-				missing = m
-			}
-			return m
+			v, ok := s.lookup(name)
+			return v, false, ok
 		}
 		for i, pi := range ins {
 			if pi.name == name {
 				used[i] = true
-				return pi.value
+				return pi.value, pi.bound, true
 			}
 		}
 		for i, pi := range ins {
 			if strings.EqualFold(pi.name, name) {
 				used[i] = true
-				return pi.value
+				return pi.value, pi.bound, true
 			}
 		}
 		if v, ok := s.lookup(name); ok {
-			return v
+			return v, false, true
 		}
-		if name == recordsName || name == scratchName || name == "assets" {
+		if name == recordsName || name == "assets" {
 			// A builtin that fails to bind is an error, never an Out input.
-			if missing == "" {
-				missing = m
-			}
-			return m
+			return "", false, false
 		}
 		for i, pi := range ins {
 			if pi.out && !used[i] {
 				used[i] = true
-				return pi.value
+				return pi.value, pi.bound, true
 			}
 		}
-		if missing == "" {
-			missing = m
-		}
-		return m
+		return "", false, false
 	}
-	out := bracketBound(text, ins, used, func(source string) string {
-		return promptPattern.ReplaceAllStringFunc(source, bindToken)
+	out := bracketBound(text, ins, used, func(b *promptText, source string) {
+		at := 0
+		for _, m := range promptPattern.FindAllStringSubmatchIndex(source, -1) {
+			b.WriteString(source[at:m[0]])
+			if v, prose, ok := bindToken(source[m[2]:m[3]]); ok {
+				substitute(b, v, prose)
+			} else {
+				b.WriteString(source[m[0]:m[1]])
+				if missing == "" {
+					missing = source[m[0]:m[1]]
+				}
+			}
+			at = m[1]
+		}
+		b.WriteString(source[at:])
 	})
 	if missing != "" {
 		return "", nil, s.unresolved(missing, "prompt")
 	}
 	return out, used, nil
+}
+
+// blockStart matches the part of a prompt line before a token where a
+// Markdown block can still start: only indentation, block quote markers and
+// list item markers.
+var blockStart = regexp.MustCompile(`^(?:[ \t]*(?:>|[-*+]|[0-9]{1,9}[.)])(?:[ \t]|$))*[ \t]*$`)
+
+// sectionLine matches a line Markdown can read as a heading (ATX, or a
+// setext underline, which also covers a thematic break) or as a code fence,
+// also inside block quote and list item containers ("> ## Artifacts",
+// "- ## Inputs", "1. > ```"), whose markers come before the block.
+var sectionLine = regexp.MustCompile("(?m)^(?:[ \t]*(?:>|[-*+]|[0-9]{1,9}[.)])[ \t]+)* {0,3}(#{1,6}([ \t]|\r?$)|(=+|-+)[ \t]*\r?$|```|~~~)")
+
+// promptText is a prompt being bound. widened is the template code fence
+// substitute lengthened to hold a value, while the template text after the
+// value, which holds that fence's closer, is still being written.
+type promptText struct {
+	strings.Builder
+	widened *widenedFence
+}
+
+// widenedFence is a template code fence whose opener now has n of c, up
+// from orig. Its closer is the first line after offset after (the end of
+// the last value in the fence) that closes a fence of orig c's: the
+// template wrote it for the opener it wrote.
+type widenedFence struct {
+	c              byte
+	orig, n, after int
+}
+
+// closeWidened lengthens the widened fence's closer to its opener's n once
+// the template text holding it is written. Before the bind ends (final
+// false) only a complete line counts: text after a token may still extend
+// the last line.
+func (p *promptText) closeWidened(final bool) {
+	w := p.widened
+	if w == nil {
+		return
+	}
+	s := p.String()
+	at := w.after
+	if at > 0 && s[at-1] != '\n' {
+		// The rest of the value's last line is fence content.
+		i := strings.IndexByte(s[at:], '\n')
+		if i < 0 {
+			return
+		}
+		at += i + 1
+	}
+	for at < len(s) {
+		end := strings.IndexByte(s[at:], '\n')
+		if end < 0 && !final {
+			return
+		}
+		if end < 0 {
+			end = len(s)
+		} else {
+			end += at
+		}
+		if indent, c, run, rest, ok := fenceLine(s[at:end]); ok && c == w.c && run >= w.orig && strings.Trim(rest, " \t") == "" {
+			if run < w.n {
+				start := at + indent
+				p.Reset()
+				p.WriteString(s[:start] + strings.Repeat(string(c), w.n) + s[start+run:])
+			}
+			p.widened = nil
+			return
+		}
+		at = end + 1
+	}
+}
+
+// fenceLine reads line as a code fence line (CommonMark): at most three
+// spaces of indentation, then a run of three or more of one fence character
+// (a backtick or a tilde), then rest. Container markers before it are not
+// read: a template's own code block starts at the margin.
+func fenceLine(line string) (indent int, c byte, run int, rest string, ok bool) {
+	line = strings.TrimSuffix(line, "\r")
+	for indent < len(line) && indent < 4 && line[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 || indent == len(line) || line[indent] != '`' && line[indent] != '~' {
+		return 0, 0, 0, "", false
+	}
+	c = line[indent]
+	for run = 0; indent+run < len(line) && line[indent+run] == c; run++ {
+	}
+	if run < 3 {
+		return 0, 0, 0, "", false
+	}
+	return indent, c, run, line[indent+run:], true
+}
+
+// openFence reports the code fence the complete lines of s leave open: the
+// offset of its opener's run, the run's length and its character. An
+// opener of backticks has no backtick after the run (CommonMark: the info
+// string cannot hold one); a closer is a run of the opener's character at
+// least as long as the opener's, with nothing but spaces or tabs after it.
+func openFence(s string) (at, run int, c byte, open bool) {
+	s = s[:strings.LastIndexByte(s, '\n')+1]
+	for i := 0; i < len(s); {
+		j := i + strings.IndexByte(s[i:], '\n')
+		indent, fc, n, rest, ok := fenceLine(s[i:j])
+		switch {
+		case !ok:
+		case !open && (fc == '~' || !strings.Contains(rest, "`")):
+			at, run, c, open = i+indent, n, fc, true
+		case open && fc == c && n >= run && strings.Trim(rest, " \t") == "":
+			open = false
+		}
+		i = j + 1
+	}
+	return at, run, c, open
+}
+
+// longestRun is the length of the longest run of c in v.
+func longestRun(v string, c byte) int {
+	run, longest := 0, 0
+	for i := 0; i < len(v); i++ {
+		if v[i] == c {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	return longest
+}
+
+// substitute appends v, the value of a prompt token, to b, the prompt so
+// far. A value is often an earlier state's model output, so it must not add
+// prompt structure (a heading, a list, a second Artifacts section). A single
+// line stays as it is mid-sentence, where inline text cannot start a block,
+// and so does a plain line (plainLine) anywhere. A Bound input (prose) is
+// the definition's own text, which may lay out a table or a list it built
+// (through sink, escaping each value at construction), so it stays as it is
+// too unless a line in it could start a section or a code fence: a bound
+// value can still carry a model's words. Any other value goes on lines of
+// its own as inputBody fences it, which carries it verbatim; the text after
+// the token continues on the line after the fence.
+//
+// A token inside a code fence the template opened is already in a code
+// block, where only a closing fence line is structure. The value goes in as
+// it is when it holds no run of the fence's character as long as the
+// opener's, so no line of it can close the block. Otherwise the template's
+// fence grows one longer than the value's longest run, its opener here and
+// its closer when the template writes it (closeWidened), so the block still
+// holds the value and ends where the template ends it.
+func substitute(b *promptText, v string, prose bool) {
+	b.closeWidened(false)
+	s := b.String()
+	if at, run, c, open := openFence(s); open {
+		if n := longestRun(v, c); n >= run {
+			b.Reset()
+			b.WriteString(s[:at] + strings.Repeat(string(c), n+1) + s[at+run:])
+			if b.widened == nil {
+				b.widened = &widenedFence{c: c, orig: run}
+			}
+			b.widened.n = n + 1
+		}
+		b.WriteString(v)
+		if b.widened != nil {
+			b.widened.after = b.Len()
+		}
+		return
+	}
+	line := s[strings.LastIndexAny(s, "\r\n")+1:]
+	if !strings.ContainsAny(v, "\r\n") && (v == "" || plainLine(v) || !blockStart.MatchString(line)) ||
+		prose && !sectionLine.MatchString(strings.ReplaceAll(v, "\r", "\n")) {
+		b.WriteString(v)
+		return
+	}
+	if line != "" {
+		b.WriteString("\n")
+	}
+	b.WriteString(fenceValue(v))
+	b.WriteString("\n")
 }
 
 // bracketPattern matches one [..] token, allowing one nested [..] (the triage
@@ -867,20 +1049,23 @@ var bracketPattern = regexp.MustCompile(`\[(?:[^\[\]]|\[[^\[\]]*\])*\]`)
 // it and is followed by a non-alphanumeric character, so Bound("ARTIFACT", ..)
 // fills [ARTIFACT] and [ARTIFACT — per the caller's mode]. Names are tried
 // longest first, never in map order; a token no input names stays as it is.
-// used[i] is set for each input in ins that filled a token. bindUnbound sees
-// only spans of the original source that no Bound input replaced.
-func bracketBound(text string, ins []promptInput, used []bool, bindUnbound func(string) string) string {
+// used[i] is set for each input in ins that filled a token. bindUnbound
+// appends the spans of the original source that no Bound input replaced;
+// a Bound value goes in through substitute.
+func bracketBound(text string, ins []promptInput, used []bool, bindUnbound func(*promptText, string)) string {
 	var bound []int
 	for i, pi := range ins {
 		if pi.bound {
 			bound = append(bound, i)
 		}
 	}
+	var out promptText
 	if len(bound) == 0 {
-		return bindUnbound(text)
+		bindUnbound(&out, text)
+		out.closeWidened(true)
+		return out.String()
 	}
 	sort.SliceStable(bound, func(i, j int) bool { return len(ins[bound[i]].name) > len(ins[bound[j]].name) })
-	var out strings.Builder
 	at := 0
 	for _, m := range bracketPattern.FindAllStringIndex(text, -1) {
 		inner := text[m[0]+1 : m[1]-1]
@@ -891,15 +1076,16 @@ func bracketBound(text string, ins []promptInput, used []bool, bindUnbound func(
 				continue
 			}
 			if r, _ := utf8.DecodeRuneInString(rest); rest == "" || !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-				out.WriteString(bindUnbound(text[at:m[0]]))
-				out.WriteString(pi.value)
+				bindUnbound(&out, text[at:m[0]])
+				substitute(&out, pi.value, true)
 				at = m[1]
 				used[i] = true
 				break
 			}
 		}
 	}
-	out.WriteString(bindUnbound(text[at:]))
+	bindUnbound(&out, text[at:])
+	out.closeWidened(true)
 	return out.String()
 }
 
@@ -915,7 +1101,47 @@ func inputsBlock(ins []promptInput, used []bool) string {
 		if b.Len() == 0 {
 			b.WriteString("## Inputs\n")
 		}
-		fmt.Fprintf(&b, "\n### %s\n\n%s\n", pi.name, pi.value)
+		fmt.Fprintf(&b, "\n### %s\n\n%s\n", pi.name, inputBody(pi.value))
 	}
 	return b.String()
+}
+
+// inputBody is an input value as the body of its ### section. The value is
+// often an earlier state's model output, so one that Markdown could read as
+// block structure (a heading, a fence, a list, a second section) goes inside
+// a fenced code block whose fence is longer than any backtick run in it:
+// nothing in the value can close the fence, and the value is carried
+// verbatim. A single line that starts with a letter, a digit (not an ordered
+// list marker) or a path or JSON opener cannot start a block, and stays as
+// it is.
+func inputBody(v string) string {
+	if v == "" || plainLine(v) {
+		return v
+	}
+	return fenceValue(v)
+}
+
+// fenceValue is v as a fenced code block whose fence is longer than any
+// backtick run in v, so nothing in v can close it.
+func fenceValue(v string) string {
+	fence := strings.Repeat("`", max(3, longestRun(v, '`')+1))
+	// The closing fence goes on its own line after the value, so the block's
+	// content is the value and one final line break, which a reader drops.
+	return fence + "\n" + v + "\n" + fence
+}
+
+// plainLine reports whether v is one line Markdown reads as paragraph text.
+func plainLine(v string) bool {
+	if strings.ContainsAny(v, "\r\n") {
+		return false
+	}
+	c := v[0]
+	switch {
+	case c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '/' || c == '{' || c == '"':
+		return true
+	case c >= '0' && c <= '9':
+		rest := strings.TrimLeft(v, "0123456789")
+		return rest == "" || rest[0] != '.' && rest[0] != ')'
+	}
+	return false
 }

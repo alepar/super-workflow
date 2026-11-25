@@ -89,11 +89,21 @@ type Journal interface {
 }
 
 // validRunID rejects an id that is not one path component: a run id names a
-// directory of the file journal, and both backends apply one rule.
+// directory of the file journal, and both backends apply one rule. A control
+// byte is refused too: no path can hold a NUL, and the id is printed in
+// command lines and status lines that a line break would split.
 func validRunID(run RunID) error {
 	s := string(run)
-	if s == "" || s == "." || s == ".." || strings.ContainsAny(s, `/\`) {
+	if s == "" || s == "." || s == ".." || strings.ContainsAny(s, `/\`) || hasControlByte(s) {
 		return fmt.Errorf("invalid run id %q", s)
 	}
 	return nil
+}
+
+// hasControlByte reports whether s holds an ASCII control byte (C0 or DEL).
+// Identifiers the engine builds paths and command lines from refuse them at
+// their source, since no argument or path can carry a NUL and a line break
+// splits every line the identifier is printed on.
+func hasControlByte(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 func TestCoordinatorHandoffRequiresTheWholeFrontier(t *testing.T) {
@@ -114,7 +116,7 @@ func TestNativeTurnUsesPinnedWorkspaceAndFencedCommand(t *testing.T) {
 				t.Fatalf("named run flag missing from %q", cmd)
 			}
 		}
-		for _, want := range []string{wantRun, "--expected-admission", shellQuote(state), shellQuote(workspace)} {
+		for _, want := range []string{wantRun, "--expected-admission", sink.Quote(state), sink.Quote(workspace)} {
 			if warning != "" || !strings.Contains(cmd, want) {
 				t.Fatalf("native continuation = %q, %q, want %q", cmd, warning, want)
 			}

@@ -26,11 +26,13 @@ func RenderStatus(rs RunStatus) string {
 		if u.PromptCoverage != "" {
 			parts = append(parts, u.PromptCoverage)
 		}
+		// The note and the observation are model text: escaped like a stderr
+		// tail, so they stay on the unit's line.
 		if u.Note != "" {
-			parts = append(parts, u.Note)
+			parts = append(parts, escapeControl(u.Note))
 		}
 		if u.Observed != "" {
-			parts = append(parts, "observed: "+u.Observed)
+			parts = append(parts, "observed: "+escapeControl(u.Observed))
 		}
 		if u.Session != "" {
 			parts = append(parts, "session "+u.Session)
@@ -47,7 +49,7 @@ func RenderStatus(rs RunStatus) string {
 			if name == "" {
 				name = "run"
 			}
-			fmt.Fprintf(&b, "instance %s %s at %s: %s\n", name, in.Phase, in.State, in.Reason)
+			fmt.Fprintf(&b, "instance %s %s at %s: %s\n", name, in.Phase, in.State, escapeControl(in.Reason))
 		}
 	}
 	if turn := rs.CoordinatorTurn; turn != nil {

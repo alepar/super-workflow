@@ -76,6 +76,11 @@ docs/proposals/go-api/shell/procstat_linux.go
 docs/proposals/go-api/shell/procstat_other.go
 docs/proposals/go-api/shell/runtime.go
 docs/proposals/go-api/shell/shell.go
+docs/proposals/go-api/sink/label.go
+docs/proposals/go-api/sink/markdown.go
+docs/proposals/go-api/sink/path.go
+docs/proposals/go-api/sink/shell.go
+docs/proposals/go-api/sink/sink.go
 docs/proposals/go-api/wf/adapters.go
 docs/proposals/go-api/wf/adopt_bindings.go
 docs/proposals/go-api/wf/agent_output.go
@@ -236,6 +241,8 @@ docs/proposals/go-api/wftest/fuzz_properties.go
 docs/proposals/go-api/wftest/fuzz_replay.go
 docs/proposals/go-api/wftest/fuzz_schema.go
 docs/proposals/go-api/wftest/fuzz_step_progress.go
+docs/proposals/go-api/wftest/hostile/hostile.go
+docs/proposals/go-api/wftest/hostile/markdown.go
 docs/proposals/go-api/wftest/protocol.go
 docs/proposals/go-api/wftest/protocol_gate.go
 docs/proposals/go-api/wftest/protocol_sibling.go

@@ -1206,10 +1206,10 @@ func TestManufactureTemplatesStayOutOfShellSource(t *testing.T) {
 		// With no -c the operands are a script and its code.
 		`["sh","run.sh","{{item.N}}"]`,
 		// Round 3: a value-taking option can consume the word that looks
-		// like the program text.
-		`["bash","-o","pipefail","-c","echo \"$1\"","x","{{item.N}}"]`,
-		`["bash","-O","extglob","-c","true","{{item.N}}"]`,
+		// like the program text; bash and zsh read an o inside a cluster
+		// differently.
 		`["sh","-oc","pipefail","echo","{{item.N}}"]`,
+		`["bash","-o","-c","echo","{{item.N}}"]`,
 	} {
 		step := `{"op":"submit","output":{"OK":true},"do":[{"argv":` + argv + `}]}`
 		if _, err := wf.ParseManufactureScript([]byte(body(step))); err == nil || !strings.Contains(err.Error(), "positional") {
@@ -1221,6 +1221,9 @@ func TestManufactureTemplatesStayOutOfShellSource(t *testing.T) {
 		}
 	}
 	for _, argv := range []string{
+		// An option's value is read as such: the program is the word after.
+		`["bash","-o","pipefail","-c","echo \"$1\"","x","{{item.N}}"]`,
+		`["bash","-O","extglob","-c","true","{{item.N}}"]`,
 		`["sh","-c","touch \"$1\"","x","{{item.N}}"]`,
 		`["bash","-ec","echo \"$1\"","x","{{input.REPORT_FILE}}"]`,
 		`["echo","{{item.N}}"]`,

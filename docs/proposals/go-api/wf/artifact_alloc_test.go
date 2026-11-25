@@ -363,3 +363,121 @@ func lintOK(name string) (*wf.Def, *wf.Agent[aaWrite, aaOut], *wf.Terminal[aaDon
 	a.Route(func(aaOut, wf.Ctx) wf.Edge[aaWrite] { return ok }, ok)
 	return d, a, end, nil
 }
+
+// recordAllocRun records a whole run of allocDef: the producer writes its
+// allocated artifact where its prompt says, and both units are done. It
+// returns the journal and the run's directory.
+func recordAllocRun(t *testing.T) ([]wf.JournalRecord, string) {
+	t.Helper()
+	d, _ := allocDef()
+	j := wf.MemJournal()
+	root := t.TempDir()
+	opts := wf.EngineOptions{Defs: []*wf.Def{d}, Workspace: root, RunDir: func(id wf.RunID) string { return filepath.Join(root, "runs", string(id)) }}
+	e := wf.NewEngine(j, nil, opts).(*wf.Engine)
+	run, err := e.Run(d, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"aaWrite", "aaRead"} {
+		ins, err := e.HandOut(run, 1)
+		if err != nil || len(ins) != 1 || ins[0].State != state {
+			t.Fatalf("handoff: %+v %v, want %s", ins, err, state)
+		}
+		f, err := e.PromptFetch(run, ins[0].Name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state == "aaWrite" {
+			_, after, _ := strings.Cut(f.Prompt, "## Artifacts")
+			var path string
+			for _, w := range strings.Fields(after) {
+				if strings.HasSuffix(w, "report.md") {
+					path = w
+					break
+				}
+			}
+			if path == "" {
+				t.Fatalf("producer prompt names no allocated path:\n%s", f.Prompt)
+			}
+			if err := os.WriteFile(path, []byte("the report"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if res, err := e.Done(run, ins[0].Name, wf.Submission{Output: json.RawMessage(`{"OK":true}`)}); err != nil || res.Class == wf.Refused {
+			t.Fatalf("done %s: %+v %v", state, res, err)
+		}
+	}
+	if _, err := e.HandOut(run, 0); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := j.Lock(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	recs, err := j.Records(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return recs, filepath.Join(root, "runs", string(run))
+}
+
+// Replay writes each recorded artifact to the path its own engine allocated
+// for the unit (allocatedArtifacts), not one read from the prompt: the
+// producer's done, which refuses a missing artifact, is accepted, and the
+// run retraces to its end with nothing different and nothing stale.
+func TestReplayWritesRecordedArtifactToItsAllocatedPath(t *testing.T) {
+	recs, dir := recordAllocRun(t)
+	d, _ := allocDef()
+	rep, err := wf.Replay(recs, d, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Stop.Kind != "ended" || len(rep.Differences) != 0 || len(rep.Stale) != 0 || rep.Retraced == 0 {
+		t.Fatalf("replay with a recorded artifact: %s", rep)
+	}
+}
+
+// A journal recorded before an engine change to prompt rendering (such as
+// the fencing of multi-line input values) has prompt hashes the replay no
+// longer renders. The replay reports each such prompt as Stale and still
+// feeds the recorded outputs: no failure, no difference in the route.
+func TestReplayOfPreChangePromptHashesIsStaleOnly(t *testing.T) {
+	recs, dir := recordAllocRun(t)
+	var changed int
+	for i, r := range recs {
+		if r.Kind != wf.JournalPromptFetched && r.Kind != wf.JournalSubmitted {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(r.Data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := m["PromptHash"]; !ok {
+			continue
+		}
+		m["PromptHash"], m["PromptShapeHash"] = "sha256:pre-change", "sha256:pre-change-shape"
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recs[i].Data = b
+		changed++
+	}
+	if changed == 0 {
+		t.Fatal("no recorded prompt hashes")
+	}
+	d, _ := allocDef()
+	rep, err := wf.Replay(recs, d, dir)
+	if err != nil {
+		t.Fatalf("replay of a pre-change journal failed: %v", err)
+	}
+	if rep.Stop.Kind != "ended" || len(rep.Differences) != 0 || len(rep.Stale) != 2 {
+		t.Fatalf("replay of a pre-change journal: want both prompts stale, ended, no differences: %s", rep)
+	}
+	for _, s := range rep.Stale {
+		if s.Kind != "prompt" || s.Then != "sha256:pre-change-shape" {
+			t.Errorf("stale %+v, want a prompt recorded with the pre-change shape hash", s)
+		}
+	}
+}

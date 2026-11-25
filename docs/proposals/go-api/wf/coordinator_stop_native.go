@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"unicode/utf8"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 const coordinatorStopVerb = "coordinator-stop"
@@ -168,7 +171,7 @@ func installCoordinatorStop(harness, workspace, executable string, named bool) e
 	}
 	argv = append(argv, coordinatorStopVerb, "--hook", harness, "--workspace", workspace)
 	for i, arg := range argv {
-		argv[i] = shellQuote(arg)
+		argv[i] = sink.Quote(arg)
 		if harness == "claude" {
 			// Claude expands its path placeholders before the shell sees
 			// quotes. Keep literal placeholder text across itself in quotes.
@@ -229,6 +232,11 @@ func readCoordinatorHookConfig(config *os.Root, name string) ([]byte, os.FileMod
 }
 
 func mergeCoordinatorHookConfig(data []byte, command string) ([]byte, error) {
+	// encoding/json writes each invalid UTF-8 byte as U+FFFD, so a command
+	// naming a path that is not UTF-8 would be stored as a different path.
+	if !utf8.ValidString(command) {
+		return nil, fmt.Errorf("Stop hook command %q is not valid UTF-8 (a path in it, such as the workspace, cannot be stored in JSON)", command)
+	}
 	settings := make(map[string]json.RawMessage)
 	if data != nil {
 		var err error

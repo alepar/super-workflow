@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"io"
 	"maps"
 	"os"
@@ -1901,12 +1902,12 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 		opts.Defs = append(opts.Defs, r.Def)
 	}
 	base := func(sub string, run RunID) []string {
-		args := []string{shellQuote(bin), sub, shellQuote(string(run)), "--state-dir", shellQuote(stateDir)}
+		args := []string{sink.Quote(bin), sub, sink.Quote(string(run)), "--state-dir", sink.Quote(stateDir)}
 		if c.assets != "" {
-			args = append(args, "--assets", shellQuote(c.assets))
+			args = append(args, "--assets", sink.Quote(c.assets))
 		}
 		if c.workspace != "" {
-			args = append(args, "--workspace", shellQuote(c.workspace))
+			args = append(args, "--workspace", sink.Quote(c.workspace))
 		}
 		return args
 	}
@@ -1917,14 +1918,14 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 		if !c.canSucceed(started) {
 			return ""
 		}
-		parts := []string{shellQuote(bin), "run", shellQuote(started.Def), "--state-dir", shellQuote(stateDir)}
+		parts := []string{sink.Quote(bin), "run", sink.Quote(started.Def), "--state-dir", sink.Quote(stateDir)}
 		if started.self != "" {
 			// Bound to its chain: the successor of this run, whatever this
 			// call's default tree would key.
-			parts = append(parts, "--continue", shellQuote(string(started.self)))
+			parts = append(parts, "--continue", sink.Quote(string(started.self)))
 		}
 		if started.Workspace != "" {
-			parts = append(parts, "--workspace", shellQuote(started.Workspace))
+			parts = append(parts, "--workspace", sink.Quote(started.Workspace))
 		}
 		names := started.Given
 		if names == nil {
@@ -1933,7 +1934,7 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 			names = slices.Sorted(maps.Keys(started.Params))
 		}
 		for _, k := range names {
-			parts = append(parts, "--param", shellQuote(k+"="+started.Params[k]))
+			parts = append(parts, "--param", sink.Quote(k+"="+started.Params[k]))
 		}
 		return strings.Join(parts, " ")
 	}
@@ -1966,13 +1967,13 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 		return NewEngine(c.fileJournal(stateDir), c.cfg.Adapters, opts), nil
 	}
 	opts.SubmitLine = func(run RunID, token string) string {
-		return strings.Join(append(base("submit", run), "--token", shellQuote(token), "--output", "<file>"), " ")
+		return strings.Join(append(base("submit", run), "--token", sink.Quote(token), "--output", "<file>"), " ")
 	}
 	opts.SettleLine = func(run RunID, effect int64) string {
 		return strings.Join(append(base("settle", run), "--effect", strconv.FormatInt(effect, 10), "<settlement>"), " ")
 	}
 	opts.AnswerLine = func(run RunID, gate string) string {
-		return strings.Join(append(base("answer", run), "--gate", shellQuote(gate), "--value", "<value>"), " ")
+		return strings.Join(append(base("answer", run), "--gate", sink.Quote(gate), "--value", "<value>"), " ")
 	}
 	opts.VerbLine = func(run RunID, verb string, args ...string) string {
 		return multiVerbLine(bin, stateDir, run, verb, args...)
@@ -2035,11 +2036,11 @@ func (c *cli) fileJournal(stateDir string) Journal { return c.budgeted(FileJourn
 // arguments come right after the run id, so the flags (including --state-dir)
 // follow them.
 func multiVerbLine(bin, stateDir string, run RunID, verb string, args ...string) string {
-	parts := []string{shellQuote(bin), verb, shellQuote(string(run))}
+	parts := []string{sink.Quote(bin), verb, sink.Quote(string(run))}
 	for _, a := range args {
 		parts = append(parts, lineArg(a))
 	}
-	return strings.Join(append(parts, "--state-dir", shellQuote(stateDir)), " ")
+	return strings.Join(append(parts, "--state-dir", sink.Quote(stateDir)), " ")
 }
 
 // parseUsage reads a --usage value: tokens=N, N a count of 0 or more.
@@ -2059,26 +2060,15 @@ func lineArg(s string) string {
 		return s
 	}
 	// key=<slot> (tokens=<n>) is a placeholder too, when key is a plain word.
-	if k, v, ok := strings.Cut(s, "="); ok && k != "" && isSlot(v) && shellQuote(k) == k {
+	if k, v, ok := strings.Cut(s, "="); ok && k != "" && isSlot(v) && sink.Quote(k) == k {
 		return s
 	}
-	return shellQuote(s)
+	return sink.Quote(s)
 }
 
 // isSlot is a <lowercase> placeholder the reader fills in.
 func isSlot(s string) bool {
 	return len(s) > 2 && s[0] == '<' && s[len(s)-1] == '>' && strings.Trim(s[1:len(s)-1], "abcdefghijklmnopqrstuvwxyz") == ""
-}
-
-// shellQuote leaves plain words alone and single-quotes the rest. A `#` only
-// starts a comment at the start of a word, so it is plain anywhere else.
-func shellQuote(s string) string {
-	if s != "" && s[0] != '#' && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_-./:=@%+,#", r))
-	}) < 0 {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // takeBoundaryModelMap parses f's --model-map for the boundary this verb

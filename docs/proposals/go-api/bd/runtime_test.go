@@ -451,11 +451,11 @@ func TestSupersedeApplyAndReplay(t *testing.T) {
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> calls
 case "$*" in
- 'show old --json') cat old.json ;;
- 'show new --json') cat new.json ;;
- 'supersede old --with new')
+ 'show --json -- old') cat old.json ;;
+ 'show --json -- new') cat new.json ;;
+ 'supersede --with new -- old')
    printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' > old.json ;;
- 'dep list old --direction=up -t blocks --json') printf '[]' ;;
+ 'dep list --direction=up -t blocks --json -- old') printf '[]' ;;
  *) exit 19 ;;
 esac
 `
@@ -487,7 +487,7 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(calls), "supersede old --with new\n") != 1 {
+	if strings.Count(string(calls), "supersede --with new -- old\n") != 1 {
 		t.Fatalf("write must occur exactly once: %s", calls)
 	}
 }
@@ -512,7 +512,7 @@ func TestSupersedeEvidence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			bin := filepath.Join(dir, "bd")
-			script := "#!/bin/sh\ncase \"$*\" in\n 'show old --json') cat old.json ;;\n 'show new --json') cat new.json ;;\n 'dep list old --direction=up -t blocks --json') printf '[]' ;;\n *) exit 19 ;;\nesac\n"
+			script := "#!/bin/sh\ncase \"$*\" in\n 'show --json -- old') cat old.json ;;\n 'show --json -- new') cat new.json ;;\n 'dep list --direction=up -t blocks --json -- old') printf '[]' ;;\n *) exit 19 ;;\nesac\n"
 			for name, data := range map[string]string{"bd": script, "old.json": tc.old, "new.json": tc.target} {
 				if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o700); err != nil {
 					t.Fatal(err)
@@ -559,9 +559,9 @@ func TestSupersedeUnconfirmedWrite(t *testing.T) {
 	// A successful exit without the persisted edge must not claim completion.
 	script := `#!/bin/sh
 case "$*" in
- 'show old --json') printf '%s' '[{"id":"old","status":"open"}]' ;;
- 'show new --json') printf '%s' '[{"id":"new"}]' ;;
- 'supersede old --with new') exit 0 ;;
+ 'show --json -- old') printf '%s' '[{"id":"old","status":"open"}]' ;;
+ 'show --json -- new') printf '%s' '[{"id":"new"}]' ;;
+ 'supersede --with new -- old') exit 0 ;;
  *) exit 19 ;;
 esac
 `
@@ -598,14 +598,14 @@ func TestSupersedeRepointsDependents(t *testing.T) {
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> calls
 case "$*" in
- 'show old --json') cat old.json ;;
- 'show new --json') cat new.json ;;
- 'supersede old --with new')
+ 'show --json -- old') cat old.json ;;
+ 'show --json -- new') cat new.json ;;
+ 'supersede --with new -- old')
    printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' > old.json ;;
- 'dep list old --direction=up -t blocks --json') cat dependents.json ;;
- 'dep add d1 new'|'dep add d2 new') ;;
- 'dep remove d1 old') printf '%s' '[{"id":"d2","dependency_type":"blocks"}]' > dependents.json ;;
- 'dep remove d2 old') printf '%s' '[]' > dependents.json ;;
+ 'dep list --direction=up -t blocks --json -- old') cat dependents.json ;;
+ 'dep add -- d1 new'|'dep add -- d2 new') ;;
+ 'dep remove -- d1 old') printf '%s' '[{"id":"d2","dependency_type":"blocks"}]' > dependents.json ;;
+ 'dep remove -- d2 old') printf '%s' '[]' > dependents.json ;;
  *) exit 19 ;;
 esac
 `
@@ -623,7 +623,7 @@ esac
 	e := bd.Supersede(wf.KeyOf("replace"), "old", "new")
 	apply(t, rt, dir, e)
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
-	for _, want := range []string{"dep add d1 new\ndep remove d1 old\n", "dep add d2 new\ndep remove d2 old\n"} {
+	for _, want := range []string{"dep add -- d1 new\ndep remove -- d1 old\n", "dep add -- d2 new\ndep remove -- d2 old\n"} {
 		if !strings.Contains(string(calls), want) {
 			t.Errorf("calls lack %q (add before remove):\n%s", want, calls)
 		}
@@ -650,13 +650,13 @@ func TestSupersedeRepointSkipsARefusedEdge(t *testing.T) {
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> calls
 case "$*" in
- 'show old --json') printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' ;;
- 'show new --json') printf '%s' '[{"id":"new","status":"open"}]' ;;
- 'dep list old --direction=up -t blocks --json') cat dependents.json ;;
- 'dep add d1 new') echo 'Error: adding dependency would create a cycle' >&2; exit 1 ;;
- 'dep add d2 new') echo 'Error: cannot add dependency: d2 is already a child of new' >&2; exit 1 ;;
- 'dep add d3 new') echo 'Error: database is locked' >&2; exit 1 ;;
- 'dep remove d1 old'|'dep remove d2 old') printf '%s' '[]' > dependents.json ;;
+ 'show --json -- old') printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' ;;
+ 'show --json -- new') printf '%s' '[{"id":"new","status":"open"}]' ;;
+ 'dep list --direction=up -t blocks --json -- old') cat dependents.json ;;
+ 'dep add -- d1 new') echo 'Error: adding dependency would create a cycle' >&2; exit 1 ;;
+ 'dep add -- d2 new') echo 'Error: cannot add dependency: d2 is already a child of new' >&2; exit 1 ;;
+ 'dep add -- d3 new') echo 'Error: database is locked' >&2; exit 1 ;;
+ 'dep remove -- d1 old'|'dep remove -- d2 old') printf '%s' '[]' > dependents.json ;;
  *) exit 19 ;;
 esac
 `
@@ -671,7 +671,7 @@ esac
 		t.Fatalf("Apply = %v, want the refused edges skipped", err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
-	for _, want := range []string{"dep remove d1 old\n", "dep remove d2 old\n"} {
+	for _, want := range []string{"dep remove -- d1 old\n", "dep remove -- d2 old\n"} {
 		if !strings.Contains(string(calls), want) {
 			t.Errorf("calls lack %q:\n%s", want, calls)
 		}
@@ -695,12 +695,12 @@ func TestSupersedeRepointSkipsAClosedDependent(t *testing.T) {
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> calls
 case "$*" in
- 'show old --json') printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' ;;
- 'show new --json') printf '%s' '[{"id":"new","status":"open"}]' ;;
- 'dep list old --direction=up -t blocks --json') cat dependents.json ;;
- 'dep add d1 new') echo 'Error: dependency d1 -> new already exists with type "supersedes" (requested "blocks")' >&2; exit 1 ;;
- 'dep add d2 new') ;;
- 'dep remove d2 old') printf '%s' '[{"id":"d1","status":"closed","dependency_type":"blocks"}]' > dependents.json ;;
+ 'show --json -- old') printf '%s' '[{"id":"old","status":"closed","dependencies":[{"id":"new","dependency_type":"supersedes"}]}]' ;;
+ 'show --json -- new') printf '%s' '[{"id":"new","status":"open"}]' ;;
+ 'dep list --direction=up -t blocks --json -- old') cat dependents.json ;;
+ 'dep add -- d1 new') echo 'Error: dependency d1 -> new already exists with type "supersedes" (requested "blocks")' >&2; exit 1 ;;
+ 'dep add -- d2 new') ;;
+ 'dep remove -- d2 old') printf '%s' '[{"id":"d1","status":"closed","dependency_type":"blocks"}]' > dependents.json ;;
  *) exit 19 ;;
 esac
 `
@@ -716,10 +716,10 @@ esac
 		t.Fatalf("Apply = %v, want the closed dependent skipped", err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
-	if strings.Contains(string(calls), "dep add d1 new") {
+	if strings.Contains(string(calls), "dep add -- d1 new") {
 		t.Errorf("the closed dependent d1 was repointed:\n%s", calls)
 	}
-	if !strings.Contains(string(calls), "dep add d2 new\ndep remove d2 old\n") {
+	if !strings.Contains(string(calls), "dep add -- d2 new\ndep remove -- d2 old\n") {
 		t.Errorf("the open dependent d2 did not move:\n%s", calls)
 	}
 	if got := check(t, rt, dir, e); got != wf.EffectDone {
@@ -727,8 +727,9 @@ esac
 	}
 }
 
-// SetMetadata writes each field as key=value through bd update: a value that
-// looks like an option or a command stays the part after its key's '='.
+// SetMetadata writes the fields as one JSON object through bd update
+// --metadata: a value that looks like an option or a command stays a string
+// inside it.
 func TestSetMetadata(t *testing.T) {
 	dir := tempTracker(t)
 	rt := bd.Runtime(bd.Config{})
@@ -869,4 +870,160 @@ func TestTransientSurvivesShortArgument(t *testing.T) {
 	if !errors.Is(err, wf.ErrUnavailable) {
 		t.Fatalf("ReadyIn(\"a\") with a held lock: err = %v, want ErrUnavailable", err)
 	}
+}
+
+// A bead created before key labels went through sink.Label carries the
+// legacy label, % unencoded; Check still finds it, so a recovery after the
+// upgrade does not file the bead twice.
+func TestCheckFindsCreateStampedWithLegacyKeyLabel(t *testing.T) {
+	dir := tempTracker(t)
+	rt := bd.Runtime(bd.Config{})
+	cmd := exec.Command("bd", "create", "--title=t", "--labels", "key:100% done", "--json")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd create: %v: %s", err, out)
+	}
+	if st, err := rt.Check(dir, bd.Create(wf.KeyOf("100% done"), bd.Issue{Title: "t"})); err != nil || st != wf.EffectDone {
+		t.Errorf("Check = %v, %v; want done from the legacy label", st, err)
+	}
+	if st, err := rt.Check(dir, bd.Create(wf.KeyOf("100% done"), bd.Issue{Title: "other"})); err != nil || st != wf.EffectNotDone {
+		t.Errorf("Check of another title = %v, %v; want not done", st, err)
+	}
+}
+
+// bd trims every label, so before sink.Label encoded edge whitespace a key
+// ending in it ("x\t") was stamped as the key without it (key:x). Now the
+// two keys stamp different labels, and a create for "x\t" is not taken as
+// done because a bead for "x" with the same title exists.
+func TestEdgeSpaceKeysStampDistinctLabels(t *testing.T) {
+	dir := tempTracker(t)
+	rt := bd.Runtime(bd.Config{})
+	x := apply(t, rt, dir, bd.Create(wf.KeyOf("x"), bd.Issue{Title: "T"}))
+	stamped := map[string]string{keyLabelOf(t, dir, x.ID): "x"}
+	for _, suffix := range []string{"\t", " ", " ", " ", "\v", "\f", "\u0085"} {
+		key := "x" + suffix
+		e := bd.Create(wf.KeyOf(key), bd.Issue{Title: "T"})
+		if st := check(t, rt, dir, e); st != wf.EffectNotDone {
+			t.Errorf("key %q: Check with only other keys' beads = %v, want not done", key, st)
+			continue
+		}
+		b := apply(t, rt, dir, e)
+		l := keyLabelOf(t, dir, b.ID)
+		if prev, dup := stamped[l]; dup {
+			t.Errorf("keys %q and %q both stamp %q", prev, key, l)
+		}
+		stamped[l] = key
+		if st := check(t, rt, dir, e); st != wf.EffectDone {
+			t.Errorf("key %q: Check after its create = %v, want done", key, st)
+		}
+	}
+	if st := check(t, rt, dir, bd.Create(wf.KeyOf("x"), bd.Issue{Title: "T"})); st != wf.EffectDone {
+		t.Errorf("key \"x\": Check = %v, want done", st)
+	}
+}
+
+// A legacy stamp that bd trimmed (key "x\t" stamped key:x) cannot be told
+// from the stamp of key "x", so Check does not take it as the create of
+// "x\t": that would skip a create that never happened. A legacy stamp no
+// other key shares (key "100%" as key:100%) is still found.
+func TestCheckSkipsAmbiguousLegacyKeyLabel(t *testing.T) {
+	dir := tempTracker(t)
+	rt := bd.Runtime(bd.Config{})
+	cmd := exec.Command("bd", "create", "--title=T", "--labels", "key:x\t", "--json")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd create: %v: %s", err, out)
+	}
+	if st := check(t, rt, dir, bd.Create(wf.KeyOf("x\t"), bd.Issue{Title: "T"})); st != wf.EffectNotDone {
+		t.Errorf("key \"x\\t\" against the ambiguous legacy stamp key:x: Check = %v, want not done", st)
+	}
+	if st := check(t, rt, dir, bd.Create(wf.KeyOf("x"), bd.Issue{Title: "T"})); st != wf.EffectDone {
+		t.Errorf("key \"x\": Check = %v, want done", st)
+	}
+	// Key "a%2Cb" was stamped key:a%2Cb, which is now the label of key "a,b".
+	cmd = exec.Command("bd", "create", "--title=T", "--labels", "key:a%2Cb", "--json")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd create: %v: %s", err, out)
+	}
+	if st := check(t, rt, dir, bd.Create(wf.KeyOf("a%2Cb"), bd.Issue{Title: "T"})); st != wf.EffectNotDone {
+		t.Errorf("key \"a%%2Cb\" against key:a%%2Cb (the label of key \"a,b\"): Check = %v, want not done", st)
+	}
+}
+
+// keyLabelOf is the one key: label bd stored on bead id.
+func keyLabelOf(t *testing.T, dir, id string) string {
+	t.Helper()
+	cmd := exec.Command("bd", "show", id, "--json")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bd show %s: %v", id, err)
+	}
+	var v []struct{ Labels []string }
+	if err := json.Unmarshal(out, &v); err != nil || len(v) != 1 {
+		t.Fatalf("bd show %s: %v: %s", id, err, out)
+	}
+	var keys []string
+	for _, l := range v[0].Labels {
+		if strings.HasPrefix(l, "key:") {
+			keys = append(keys, l)
+		}
+	}
+	if len(keys) != 1 {
+		t.Fatalf("bead %s carries key labels %q, want one", id, keys)
+	}
+	return keys[0]
+}
+
+// set_metadata stores each value as bd update --set-metadata k=v did (bd
+// 1.3.1), the path it replaced: the words true, false and null and a JSON
+// number are stored typed, anything else as the string. The old path is
+// the oracle: both write the same values on two beads and are compared.
+func TestSetMetadataStoresValuesAsSetMetadataDid(t *testing.T) {
+	dir := tempTracker(t)
+	rt := bd.Runtime(bd.Config{})
+	vals := []string{"1", "-1", "1.5", "1e3", "1.5e-3", " 1 ", "\t1", "1\n", "-0", "1.0", "9007199254740993",
+		"01", "+1", ".5", "0x10", "NaN", "1e999", " 1", "1 2", "1,2",
+		"true", "false", "null", " true", "null ", "TRUE", "nulls",
+		"[1]", `{"x":1}`, `"q"`, "", "abc", "-", "--"}
+	fields := map[string]string{}
+	for i, v := range vals {
+		fields[fmt.Sprintf("k%d", i)] = v
+	}
+	old := apply(t, rt, dir, bd.Create(wf.KeyOf("old"), bd.Issue{Title: "old"}))
+	args := []string{"update"}
+	for k, v := range fields {
+		args = append(args, "--set-metadata", k+"="+v)
+	}
+	cmd := exec.Command("bd", append(args, "--json", "--", old.ID)...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bd update --set-metadata: %v: %s", err, out)
+	}
+	cur := apply(t, rt, dir, bd.Create(wf.KeyOf("new"), bd.Issue{Title: "new"}))
+	apply(t, rt, dir, bd.SetMetadata(wf.KeyOf("m"), cur.ID, fields))
+	want, got := metadataOf(t, dir, old.ID), metadataOf(t, dir, cur.ID)
+	for i, v := range vals {
+		k := fmt.Sprintf("k%d", i)
+		if string(got[k]) != string(want[k]) {
+			t.Errorf("value %q: stored %s, --set-metadata stored %s", v, got[k], want[k])
+		}
+	}
+}
+
+// metadataOf is bead id's metadata as bd stores it, each value raw JSON.
+func metadataOf(t *testing.T, dir, id string) map[string]json.RawMessage {
+	t.Helper()
+	cmd := exec.Command("bd", "show", id, "--json")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bd show %s: %v", id, err)
+	}
+	var v []struct{ Metadata map[string]json.RawMessage }
+	if err := json.Unmarshal(out, &v); err != nil || len(v) != 1 {
+		t.Fatalf("bd show %s: %v: %s", id, err, out)
+	}
+	return v[0].Metadata
 }

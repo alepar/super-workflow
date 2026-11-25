@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // defaultPoll is the retry-after of a wait instruction when the Wait sets no
@@ -412,7 +414,7 @@ func (o gateOps[S, A]) present(c *cycle, in *instance, n *node) *Instruction {
 	// state, a bare answer would take the oldest.
 	submit := c.commandLine(c.e.opts.AnswerLine(c.run, q))
 	if in.ID != "" {
-		submit += fmt.Sprintf(" --child %s --visit %d", shellQuote(in.ID), in.Visits[in.Cur])
+		submit += fmt.Sprintf(" --child %s --visit %d", sink.Quote(in.ID), in.Visits[in.Cur])
 	}
 	fmt.Fprintf(&b, "\nAnswer with one of %s, as <value>:\n%s", strings.Join(k.answers.values, ", "), submit)
 	ins := &Instruction{
@@ -586,7 +588,7 @@ func (c *cycle) reservedCoordinatorInstruction() (Instruction, bool) {
 		}
 		state := c.st.qualified(in)
 		answer := c.commandLine(c.e.opts.AnswerLine(c.run, state))
-		answer += fmt.Sprintf(" --child %s --visit %d", shellQuote(in.ID), in.Visits[in.Cur])
+		answer += fmt.Sprintf(" --child %s --visit %d", sink.Quote(in.ID), in.Visits[in.Cur])
 		question := strings.TrimSpace(gate.question)
 		if !strings.HasSuffix(question, ".") && !strings.HasSuffix(question, "?") && !strings.HasSuffix(question, "!") {
 			question += "."

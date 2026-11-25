@@ -496,14 +496,26 @@ func home(env Env, v, dir string) string {
 }
 
 // spawnArgs renders key=value pairs of a tool call, skipping empty values.
+// Each value is a JSON string, written by the encoder: Go's %q escapes (\x00,
+// \a) are not JSON and cannot be copied into a tool call.
 func spawnArgs(kv ...string) string {
 	var parts []string
 	for i := 0; i+1 < len(kv); i += 2 {
 		if kv[i+1] != "" {
-			parts = append(parts, fmt.Sprintf("%s=%q", kv[i], kv[i+1]))
+			parts = append(parts, kv[i]+"="+jsonText(kv[i+1]))
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// jsonText is s as a JSON string, < > & kept as they are (they are not
+// HTML here). Invalid UTF-8 becomes U+FFFD: JSON cannot carry it.
+func jsonText(s string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // claude is Claude Code. A subagent's shell carries its parent's
