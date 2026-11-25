@@ -5,7 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 type edgeData struct {
@@ -364,6 +369,7 @@ type inputDesc struct {
 	art       *artifactData
 	alias     string // As: the name a prompt template binds this input under
 	tmpl      string // Bound: the template whose scope-bound value is the input
+	shell     string // ShellBound "word", ShellWords "words": how the bound value is quoted
 	// ObservedAs: the observation read at issue and its render of the value.
 	obs    *ObservationDesc
 	render func(json.RawMessage) (string, error)
@@ -400,9 +406,11 @@ func (o outInput) inputRef() inputDesc { return inputDesc{kind: "out", name: o.n
 // Out refers to the accepted output of an upstream Agent, Compute or Command state.
 func Out(s State) Input { return outInput{n: s.node()} }
 
-type boundInput struct{ name, tmpl string }
+type boundInput struct{ name, tmpl, shell string }
 
-func (b boundInput) inputRef() inputDesc { return inputDesc{kind: "bound", name: b.name, tmpl: b.tmpl} }
+func (b boundInput) inputRef() inputDesc {
+	return inputDesc{kind: "bound", name: b.name, tmpl: b.tmpl, shell: b.shell}
+}
 
 // Bound is a declared input whose value is template bound by scope ({name}
 // placeholders resolved as in any argv). It binds a prompt's {{name}} and its
@@ -411,6 +419,102 @@ func (b boundInput) inputRef() inputDesc { return inputDesc{kind: "bound", name:
 // block lists it only when no token consumed it. An unresolved placeholder
 // blocks the state.
 func Bound(name, template string) Input { return boundInput{name: name, tmpl: template} }
+
+// ShellBound is a Bound input whose value is the bound text as exactly one
+// POSIX shell word (sink.Quote, and quoted where it would start a Markdown
+// block), for a prompt that places it in a command
+// the agent runs ("cd [WORKTREE]"). The quoted word is the value everywhere
+// the input shows: the prompt, the Inputs block and the instruction's
+// inputs; paged delivery presents it as bound. Text that no prompt line can
+// carry as one word blocks the state: a control character (a line break, a
+// tab, NUL), a backtick, which would end an inline code span around the
+// token, or invalid UTF-8. Place the token in the command as a bare word:
+// inside "..." or another quoted string it is no longer one argument. The
+// quoted word does not expand ~, and a word starting with - is still read as
+// an option by the command, so write "cd -- [WORKTREE]" where that matters.
+// In a fork, the bound text is checked like a command argument: one naming
+// a root of the source run is refused. A manufacture script's
+// {{input.NAME}} is the quoted word too, so a value a script passes as an
+// argv element or a dir stays a wf.Bound. Reference has no effect on it: a
+// shell word is always presented as bound, never paged, so keep a shell
+// value small (a list of thousands of paths belongs in a file).
+func ShellBound(name, template string) Input {
+	return boundInput{name: name, tmpl: template, shell: shellWord}
+}
+
+// ShellWords is a ShellBound input for a list: its bound text is split at
+// spaces, tabs and line breaks, and each element becomes one quoted shell
+// word, so a list of pathspecs an agent wrote becomes that
+// many arguments. An element cannot hold a space, and text with no elements
+// binds empty. The command still reads the words: put "--" before them
+// ("git add -- [FILES]") so none is taken as an option.
+func ShellWords(name, template string) Input {
+	return boundInput{name: name, tmpl: template, shell: shellWordList}
+}
+
+const (
+	shellWord     = "word"
+	shellWordList = "words"
+)
+
+// quoteBound is a Bound input's bound text as its shell mode quotes it.
+func quoteBound(mode, v string) (string, error) {
+	if mode == "" {
+		return v, nil
+	}
+	words := []string{v}
+	if mode == shellWordList {
+		words = strings.FieldsFunc(v, func(r rune) bool {
+			return r == ' ' || r == '\t' || r == '\n' || r == '\r'
+		})
+	}
+	for _, w := range words {
+		if err := shellWordText(w); err != nil {
+			return "", err
+		}
+	}
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = promptWord(w)
+	}
+	return strings.Join(out, " "), nil
+}
+
+// promptWord is w as one shell word that cannot start a Markdown block where
+// the template puts it at the start of a line: sink.Quote, and single quotes
+// too around a word Quote leaves bare that starts with -, + or _, or with
+// digits and a period ("-", "--", "___", "1."), which would read as a list
+// item, a setext underline or a thematic break, or holds a # (zsh's extendedglob, common in a user's shell,
+// reads a#b as a pattern). The shell reads the same argument.
+func promptWord(w string) string {
+	q := sink.Quote(w)
+	if q != w {
+		return q
+	}
+	digits := strings.TrimLeft(w, "0123456789")
+	if w[0] == '-' || w[0] == '+' || w[0] == '_' || len(digits) < len(w) && strings.HasPrefix(digits, ".") || strings.Contains(w, "#") {
+		return "'" + w + "'"
+	}
+	return w
+}
+
+// shellWordText refuses text a prompt line cannot carry as one shell word
+// the agent copies.
+func shellWordText(w string) error {
+	if err := sink.CheckArg(w); err != nil {
+		return err
+	}
+	if !utf8.ValidString(w) {
+		// A root read from the filesystem can be; JSON would deliver
+		// another path.
+		return fmt.Errorf("shell word %q is not valid UTF-8", w)
+	}
+	if i := strings.IndexFunc(w, func(r rune) bool { return unicode.IsControl(r) || r == '`' }); i >= 0 {
+		r, _ := utf8.DecodeRuneInString(w[i:])
+		return fmt.Errorf("shell word %q holds %q, which no prompt line can carry as one word", w, r)
+	}
+	return nil
+}
 
 type observedInput struct {
 	name   string
@@ -545,7 +649,8 @@ func (k Check[O]) fromDescs(out O) []ObservationDesc {
 	return ds
 }
 
-// Reference declares a prompt input as required or optional reference material.
+// Reference declares a prompt input as required or optional reference
+// material. It has no effect on a ShellBound or ShellWords input.
 func Reference(in Input, required bool) Input { return referenceInput{in, required} }
 
 type referenceInput struct {
@@ -555,6 +660,9 @@ type referenceInput struct {
 
 func (r referenceInput) inputRef() inputDesc {
 	d := r.in.inputRef()
+	if d.shell != "" {
+		return d // presented as bound, never as reference pages
+	}
 	d.reference = "optional"
 	if r.required {
 		d.reference = "required"

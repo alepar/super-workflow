@@ -562,6 +562,9 @@ func inputString(i inputDesc) string {
 		s += " (" + i.reference + " reference)"
 	}
 	if i.kind == "bound" {
+		if i.shell != "" {
+			s += " (shell " + i.shell + ")"
+		}
 		s += " = " + i.tmpl
 	}
 	if i.obs != nil {

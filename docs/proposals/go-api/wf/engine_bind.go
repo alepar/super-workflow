@@ -669,6 +669,7 @@ type promptInput struct {
 	value string
 	out   bool
 	bound bool // a Bound input: its literal [NAME] token in the prompt is replaced too
+	shell bool // a ShellBound or ShellWords input: presented as bound, never paged
 }
 
 // inputValues resolves the declared inputs of a prompt, in declaration order.
@@ -738,7 +739,16 @@ func (s scope) inputValues(inputs []Input) ([]promptInput, error) {
 			if err != nil {
 				return nil, err
 			}
-			pi.value, pi.bound = v, true
+			if d.shell != "" {
+				// A shell word is an argument the agent runs, never citation.
+				if err := s.c.checkForkValue(v, "prompt input "+pi.name); err != nil {
+					return nil, err
+				}
+				if v, err = quoteBound(d.shell, v); err != nil {
+					return nil, fmt.Errorf("prompt input %s: %w", pi.name, err)
+				}
+			}
+			pi.value, pi.bound, pi.shell = v, true, d.shell != ""
 		case "observed":
 			v, err := s.c.observedInput(s.in, d)
 			if err != nil {
@@ -807,45 +817,56 @@ func (s scope) bindPrompt(text string, ins []promptInput) (string, []bool, error
 	var missing string
 	// bindToken is the value of the token naming name, and whether it is a
 	// Bound input's prose; ok is false for a token that stays as written.
-	bindToken := func(name string) (value string, prose, ok bool) {
+	// modeOf is how substitute places an input's value: a Bound value as
+	// the definition's prose, a shell word as it is.
+	modeOf := func(pi promptInput) substitution {
+		switch {
+		case pi.shell:
+			return asWord
+		case pi.bound:
+			return asProse
+		}
+		return asValue
+	}
+	bindToken := func(name string) (value string, mode substitution, ok bool) {
 		if name == scratchName {
 			// The engine's directory, never a prompt input named scratch.
 			v, ok := s.lookup(name)
-			return v, false, ok
+			return v, asValue, ok
 		}
 		for i, pi := range ins {
 			if pi.name == name {
 				used[i] = true
-				return pi.value, pi.bound, true
+				return pi.value, modeOf(pi), true
 			}
 		}
 		for i, pi := range ins {
 			if strings.EqualFold(pi.name, name) {
 				used[i] = true
-				return pi.value, pi.bound, true
+				return pi.value, modeOf(pi), true
 			}
 		}
 		if v, ok := s.lookup(name); ok {
-			return v, false, true
+			return v, asValue, true
 		}
 		if name == recordsName || name == "assets" {
 			// A builtin that fails to bind is an error, never an Out input.
-			return "", false, false
+			return "", asValue, false
 		}
 		for i, pi := range ins {
 			if pi.out && !used[i] {
 				used[i] = true
-				return pi.value, pi.bound, true
+				return pi.value, modeOf(pi), true
 			}
 		}
-		return "", false, false
+		return "", asValue, false
 	}
 	out := bracketBound(text, ins, used, func(b *promptText, source string) {
 		at := 0
 		for _, m := range promptPattern.FindAllStringSubmatchIndex(source, -1) {
 			b.WriteString(source[at:m[0]])
-			if v, prose, ok := bindToken(source[m[2]:m[3]]); ok {
-				substitute(b, v, prose)
+			if v, mode, ok := bindToken(source[m[2]:m[3]]); ok {
+				substitute(b, v, mode)
 			} else {
 				b.WriteString(source[m[0]:m[1]])
 				if missing == "" {
@@ -1008,8 +1029,16 @@ func longestRun(v string, c byte) int {
 // fence grows one longer than the value's longest run, its opener here and
 // its closer when the template writes it (closeWidened), so the block still
 // holds the value and ends where the template ends it.
-func substitute(b *promptText, v string, prose bool) {
+func substitute(b *promptText, v string, mode substitution) {
 	b.closeWidened(false)
+	if mode == asWord {
+		// One shell word: one line with no backtick (quoteBound), so it
+		// cannot end a fence or a code span. Fencing it would split the
+		// command it completes ("--" reads as a setext underline).
+		b.WriteString(v)
+		return
+	}
+	prose := mode == asProse
 	s := b.String()
 	if at, run, c, open := openFence(s); open {
 		if n := longestRun(v, c); n >= run {
@@ -1038,6 +1067,15 @@ func substitute(b *promptText, v string, prose bool) {
 	b.WriteString(fenceValue(v))
 	b.WriteString("\n")
 }
+
+// substitution is how substitute places a value.
+type substitution int
+
+const (
+	asValue substitution = iota // model text: fenced where it could add structure
+	asProse                     // a Bound input's prose: fenced only where it would read as a section
+	asWord                      // a shell word: written as it is
+)
 
 // bracketPattern matches one [..] token, allowing one nested [..] (the triage
 // prompt's plan section names [plan file name] inside its own token).
@@ -1077,7 +1115,11 @@ func bracketBound(text string, ins []promptInput, used []bool, bindUnbound func(
 			}
 			if r, _ := utf8.DecodeRuneInString(rest); rest == "" || !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 				bindUnbound(&out, text[at:m[0]])
-				substitute(&out, pi.value, true)
+				mode := asProse
+				if pi.shell {
+					mode = asWord
+				}
+				substitute(&out, pi.value, mode)
 				at = m[1]
 				used[i] = true
 				break

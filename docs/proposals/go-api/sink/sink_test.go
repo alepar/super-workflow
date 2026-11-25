@@ -28,8 +28,8 @@ func TestHostileShellLine(t *testing.T) {
 				return
 			}
 			a := sink.Argv{"printf", "%s\\0", in.Value, "-x"}
-			for _, sh := range []string{"sh", "bash"} {
-				out, err := exec.Command(sh, "-c", a.Line()).Output()
+			for _, sh := range shells(t) {
+				out, err := exec.Command(sh[0], append(sh[1:], "-c", a.Line())...).Output()
 				if err != nil {
 					t.Fatalf("%s -c %q: %v", sh, a.Line(), err)
 				}
@@ -40,6 +40,18 @@ func TestHostileShellLine(t *testing.T) {
 			}
 		})
 	}
+}
+
+// shells are the shells a quoted line must read the same in: sh, bash, and
+// zsh when it is installed (without extendedglob, under which Quote's bare #
+// is a pattern; prompt words quote it: wf.ShellBound).
+func shells(t *testing.T) [][]string {
+	t.Helper()
+	out := [][]string{{"sh"}, {"bash"}}
+	if _, err := exec.LookPath("zsh"); err == nil {
+		out = append(out, []string{"zsh"})
+	}
+	return out
 }
 
 // mdInline is hostile.ReadInline, failing the test on refused syntax.
@@ -257,4 +269,44 @@ func pctControls(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// lines splits s at every line ending Markdown reads: CRLF, CR or LF.
+func lines(s string) []string {
+	return strings.Split(strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n"), "\n")
+}
+
+func TestHostileCommand(t *testing.T) {
+	for _, in := range hostile.Corpus() {
+		t.Run(in.Name, func(t *testing.T) {
+			md, want := string(sink.Command(in.Value)), hostile.Readable(in.Value)
+			if !strings.ContainsAny(in.Value, "\r\n") {
+				if got := mdInline(t, md); got != want {
+					t.Errorf("Command(%q) reads back %q", in.Value, got)
+				}
+				return
+			}
+			// A block on lines of its own: a line break, the opener, the
+			// content, the closer, a line break.
+			ls := lines(md)
+			if len(ls) < 4 || ls[0] != "" || ls[len(ls)-1] != "" {
+				t.Fatalf("Command(%q) = %q, want a block on its own lines", in.Value, md)
+			}
+			fence, body := ls[1], ls[2:len(ls)-2]
+			if len(fence) < 3 || strings.Trim(fence, "`") != "" || ls[len(ls)-2] != fence {
+				t.Fatalf("Command(%q) = %q: opener %q and closer %q", in.Value, md, fence, ls[len(ls)-2])
+			}
+			for _, l := range body {
+				if c := strings.TrimRight(strings.TrimLeft(l, " "), " \t"); len(c) >= len(fence) && strings.Trim(c, "`") == "" {
+					t.Fatalf("Command(%q): content line %q closes the block early", in.Value, l)
+				}
+			}
+			// The content is the value and the line break before the closer,
+			// read as a Markdown reader reads lines: a final CR is that break.
+			wl := lines(want + "\n")
+			if got := strings.Join(body, "\n"); got != strings.Join(wl[:len(wl)-1], "\n") {
+				t.Errorf("Command(%q) block holds %q", in.Value, got)
+			}
+		})
+	}
 }

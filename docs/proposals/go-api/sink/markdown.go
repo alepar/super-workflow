@@ -108,6 +108,33 @@ func Code(s string) Inline {
 	return Inline{fence + s + fence}
 }
 
+// Command is a command line as Markdown a reader copies it from: an inline
+// code span (Code) when it is one line, otherwise a fenced code block on
+// lines of its own, fenced by more backticks than any run in it, so a line
+// break in the command cannot end the span or the block early. It is for
+// text the program writes whole, such as a report or a status line, not for
+// a value bound into a template. The block starts and ends with a line
+// break, so it can follow text on a top-level line; its fence is at column
+// 0, so inside a list item or a block quote it ends that container. An
+// empty command is empty.
+func Command(line string) Markdown {
+	line = toValidUTF8(strings.ReplaceAll(line, "\x00", "�"))
+	if !strings.ContainsAny(line, "\r\n") {
+		return Code(line).Markdown()
+	}
+	run, fence := 0, 3
+	for i := 0; i < len(line); i++ {
+		if line[i] == '`' {
+			run++
+			fence = max(fence, run+1)
+		} else {
+			run = 0
+		}
+	}
+	f := strings.Repeat("`", fence)
+	return Markdown("\n" + f + "\n" + line + "\n" + f + "\n")
+}
+
 // Link is a link to url with text as its text. The destination is written
 // in angle brackets. Inside them a link destination still reads backslash
 // escapes and character references, so \ < > & are backslash-escaped, and

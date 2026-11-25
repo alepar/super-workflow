@@ -136,8 +136,8 @@ type continuation struct {
 	// offer; the second step uses it as use says: "read" (a Compute reads
 	// its content) or "prompt" (an agent's prompt input).
 	artifact, use string
-	// bound, with use "bound", is a wf.Bound prompt input SPEC of the
-	// second step, an agent.
+	// bound, with use "bound" or "shell-bound", is a wf.Bound or
+	// wf.ShellBound prompt input SPEC of the second step, an agent.
 	bound string
 	// prepare, when set, runs on the fork's and the source's workspaces
 	// after the fork is taken, before it is driven.
@@ -164,7 +164,7 @@ func continuationDef(k continuation) *wf.Def {
 		read.Route(func(string, wf.Ctx) wf.Edge[ccRead] { return fin }, fin)
 		return d
 	}
-	if k.prompt != "" || k.use == "prompt" || k.use == "bound" {
+	if k.prompt != "" || k.use == "prompt" || k.use == "bound" || k.use == "shell-bound" {
 		brief := wf.NewAgent[ccBrief, string](d)
 		next := offer.To(brief, "next")
 		offer.Route(func(string, wf.Ctx) wf.Edge[ccOffer] { return next }, next)
@@ -174,6 +174,9 @@ func continuationDef(k continuation) *wf.Def {
 		}
 		if k.use == "bound" {
 			p = wf.PromptText("brief", wf.Bound("SPEC", k.bound))
+		}
+		if k.use == "shell-bound" {
+			p = wf.PromptText("cat [SPEC]", wf.ShellBound("SPEC", k.bound))
 		}
 		brief.Spec(p, wf.Retry[ccBrief](wf.Const(1), brief.To(stop, "gave up")))
 		fin := brief.To(done, "done")
@@ -412,20 +415,23 @@ func TestForkRefusesAnArtifactUnderTheSource(t *testing.T) {
 // A path marked in a wf.Bound prompt input, whole or inside prose, keeps its
 // path semantics: in a fork its bound target is checked before the prompt is
 // presented (an earlier revision final review, P1). An unmarked citation of the same
-// value passes: it is text the agent reads.
+// value passes: it is text the agent reads. A wf.ShellBound value is an
+// argument the agent runs, so it is checked whole, marked or not.
 func TestForkChecksMarkedPathsInABoundPromptInput(t *testing.T) {
 	ws := func(at, _ string) string { return at }
 	for name, c := range map[string]struct {
-		bound   string
-		refused bool
+		bound, use string
+		refused    bool
 	}{
-		"whole":    {wf.PathTemplate("{Stdout}/spec.md"), true},
-		"in prose": {"the root spec " + wf.PathTemplate("{Stdout}/spec.md") + ", then every nested spec", true},
-		"citation": {"the source run wrote {Stdout}/spec.md", false},
-		"own path": {"the ledger at " + wf.PathTemplate("{records}/ledger.md") + " (append only)", false},
+		"whole":          {wf.PathTemplate("{Stdout}/spec.md"), "bound", true},
+		"in prose":       {"the root spec " + wf.PathTemplate("{Stdout}/spec.md") + ", then every nested spec", "bound", true},
+		"citation":       {"the source run wrote {Stdout}/spec.md", "bound", false},
+		"own path":       {"the ledger at " + wf.PathTemplate("{records}/ledger.md") + " (append only)", "bound", false},
+		"shell unmarked": {"{Stdout}/spec.md", "shell-bound", true},
+		"shell own path": {"{records}/ledger.md", "shell-bound", false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := continueFork(t, continuation{use: "bound", bound: c.bound}, ws)
+			f := continueFork(t, continuation{use: c.use, bound: c.bound}, ws)
 			var briefed bool
 			for _, in := range f.ins {
 				briefed = briefed || in.Kind == wf.InstructionAgent && in.State == "ccBrief"

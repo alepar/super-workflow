@@ -485,6 +485,22 @@ supported. Binding records the resolved suffix and owning root, so a later fork
 does not re-evaluate the original template. Empty optional templates stay empty.
 Prompt references and `wf.Bound` prose render the paths without authoring tokens.
 
+A bound value that a prompt places in a command the agent runs should be
+`wf.ShellBound("WORKTREE", "{workspace}/{dir}")`. Its value is the bound text as
+exactly one quoted shell word (`sink.Quote`), so `cd [WORKTREE]` stays one
+argument whatever the path holds, in prose, a code span or a fenced block, and
+paged delivery presents it as bound. Text no prompt line can carry as one word
+blocks the state: a control character (a line break, a tab, NUL), a backtick or
+invalid UTF-8. A shell value is never paged, so keep it small.
+Put the token in the command as a bare word, not inside `"..."`, and write `--`
+before it where a leading `-` must not read as an option. `wf.ShellWords` quotes
+each element of a list separated by whitespace (pathspecs an agent wrote, for
+example: `git add -- [FILES]`), and text with no elements binds empty. Both bind
+like `wf.Bound`, path templates included. In a fork, the whole bound text is
+checked like a command argument. `sink.Command` renders a command line in text
+the program writes whole, such as a report: an inline code span for one line,
+and a fenced block when the command holds a line break.
+
 `{scratch}` is a step's scratch directory: `<run dir>/scratch/<qualified
 state>-<digest of the full qualified state and the instance id>/`. The engine
 creates it when it binds the placeholder, so a step never runs `mkdir` itself.

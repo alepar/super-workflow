@@ -114,7 +114,9 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 	originals := map[string]string{}
 	for i, pi := range ins {
 		originals[pi.name] = pi.value
-		if c.promptPresentation != nil {
+		if c.promptPresentation != nil && !pi.shell {
+			// A shell word stays exactly as bound: a note, a page break or
+			// an escape would change the command it completes.
 			ins[i].value, err = c.promptPresentation(pi.name, pi.value)
 			if err != nil {
 				return "", nil, nil, false, err
