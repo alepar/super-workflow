@@ -19,7 +19,7 @@ import (
 // non-marker ones the engine reads beside them. Derived from the registry.
 // A copy of package wf's test helper: a separate test binary cannot see it.
 func harnessEnvVars() []string {
-	vars := []string{"CODEX_SESSION_ID", "BASH_DEFAULT_TIMEOUT_MS", "TERMINAL_TIMEOUT", "HERMES_DELEGATED_CHILD_CONTEXT", "HERMES_KANBAN_TASK"}
+	vars := []string{"CODEX_SESSION_ID", "BASH_DEFAULT_TIMEOUT_MS", "TERMINAL_TIMEOUT", "HERMES_DELEGATED_CHILD_CONTEXT", "HERMES_KANBAN_TASK", "OPENCODE_PARENT_SESSION_ID", "OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"}
 	for _, n := range harness.Names() {
 		if d, ok := harness.For(n).(harness.Detector); ok {
 			vars = append(vars, d.Markers()...)

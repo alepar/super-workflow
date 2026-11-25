@@ -1,6 +1,6 @@
 # Coordinator protocol
 
-How an agent session (Claude Code, Codex, agy (the Antigravity CLI) or any
+How an agent session (Claude Code, Codex, agy (the Antigravity CLI), opencode or any
 other harness that can spawn subagents) drives a workflow run. The coordinator owns no logic of the
 workflow: the engine decides what happens next, the coordinator spawns what it
 is told to spawn and relays questions to the human. Every successful `run`
@@ -91,7 +91,11 @@ and `status` print the segment's resolution after the harness line, e.g.
 or `models: light=haiku standard=sonnet (claude defaults)`.
 A harness that takes only some model values refuses any other: agy takes
 `inherit`, `flash_lite`, `flash` and `pro` (every agy tier defaults to
-`inherit`, the coordinator's own model), and a real model id is refused. The
+`inherit`, the coordinator's own model), and a real model id is refused.
+opencode takes none: its `task` tool has no model parameter, so every opencode
+unit runs on the coordinator's model, no tier resolves, and a `--model-map`
+(given or carried over) is not applied; one degraded `tiers` record per run or
+segment says so. The
 verb that receives a map checks its keys and efforts; a value is checked once,
 against the harness that binds the segment: when that segment's first
 coordinator `next` binds it, and for the first segment by `run`, against the
@@ -130,7 +134,7 @@ harness's own limit on concurrent subagents (Codex: `[agents] max_threads` in
 the nearest `.codex/config.toml`, else `$CODEX_HOME/config.toml`), it offers up
 to that limit less your children running or still starting, and prints the
 count and where the limit came from. That is the harness's number, never a cap
-of the engine's. Where it reads none (Claude Code, agy, any other harness), it offers
+of the engine's. Where it reads none (Claude Code, agy, opencode, any other harness), it offers
 every ready unit with the line `start all of these`. You may still pass a smaller `n`
 (`next <run> <n>`, within your harness's own limit); `n` may be 0, and
 the call still reports gates, stalls, a stop and the end.
@@ -181,7 +185,8 @@ Otherwise it blocks for as long as the harness allows one tool call, less a
 10 s margin (H2): Claude Code's Bash tool 120 s (or `BASH_DEFAULT_TIMEOUT_MS`),
 Hermes's terminal tool 30 s, the timeout its models pass on each call (or
 `TERMINAL_TIMEOUT` when shorter); pi's bash tool 30 s, the shortest timeout
-its models were seen to pass (pi itself has none); 100 s where the adapter
+its models were seen to pass (pi itself has none); opencode's bash tool 120 s
+(or `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS`); 100 s where the adapter
 reads no limit (Codex, agy, any other harness); `--timeout` overrides it. agy
 cuts no command off (its adapter reads no limit), but it backgrounds a command
 still running when its call's `WaitMsBeforeAsync` runs out and delivers the
@@ -373,6 +378,9 @@ verbatim:
   child whose result is written is found while a sibling in the same response
   is still launching (a launch takes about 11 s): a sibling still pending does
   not hide a written one.
+- opencode: `task(description="run unit", subagent_type="general", prompt=<the text between the lines>)`.
+  The `task` tool takes no model or effort. Never pass `background`. Several
+  units may be several `task` calls in one response.
 - Any other harness (one the engine has no adapter for, run as `generic`): the
   call is in words: spawn a subagent with fresh
   context, on the model it names if any, its whole prompt being the brief.
@@ -383,7 +391,7 @@ invent a hint.
 The brief is the same shape for every unit, the two lines between the rules
 above. Pass it verbatim as the child's prompt. Running its command yourself is
 refused where your harness tells your session from a child's (Codex, Hermes,
-pi, agy): a first `prompt` fetch from your own session says "this is a
+pi, agy, opencode): a first `prompt` fetch from your own session says "this is a
 child's command: start a child agent with the text between the lines next
 printed for it". There is nothing to shorten and nothing to add: everything the
 child needs comes from that command. `workflow prompt` claims the unit and
@@ -652,17 +660,50 @@ resume. A transcript not flushed yet is searched again later.
   response's input plus output tokens, cache reads not counted. Children die with the coordinator (one agy process). A stalled
   child is checked with `manage_subagents {"Action":"list"}`; a finished one
   is continued with `send_message {"Recipient":<id>,"Message":...}`.
-- opencode: recognized (`OPENCODE` set) but its adapter is the super binary's,
-  which registers it; under a binary without it, every run verb from an
-  opencode shell is refused with "opencode runs need the super binary, which
-  registers the opencode adapter", never run as a generic harness.
+- opencode: (1.18.x) a child is a session the coordinator starts with the
+  `task` tool, inside the coordinator's own opencode process, so children die
+  with the coordinator. opencode puts no session id in a command's
+  environment: the engine's opencode plugin (`opencode/super-workflow.js` in
+  the engine module) exports `OPENCODE_SESSION_ID` (the calling session) and
+  `OPENCODE_PARENT_SESSION_ID` (its parent: empty for a root, `unknown` when
+  the plugin's lookup failed) into every bash command. Install it by copying
+  or linking the file into `~/.config/opencode/plugins/` or a project's
+  `.opencode/plugins/`. A caller whose parent is `unknown` may be a child, so
+  it gets no session and never drives the run, not even a segment no
+  coordinator has bound yet: its driving verbs are refused as below, the
+  refusal saying to run the command again; its own child
+  verbs work by their claim token, and the plugin looks the parent up again on
+  the next command.
+  Without the plugin (not installed, `--pure` or `OPENCODE_PURE`, or a
+  command run from an opencode terminal tab, which the hook does not cover)
+  the shell has only `OPENCODE`: once a session drives the run, its driving
+  verbs are refused as a harness mismatch naming `OPENCODE_SESSION_ID` as
+  unset. That holds only when no other harness's variables are set: a
+  plugin-less opencode started from a Claude Code or Codex tab reads as that
+  tab's harness and session, and its children are not told from it, so
+  install the plugin: `run` prints a note and journals one degraded
+  `harness hint` record when `OPENCODE` is set with no `OPENCODE_SESSION_ID`.
+  The plugin clears both variables for a shell with no session (a terminal
+  tab), so such a shell never reads as an outer opencode session. The reverse leak is accepted: a Claude Code or Codex
+  started from an opencode bash command inherits the plugin's variables and
+  reads as opencode (a child when the parent is set), since the environment
+  cannot tell it from an opencode started from their tab; start other
+  harnesses from their own terminals. The engine reads none of opencode's storage: no child record, end
+  marker, usage or transcript. A child is known only through its own verbs,
+  and its liveness is the heartbeat and the lease (section 8). One opencode
+  session per run: a second root session's `next` takes the run over and
+  retires the first session's children, so end the old session before taking
+  over. A finished child is continued with the same `task` call plus
+  `task_id=<its session id>`; a `task_id` opencode does not know silently
+  starts a fresh child, which has no claim, so answer `restart` then.
 - Any other harness (generic: one the engine has no adapter for, never agy,
   which has its own entry above): nothing is identified, and nothing is
   journaled for it: the claim token is what binds a child's call.
 
 A child of the run never drives it. Where the environment tells a child from
 its coordinator (Codex's thread, Hermes's delegated-child marker, pi's
-`SUPER_PI_PARENT`, agy's records: the parent's listing and the first record), every run
+`SUPER_PI_PARENT`, agy's records: the parent's listing and the first record,
+opencode's `OPENCODE_PARENT_SESSION_ID`), every run
 verb but a child's own (`prompt`, `validate`, `done`, `failed`,
 `status`, `explain`, `journal`), `run` among them, and the named binary's
 `next`, is refused (a child is told by any harness's own variables, so a Codex
@@ -709,7 +750,8 @@ carry the same claim.
 
 The first tokened prompt fetch also records the caller under the journal lock.
 Hermes supplies its own child session, Codex its thread and session, pi its
-session and parent, agy its conversation id with the parent from its records;
+session and parent, agy its conversation id with the parent from its records,
+opencode its session and parent from the plugin's variables;
 Claude currently supplies only its shared parent session. A later prompt,
 validate, done or failed holding the unit's token from another caller (another
 child, another harness than the hand-out's, a child of another coordinator
@@ -993,7 +1035,7 @@ The engine decides a unit is stalled; the coordinator only checks. A `stalled
 its own tools, whether that subagent is still working (for example, Claude
 Code: its Agent call has not returned; Codex: `list_agents` shows its thread
 running; agy: `manage_subagents {"Action":"list"}` shows its state other than
-idle), without stopping it: a quiet child may be inside one long tool call.
+idle; opencode has no tool that lists a child's state), without stopping it: a quiet child may be inside one long tool call.
 Then run the line it names: `active` when it is working, `died` only when you
 confirmed it has exited. A child of an earlier session is yours to answer too,
 since the engine never retires a child on elapsed time; but not seeing a child

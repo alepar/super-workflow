@@ -141,8 +141,7 @@ func spawnRules(tracker bool) string {
 
 // RulesForCoordinators are the coordinator's own rules: how it fans out
 // units. The agent CLI rule is the user's own; it excepts the engine's child
-// dispatch, since the pi, opencode and agy adapters launch agent CLIs as
-// children.
+// dispatch, since the pi adapter launches its children as agent CLIs.
 const RulesForCoordinators = "When you hand out this run's units, start each sub-agent with your own harness's sub-agent tool. Do not start another agent CLI (codex, claude, hermes) to do a unit, except through the engine's child dispatch (the call next prints), unless the workflow or the person who started the run explicitly asks you to."
 
 // RulesForThisRun are the rules the coordinator bootstrap states up front.

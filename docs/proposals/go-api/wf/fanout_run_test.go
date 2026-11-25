@@ -173,7 +173,7 @@ func TestFanoutKillFailureDoesNotHangBatch(t *testing.T) {
 }
 
 func TestFanoutFreshCoordinatorDoesNotInheritChildIdentity(t *testing.T) {
-	for _, name := range []string{"HERMES_SESSION_ID", "HERMES_DELEGATED_CHILD_CONTEXT", "HERMES_KANBAN_TASK", "CLAUDE_CODE_ENTRYPOINT", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"} {
+	for _, name := range []string{"HERMES_SESSION_ID", "HERMES_DELEGATED_CHILD_CONTEXT", "HERMES_KANBAN_TASK", "CLAUDE_CODE_ENTRYPOINT", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "OPENCODE_PARENT_SESSION_ID"} {
 		t.Setenv(name, "parent")
 	}
 	t.Setenv("HERMES_HOME", "profile")

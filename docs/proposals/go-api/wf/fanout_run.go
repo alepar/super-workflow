@@ -88,7 +88,7 @@ func startFanoutProcess(job fanoutJob) (fanoutProcess, error) {
 // New coordinators establish their own identities. Keep profile homes, but
 // remove inherited world routing and parent harness/Herdr identity markers.
 func fanoutEnvironment() []string {
-	removed := map[string]bool{"HC_TERMINAL_ID": true, "CODEX_SESSION_ID": true, "HERMES_DELEGATED_CHILD_CONTEXT": true, "HERMES_KANBAN_TASK": true}
+	removed := map[string]bool{"HC_TERMINAL_ID": true, "CODEX_SESSION_ID": true, "HERMES_DELEGATED_CHILD_CONTEXT": true, "HERMES_KANBAN_TASK": true, "OPENCODE_PARENT_SESSION_ID": true}
 	for _, name := range harness.Markers(os.Getenv) {
 		removed[name] = true
 	}

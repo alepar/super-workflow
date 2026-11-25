@@ -79,6 +79,9 @@ type EngineOptions struct {
 	// HarnessFromEnv: the CLI read Harness from the starter's environment
 	// (RunStartedData.HarnessFromEnv).
 	HarnessFromEnv bool
+	// HarnessHints are the starter's environment's harness hints
+	// (harness.WeakHints), journaled at the run's start.
+	HarnessHints []string
 
 	Defs      []*Def            // name to Def lookup for a fresh process
 	Workspace string            // journaled in run_started
@@ -776,14 +779,8 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 	// Model tiers are hints (A3c): a harness with no model for a tier runs
 	// those children on the session's own model, and the run says so.
 	var tiersNote *DegradedData
-	if len(unresolved) > 0 {
-		names := make([]string, len(unresolved))
-		for i, t := range unresolved {
-			names[i] = string(t)
-		}
-		tiersNote = &DegradedData{Kind: DegradedTiers,
-			Cause:  fmt.Sprintf("harness %q has no model for tier(s) %s", harness, strings.Join(names, ", ")),
-			Action: "not applied: those children run on the session's model; --model-map <tier>=<model> names one"}
+	if !(e.recordedReplay && e.replayStarted != nil) {
+		tiersNote = unresolvedTiersNote(harness, unresolved, len(modelMap) > 0)
 	}
 	runDir := ""
 	if e.opts.RunDir != nil {
@@ -858,6 +855,11 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 	}
 	if tiersNote != nil {
 		if err := c.emitAs("", "", 0, JournalDegraded, 0, *tiersNote); err != nil {
+			return "", nil, err
+		}
+	}
+	for _, hint := range e.opts.HarnessHints {
+		if err := c.emitAs("", "", 0, JournalDegraded, 0, DegradedData{Kind: DegradedHarnessHint, Cause: hint, Action: "the run goes on"}); err != nil {
 			return "", nil, err
 		}
 	}

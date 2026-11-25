@@ -136,11 +136,17 @@ func (c *cli) driverMismatch(stateDir string, run RunID) (string, error) {
 	if errors.Is(err, ErrRunLocked) {
 		return "", err
 	}
+	h := envHarness(c.env)
+	who := harness.For(h).Caller(c.env)
+	if who.FromEnv && who.Session == "" && who.Agent != "" && !TrustSessionlessCallers {
+		// An agent the environment names with no coordinator session may be
+		// a child (opencode's failed parent lookup): it never drives, not
+		// even a segment no coordinator has bound yet.
+		return mismatchNoSession(h, c.env), nil
+	}
 	if driver == "" {
 		return "", nil
 	}
-	h := envHarness(c.env)
-	who := harness.For(h).Caller(c.env)
 	if h == driver && (who.Session != "" || TrustSessionlessCallers) {
 		return "", nil
 	}
@@ -219,6 +225,11 @@ func mismatchNoSession(h string, env harness.Env) string {
 	}
 	if len(unset) > 0 {
 		detail += fmt.Sprintf(": of the variables %s is recognised by, not set: %s", name, strings.Join(unset, ", "))
+	}
+	if sh, ok := harness.For(name).(harness.SessionHinter); ok && env != nil {
+		if hint := sh.SessionHint(env); hint != "" {
+			detail += ": " + hint
+		}
 	}
 	return fmt.Sprintf("%s. A coordinator session of %s is expected; %s", HarnessMismatch, name, detail)
 }

@@ -58,6 +58,7 @@ docs/proposals/go-api/harness/agytest/agytest.go
 docs/proposals/go-api/harness/exec_claim.go
 docs/proposals/go-api/harness/fanout.go
 docs/proposals/go-api/harness/harness.go
+docs/proposals/go-api/harness/opencode.go
 docs/proposals/go-api/harness/pi.go
 docs/proposals/go-api/harness/prompt_envelope.go
 docs/proposals/go-api/harness/testdata/hermes/cross-task/first.log
@@ -69,6 +70,7 @@ docs/proposals/go-api/harness/testdata/started/hermes-context-truncated.log
 docs/proposals/go-api/harness/testdata/started/pi-child.jsonl
 docs/proposals/go-api/harness/testdata/started/pi-coordinator.jsonl
 docs/proposals/go-api/internal/harnessfixture/files.go
+docs/proposals/go-api/opencode/super-workflow.js
 docs/proposals/go-api/shell/detached.go
 docs/proposals/go-api/shell/pdeathsig_linux.go
 docs/proposals/go-api/shell/pdeathsig_other.go

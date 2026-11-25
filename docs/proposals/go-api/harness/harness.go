@@ -2,8 +2,8 @@
 // who a caller is, where a child's transcript is, how a unit is spawned, and
 // the model, effort and agent-type tables.
 //
-// Owns: one Adapter per known harness (claude, codex, hermes, and any a
-// linking binary registers) and the generic one for every other; the environment variables each harness sets; the transcript
+// Owns: one Adapter per known harness (claude, codex, hermes, pi, agy,
+// opencode, and any a linking binary registers) and the generic one for every other; the environment variables each harness sets; the transcript
 // layout each one writes; the literal spawn parameters of each one's tool.
 // Hides: every path, variable and tool name. The engine asks an Adapter and
 // never reads a harness environment variable itself.
@@ -174,6 +174,16 @@ type Detector interface {
 	Markers() []string
 }
 
+// WeakDetector is a Detector some of whose markers every process started
+// from its shell inherits, whatever harness that process is (opencode's
+// OPENCODE). Detect names it by one of those only when no registered
+// adapter's other markers are set.
+type WeakDetector interface {
+	Detector
+	// WeakMarkers are the markers, a subset of Markers, that count last.
+	WeakMarkers() []string
+}
+
 // ChildMatcher is an adapter that decides itself whether caller is the child
 // that owns a claim (owner, the caller recorded at the claim's first fetch).
 // An adapter without one matches by session, and by agent when the owner
@@ -190,6 +200,45 @@ type ModelChecker interface {
 	// CheckModel is nil for a value the harness takes, else an error naming
 	// the values it takes.
 	CheckModel(model string) error
+}
+
+// WeakHinter is a WeakDetector that can say what its weak marker alone
+// most likely means (opencode without its plugin), whichever harness
+// Detect names: the engine journals the sentence once at a run's start.
+type WeakHinter interface {
+	// WeakHint is that sentence for env; "" when it does not apply.
+	WeakHint(env Env) string
+}
+
+// WeakHints are every registered adapter's WeakHint for env, in detection
+// order, empty ones left out.
+func WeakHints(env Env) []string {
+	registryRead.Store(true)
+	var out []string
+	for _, a := range registry {
+		if w, ok := a.(WeakHinter); ok {
+			if s := w.WeakHint(env); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// SessionHinter is an adapter that can say why its shell names no session
+// when it can tell (opencode: the plugin's parent lookup failed). The
+// engine appends the sentence to a no-session refusal.
+type SessionHinter interface {
+	// SessionHint is that sentence for env; "" when it does not apply.
+	SessionHint(env Env) string
+}
+
+// NoModelSpawn is an adapter whose spawn tool takes no model: a child runs on
+// its coordinator's model whatever the tier or --model-map, so the engine
+// resolves no tier for it and applies no map value, and says so once per run.
+// It owns the sentence that says where its children's model comes from.
+type NoModelSpawn interface {
+	NoModel() string
 }
 
 // EndVerdict is an adapter's reading of whether a child's transcript has
@@ -247,8 +296,10 @@ type ResumeNote interface {
 // harness most likely to be the inner one comes first: Hermes, then pi
 // (whose bash commands, run from a Claude or Codex tab, carry that tab's
 // variables too), then agy (it precedes Codex and Claude because an agy
-// started from their tabs inherits their variables), then Codex and Claude.
-var registry = []Adapter{hermes{Generic{name: "hermes"}}, pi{Generic{name: "pi"}}, agy{Generic{name: "agy"}}, codex{}, claude{}}
+// started from their tabs inherits their variables), then opencode (for the
+// same reason; its bare OPENCODE marker is weak, see WeakDetector), then
+// Codex and Claude.
+var registry = []Adapter{hermes{Generic{name: "hermes"}}, pi{Generic{name: "pi"}}, agy{Generic{name: "agy"}}, opencode{Generic{name: "opencode"}}, codex{}, claude{}}
 
 // registryRead is set by the first lookup (For, Known, Names, Detect,
 // Markers): Register is for package initialization only, and the registry
@@ -309,13 +360,6 @@ func Register(a Adapter) error {
 			}
 		}
 	}
-	for _, u := range unregistered {
-		for _, m := range u.markers {
-			if u.name != name && slices.Contains(own, m) {
-				return fmt.Errorf("harness: %q's marker %s is %q's", name, m, u.name)
-			}
-		}
-	}
 	registry = append([]Adapter{a}, registry...)
 	return nil
 }
@@ -363,47 +407,25 @@ func Names() []string {
 	return out
 }
 
-// unregistered are harnesses the engine recognizes whose adapter only a
-// linking binary supplies (its dependencies are not the engine module's).
-// Detect names one when no registered adapter matches, so its environment is
-// refused (Unsupported) instead of silently run as generic; a registered
-// adapter of the same name supersedes the entry.
-var unregistered = []struct {
-	name, refusal string
-	markers       []string
-}{
-	{"opencode", "opencode runs need the super binary, which registers the opencode adapter", []string{"OPENCODE"}},
-}
-
-// Unsupported is why the named harness's environment cannot run here: an
-// unregistered harness the engine recognizes; "" for any other name.
-func Unsupported(name string) string {
-	for _, u := range unregistered {
-		if u.name == name && !Known(name) {
-			return u.refusal
-		}
-	}
-	return ""
-}
-
 // Detect names the harness whose environment env is: the first registered
-// adapter, in detection order, with a marker set; else an unregistered
-// harness the engine recognizes; otherwise generic.
+// adapter, in detection order, with a marker set that is not weak; else the
+// first with a weak marker set (WeakDetector); otherwise generic.
 func Detect(env Env) string {
 	registryRead.Store(true)
-	for _, a := range registry {
-		if d, ok := a.(Detector); ok {
+	for _, weak := range []bool{false, true} {
+		for _, a := range registry {
+			d, ok := a.(Detector)
+			if !ok {
+				continue
+			}
+			var weakOnes []string
+			if w, ok := a.(WeakDetector); ok {
+				weakOnes = w.WeakMarkers()
+			}
 			for _, v := range d.Markers() {
-				if env(v) != "" {
+				if slices.Contains(weakOnes, v) == weak && env(v) != "" {
 					return a.Name()
 				}
-			}
-		}
-	}
-	for _, u := range unregistered {
-		for _, v := range u.markers {
-			if env(v) != "" && !Known(u.name) {
-				return u.name
 			}
 		}
 	}
@@ -438,16 +460,6 @@ func markersExcept(env Env, skip string) []string {
 			continue
 		}
 		for _, v := range d.Markers() {
-			if env(v) != "" {
-				out = append(out, v)
-			}
-		}
-	}
-	for _, u := range unregistered {
-		if u.name == skip || Known(u.name) {
-			continue
-		}
-		for _, v := range u.markers {
 			if env(v) != "" {
 				out = append(out, v)
 			}
@@ -1626,4 +1638,22 @@ const hermesCallLimit = 30 * time.Second
 func (Generic) ToolLimit(Env) time.Duration { return 0 }
 
 // otherAgent reports whether env shows an agent harness other than Hermes.
-func otherAgent(env Env) bool { return len(markersExcept(env, "hermes")) > 0 }
+func otherAgent(env Env) bool {
+	for _, m := range markersExcept(env, "hermes") {
+		if !weakMarker(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// weakMarker reports whether m is a registered adapter's weak marker
+// (WeakDetector): one a process inherits whatever harness it is.
+func weakMarker(m string) bool {
+	for _, a := range registry {
+		if w, ok := a.(WeakDetector); ok && slices.Contains(w.WeakMarkers(), m) {
+			return true
+		}
+	}
+	return false
+}

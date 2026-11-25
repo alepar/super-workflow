@@ -317,6 +317,15 @@ func (c *cycle) bindSegment(co Coordinator) error {
 // about its models: the run moved to another harness with no
 // --model-map, so that harness's defaults apply; or the harness has no model
 // for some tiers the definition uses.
+// missingTiers is names as tiers.
+func missingTiers(names []string) []Tier {
+	out := make([]Tier, len(names))
+	for i, n := range names {
+		out[i] = Tier(n)
+	}
+	return out
+}
+
 func (c *cycle) segmentModelsNote(h string, sm SegmentModels) error {
 	var missing []string
 	for _, t := range collectTiers(c.st.def) {
@@ -325,7 +334,12 @@ func (c *cycle) segmentModelsNote(h string, sm SegmentModels) error {
 		}
 	}
 	var dg *DegradedData
+	_, noModel := noModelHarness(h)
 	switch {
+	case noModel:
+		if sm.From != ModelsFromStart {
+			dg = unresolvedTiersNote(h, missingTiers(missing), sm.From == ModelsFromMap && len(sm.ModelMap) > 0)
+		}
 	case sm.From == ModelsFromDefaults:
 		i := len(c.st.segments) - 1
 		dg = &DegradedData{Kind: DegradedTiers,
@@ -335,9 +349,7 @@ func (c *cycle) segmentModelsNote(h string, sm SegmentModels) error {
 			dg.Action += fmt.Sprintf("; no model for tier(s) %s: those children run on the session's model", strings.Join(missing, ", "))
 		}
 	case len(missing) > 0 && sm.From != ModelsFromStart:
-		dg = &DegradedData{Kind: DegradedTiers,
-			Cause:  fmt.Sprintf("harness %q has no model for tier(s) %s", h, strings.Join(missing, ", ")),
-			Action: "not applied: those children run on the session's model; --model-map <tier>=<model> names one"}
+		dg = unresolvedTiersNote(h, missingTiers(missing), false)
 	}
 	if dg == nil {
 		return nil

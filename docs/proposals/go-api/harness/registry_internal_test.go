@@ -8,7 +8,8 @@ import (
 func envMap(kv map[string]string) Env { return func(k string) string { return kv[k] } }
 
 // The built-in detection order and marker order are what the hard-coded
-// switch had: Hermes, then pi, then agy, then Codex, then Claude.
+// switch had: Hermes, then pi, then agy, then opencode, then Codex, then
+// Claude.
 func TestRegistryKeepsBuiltinOrder(t *testing.T) {
 	all := envMap(map[string]string{
 		"HERMES_SESSION_ID": "h", "CODEX_THREAD_ID": "c", "CLAUDECODE": "1",
@@ -27,7 +28,7 @@ func TestRegistryKeepsBuiltinOrder(t *testing.T) {
 	if got := Markers(all); !slices.Equal(got, want) {
 		t.Fatalf("Markers(all) = %v, want %v", got, want)
 	}
-	if got, want := Names(), []string{"hermes", "pi", "agy", "codex", "claude"}; !slices.Equal(got, want) {
+	if got, want := Names(), []string{"hermes", "pi", "agy", "opencode", "codex", "claude"}; !slices.Equal(got, want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
 	}
 	withAgy := envMap(map[string]string{"ANTIGRAVITY_CONVERSATION_ID": "a", "CODEX_THREAD_ID": "c", "CLAUDECODE": "1"})

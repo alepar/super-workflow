@@ -959,6 +959,11 @@ const (
 	// DegradedTiers: the harness has no model for some tiers the definition
 	// uses; those children run on the session's model.
 	DegradedTiers DegradedKind = "tiers"
+	// DegradedHarnessHint: the starting environment carries a harness's weak
+	// marker that likely means a missing setup (opencode without its
+	// plugin); the harness adapter's sentence says what to do. Journaled once
+	// at the run's start; the run goes on.
+	DegradedHarnessHint DegradedKind = "harness hint"
 	// DegradedEnded: a claimed child's transcript ended on its harness's end
 	// marker with no done or failed; the attempt is lost as died and the unit
 	// offered again (E2).

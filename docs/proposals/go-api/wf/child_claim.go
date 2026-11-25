@@ -91,7 +91,7 @@ func (c *cycle) noteChildCaller(in *instance, u *unit, token string, who harness
 	switch owner := boundChildCaller(u); {
 	case u.HandSession != "" && identifyingHarness(u.HandHarness) && normalizeHarness(who.Harness) != normalizeHarness(u.HandHarness):
 		cause = fmt.Sprintf("the caller's harness %s is not the one its unit was handed out in (%s)", who.Harness, u.HandHarness)
-	case u.HandSession != "" && u.HandRoot != "" && who.Is == harness.IsChild && (u.HandHarness == "codex" || u.HandHarness == "pi") && who.Session != handParent(u, token):
+	case u.HandSession != "" && u.HandRoot != "" && who.Is == harness.IsChild && (u.HandHarness == "codex" || u.HandHarness == "pi" || u.HandHarness == "opencode") && who.Session != handParent(u, token):
 		cause = fmt.Sprintf("the caller is a child of coordinator session %s, the unit was handed out by %s", who.Session, handParent(u, token))
 	case !sameChild(owner, who):
 		cause = fmt.Sprintf("owner %s/%s, caller %s/%s", owner.Session, owner.Agent, who.Session, who.Agent)

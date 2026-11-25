@@ -49,11 +49,11 @@ func TestChildProtocolExercisesRealCLIAndReportsCurrentGaps(t *testing.T) {
 		t.Fatal("protocol checker mutated process environment")
 	}
 	t.Log(report)
-	if report.PositiveControls != 28 {
-		t.Fatalf("positive controls=%d, want all 28: %s", report.PositiveControls, report)
+	if report.PositiveControls != 32 {
+		t.Fatalf("positive controls=%d, want all 32: %s", report.PositiveControls, report)
 	}
-	if report.Cases+len(report.BlockedEarlier) != 143 {
-		t.Fatalf("executed=%d blocked earlier=%d, want 143 total: %s", report.Cases, len(report.BlockedEarlier), report)
+	if report.Cases+len(report.BlockedEarlier) != 167 {
+		t.Fatalf("executed=%d blocked earlier=%d, want 167 total: %s", report.Cases, len(report.BlockedEarlier), report)
 	}
 	if !wf.TrustSessionlessCallers && len(report.BlockedEarlier) != 4 {
 		t.Fatalf("want4 clean early refusals: %s", report)

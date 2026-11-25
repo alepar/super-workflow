@@ -31,35 +31,6 @@ func TestPiDetectionAndCaller(t *testing.T) {
 	}
 }
 
-func TestOpencodeIsRefusedUntilRegistered(t *testing.T) {
-	env := envMap(map[string]string{"OPENCODE": "1"})
-	if got := Detect(env); got != "opencode" {
-		t.Fatalf("an opencode shell is named, never generic; Detect = %q", got)
-	}
-	if Unsupported("opencode") == "" || Unsupported("pi") != "" {
-		t.Fatal("only the unregistered opencode is unsupported")
-	}
-	if got := Detect(envMap(map[string]string{"OPENCODE": "1", "CLAUDECODE": "1"})); got != "claude" {
-		t.Fatalf("every registered marker is checked first; Detect = %q", got)
-	}
-	withFreshRegistry(t, func() {
-		if err := Register(fakeAdapter{Generic{name: "opencode"}, []string{"OPENCODE_SESSION_ID"}}); err != nil {
-			t.Fatal(err)
-		}
-		if Unsupported("opencode") != "" {
-			t.Fatal("a registered opencode adapter supersedes the refusal")
-		}
-		if got := Detect(env); got != "generic" {
-			t.Fatalf("a registered adapter of the same name disables the fallback row even without its marker; Detect = %q", got)
-		}
-	})
-	withFreshRegistry(t, func() {
-		if err := Register(fakeAdapter{Generic{name: "other"}, []string{"OPENCODE"}}); err == nil {
-			t.Fatal("another adapter may not take an unregistered harness's marker")
-		}
-	})
-}
-
 const piToken = "0a1b2c3d4e5f6071"
 
 // A coordinator launch and child session agree on the claim, working

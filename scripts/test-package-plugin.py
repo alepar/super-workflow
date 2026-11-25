@@ -37,6 +37,8 @@ with tempfile.TemporaryDirectory(prefix=".test-package-", dir=repo) as scratch:
         if path.is_file():
             assert commit.encode() not in path.read_bytes(), path
     files = set(release["files"])
+    # Non-Go engine files the allowlist completeness test does not walk.
+    assert "docs/proposals/go-api/opencode/super-workflow.js" in files
     assert not any(f.endswith("_test.go") and "/examples/tour/" not in f for f in files)
     for file in files:
         if "/harness/testdata/" in file:

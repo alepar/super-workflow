@@ -1402,13 +1402,6 @@ func (c *cli) drive(row Subcommand, args []string) int {
 	if !childUnitVerbs[cmd] && !childReadVerbs[cmd] && childCaller(c.env) { // run too: a child never starts or drives a run
 		return c.failf(exitRejected, "%s: %s", cmd, childRefusal())
 	}
-	if c.env != nil {
-		// A harness the engine recognizes but has no adapter for here is
-		// refused by name, never run as generic.
-		if why := harness.Unsupported(envHarness(c.env)); why != "" {
-			return c.failf(exitUsage, "%s: %s", cmd, why)
-		}
-	}
 	c.owner = lockOwner{Verb: cmd}
 	if len(row.Args) > 0 && len(f.args) > 0 && unitArgs[strings.TrimSuffix(row.Args[0], "?")] {
 		c.owner.Unit = f.args[0]
@@ -2357,7 +2350,14 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		givenNames = append(givenNames, k)
 	}
 	fromEnv := live == "" && f.harness == "" && runHarness != "generic"
-	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: f.pagedPrompts, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames})
+	var hints []string
+	if live == "" && c.env != nil {
+		hints = harness.WeakHints(c.env)
+		for _, h := range hints {
+			fmt.Fprintln(c.stderr, "note: "+h)
+		}
+	}
+	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: f.pagedPrompts, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints})
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)
 	}

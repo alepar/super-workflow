@@ -320,6 +320,10 @@ func modelsLine(sm *SegmentModels, h string) string {
 	if sm == nil || len(sm.Models) == 0 && len(sm.ModelMap) == 0 {
 		return ""
 	}
+	if why, ok := noModelHarness(h); ok {
+		// No map value reaches a child: never show one as in force.
+		return "models: " + why
+	}
 	tiers := tiersOf(sm.Models)
 	if tiers == "" {
 		tiers = "no tiers"

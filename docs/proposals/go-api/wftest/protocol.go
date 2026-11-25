@@ -325,7 +325,13 @@ func (c *protocolCase) authorize(verb string) error {
 	if c.harness == "codex" {
 		want.Agent = "protocol-child-canary"
 	}
-	if _, ok := harness.For(c.harness).Resolve(c.records, "protocol-parent-canary", []harness.Want{want})[want]; !ok {
+	if protocolNoRecords[c.harness] {
+		// A harness without records: nothing is discovered, and the claim
+		// token alone admits the child.
+		if got := harness.For(c.harness).Resolve(c.records, "protocol-parent-canary", []harness.Want{want}); len(got) != 0 {
+			return fmt.Errorf("a no-records adapter discovered a child: %v", got)
+		}
+	} else if _, ok := harness.For(c.harness).Resolve(c.records, "protocol-parent-canary", []harness.Want{want})[want]; !ok {
 		return fmt.Errorf("adapter did not discover positive child record")
 	}
 	if verb == "prompt" {
@@ -368,6 +374,11 @@ func (c *protocolCase) appendLaterUserToken() error {
 	return err
 }
 
+// protocolNoRecords are the harnesses whose adapter reads no records: the
+// engine learns of a child only through its verbs, so the record writers
+// write nothing and the record attacks exercise the token alone.
+var protocolNoRecords = map[string]bool{"opencode": true}
+
 func protocolEnvironments(h, root string) (map[string]string, map[string]string) {
 	const parent, child = protocolParent, protocolChild
 	var coordinator, kid map[string]string
@@ -390,6 +401,10 @@ func protocolEnvironments(h, root string) (map[string]string, map[string]string)
 		// ANTIGRAVITY_APP_DATA_DIR before anything under a home.
 		coordinator = map[string]string{"ANTIGRAVITY_CONVERSATION_ID": parent, "ANTIGRAVITY_APP_DATA_DIR": root}
 		kid = map[string]string{"ANTIGRAVITY_CONVERSATION_ID": child, "ANTIGRAVITY_APP_DATA_DIR": root}
+	case "opencode":
+		// The plugin's variables; root names the data directory, never read.
+		coordinator = map[string]string{"OPENCODE": "1", "OPENCODE_SESSION_ID": parent, "OPENCODE_PARENT_SESSION_ID": "", "XDG_DATA_HOME": root}
+		kid = map[string]string{"OPENCODE": "1", "OPENCODE_SESSION_ID": child, "OPENCODE_PARENT_SESSION_ID": parent, "XDG_DATA_HOME": root}
 	}
 	return coordinator, kid
 }
@@ -457,6 +472,8 @@ func (c *protocolCase) writeChildRecord() error {
 		return c.writePiRecords()
 	case "agy":
 		return c.writeAgyChild(c.instruction.Brief, "")
+	case "opencode":
+		return nil
 	default:
 		return fmt.Errorf("unsupported harness %s", c.harness)
 	}
@@ -487,6 +504,8 @@ func (c *protocolCase) writeChildRecordFor(kickoffToken, quotedToken string) err
 	switch c.harness {
 	case "agy":
 		return c.writeAgyChild(brief, quotedToken)
+	case "opencode":
+		return nil
 	case "claude":
 		project := filepath.Join(c.records, "projects", "-fixture")
 		if err := write(filepath.Join(project, "protocol-parent-canary.jsonl"), "{}\n"); err != nil {

@@ -14,7 +14,12 @@ func piBullet(t *testing.T) string {
 	t.Helper()
 	text := readDocs(t)["../COORDINATOR.md"]
 	i := strings.Index(text, "\n- pi: ")
-	j := strings.Index(text, "\n- opencode: ")
+	j := -1
+	if i >= 0 {
+		if k := strings.Index(text[i:], "\n- opencode: "); k >= 0 {
+			j = i + k
+		}
+	}
 	if i < 0 || j < i {
 		t.Fatalf("COORDINATOR.md has no pi bullet before the opencode bullet (pi at %d, opencode at %d)", i, j)
 	}

@@ -56,3 +56,17 @@ func TestChildProtocolAgy(t *testing.T) {
 		t.Errorf("want no gaps or problems:\n%s", strings.TrimSpace(report.String()))
 	}
 }
+
+// The opencode matrix: no records at all, so each verb's positive control and
+// the six cases are settled by the claim token alone, through the real CLI.
+func TestChildProtocolOpencode(t *testing.T) {
+	report := &ChildProtocolReport{}
+	checkChildProtocolHarness(report, t.TempDir(), "opencode")
+	t.Log(report)
+	if report.PositiveControls != 4 || report.Cases != 24 || len(report.BlockedEarlier) != 0 {
+		t.Errorf("controls=%d cases=%d blocked=%v, want 4, 24, none", report.PositiveControls, report.Cases, report.BlockedEarlier)
+	}
+	if len(report.FixtureGaps) != 0 || len(report.Problems) != 0 {
+		t.Errorf("want no gaps or problems:\n%s", strings.TrimSpace(report.String()))
+	}
+}

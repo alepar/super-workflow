@@ -138,6 +138,11 @@ func resolveTiers(harness string, tiers []Tier, modelMap map[string]string) (mod
 		return nil, nil, err
 	}
 	models = map[string]TierModel{}
+	if _, ok := noModelHarness(harness); ok {
+		// No model reaches the harness's children: every tier runs on the
+		// coordinator's model, and no map value applies.
+		return models, slices.Clone(tiers), nil
+	}
 	row := harnessTiers()[normalizeHarness(harness)]
 	for _, t := range tiers {
 		tm, inRow := row[t]
@@ -333,4 +338,46 @@ func resumeHarnessMatches(id RunID, d RunStartedData, opts EngineOptions) error 
 		return fmt.Errorf("run %s was started with different harness %q; resume without --harness to keep it", id, h)
 	}
 	return nil
+}
+
+// noModelHarness is harness h's sentence on where its children's model comes
+// from, when its spawn tool takes no model (harness.NoModelSpawn).
+func noModelHarness(h string) (string, bool) {
+	if h == "" {
+		return "", false
+	}
+	nm, ok := harness.For(normalizeHarness(h)).(harness.NoModelSpawn)
+	if !ok {
+		return "", false
+	}
+	return nm.NoModel(), true
+}
+
+// unresolvedTiersNote is the degraded tiers record for a segment of harness h
+// whose tiers have no model, or, for a harness whose spawn takes no model, a
+// --model-map that is not applied; nil when there is nothing to say.
+func unresolvedTiersNote(h string, tiers []Tier, mapGiven bool) *DegradedData {
+	names := make([]string, len(tiers))
+	for i, t := range tiers {
+		names[i] = string(t)
+	}
+	if why, ok := noModelHarness(h); ok {
+		if len(tiers) == 0 && !mapGiven {
+			return nil
+		}
+		action := "not applied"
+		if len(tiers) > 0 {
+			action += ": tier(s) " + strings.Join(names, ", ") + " run on the coordinator's model"
+		}
+		if mapGiven {
+			action += "; the --model-map is not applied"
+		}
+		return &DegradedData{Kind: DegradedTiers, Cause: why, Action: action}
+	}
+	if len(tiers) == 0 {
+		return nil
+	}
+	return &DegradedData{Kind: DegradedTiers,
+		Cause:  fmt.Sprintf("harness %q has no model for tier(s) %s", h, strings.Join(names, ", ")),
+		Action: "not applied: those children run on the session's model; --model-map <tier>=<model> names one"}
 }
