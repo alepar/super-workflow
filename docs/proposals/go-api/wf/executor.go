@@ -263,6 +263,13 @@ type Submission struct {
 	Artifacts map[string]string // artifact name to produced path
 	Child     string
 	Tokens    int // tokens the attempt spent, for the run budget
+	// Normalized notes how the engine normalized the result file before
+	// decoding it (the one tolerated form: a file that is exactly one fenced
+	// code block); "" when the file was used as written.
+	Normalized string `json:",omitempty"`
+	// textWrapped marks an Output the CLI wrapped as a JSON string because
+	// the result file was not JSON.
+	textWrapped bool
 }
 
 // SubmitResult is how a submission was classified and where the run goes next.
@@ -781,7 +788,9 @@ type InstructionIssuedData struct {
 // when it was submitted ("" if the file could not be read).
 type ArtifactRef struct{ Path, Hash string }
 
-// SubmittedData is the payload of submitted: the raw submission.
+// SubmittedData is the payload of submitted: the raw submission. Normalized
+// is the submission's note of how its result file was normalized before
+// parsing, if it was.
 type SubmittedData struct {
 	PromptHash      string `json:",omitempty"`
 	PromptShapeHash string `json:",omitempty"`
@@ -789,6 +798,7 @@ type SubmittedData struct {
 	Output          json.RawMessage
 	Artifacts       map[string]ArtifactRef `json:",omitempty"`
 	Tokens          int                    `json:",omitempty"`
+	Normalized      string                 `json:",omitempty"`
 }
 
 // AcceptedData is the payload of accepted: the normalized output (agent) or
@@ -1496,9 +1506,10 @@ type WithdrawnData struct {
 // usage the sibling reported with done --usage, counted toward the run's
 // tokens once, like a submission's.
 type LateVoteData struct {
-	Name   string
-	Output json.RawMessage `json:",omitempty"`
-	Tokens int             `json:",omitempty"`
+	Name       string
+	Output     json.RawMessage `json:",omitempty"`
+	Tokens     int             `json:",omitempty"`
+	Normalized string          `json:",omitempty"` // as SubmittedData.Normalized
 }
 
 // EffectStartedData is the payload of effect_started: the detached runner of a

@@ -366,7 +366,7 @@ func (o agentOps[S, O]) submit(c *cycle, in *instance, n *node, s Submission) (S
 	if err != nil {
 		return SubmitResult{}, err
 	}
-	if err := c.emit(in, JournalSubmitted, 0, SubmittedData{Token: s.Token, Output: output, Artifacts: arts, Tokens: s.Tokens, PromptHash: fetched.PromptHash, PromptShapeHash: fetched.PromptShapeHash}); err != nil {
+	if err := c.emit(in, JournalSubmitted, 0, SubmittedData{Token: s.Token, Output: output, Artifacts: arts, Tokens: s.Tokens, Normalized: s.Normalized, PromptHash: fetched.PromptHash, PromptShapeHash: fetched.PromptShapeHash}); err != nil {
 		return SubmitResult{}, err
 	}
 	return o.decide(c, in, n, s)
@@ -802,3 +802,32 @@ type inputOutage string
 
 func (e inputOutage) Error() string { return string(e) }
 func (inputOutage) Unwrap() error   { return ErrUnavailable }
+
+// fenceNote is the submitted record's note for a result file read from
+// inside its code fence.
+const fenceNote = "result file was one fenced code block; parsed its contents"
+
+// unfencedFor applies the one tolerated normalization of a result file to s:
+// a file the CLI handed over as text (not JSON) that is exactly one fenced
+// block around valid JSON is replaced by the block's contents, with a note.
+// It applies only where the text itself does not decode into n's output type,
+// so a state whose output takes text keeps the file as written.
+func unfencedFor(n *node, s Submission) Submission {
+	k, ok := n.kind.(*agentKind)
+	if !ok || !s.textWrapped || k.outT == nil {
+		return s
+	}
+	if json.Unmarshal(s.Output, reflect.New(k.outT).Interface()) == nil {
+		return s
+	}
+	var text string
+	if json.Unmarshal(s.Output, &text) != nil {
+		return s
+	}
+	inner, ok := unfenced([]byte(text))
+	if !ok {
+		return s
+	}
+	s.Output, s.Normalized, s.textWrapped = inner, fenceNote, false
+	return s
+}

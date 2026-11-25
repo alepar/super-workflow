@@ -273,6 +273,11 @@ Agent instructions allocate an absolute `output` JSON file under
 `<state-dir>/runs/<run>/out/`. The brief and prompt name that same file; write
 it, then run `done <run> <unit>` without `--output`. An optional `--output`
 must normalize to the allocated path; stdin and unrelated files are rejected.
+A result file that is not JSON is refused, with one tolerance: a file that is
+exactly one fenced code block (a ```` ``` ```` or ```` ```json ```` first line, a
+```` ``` ```` last line, only whitespace outside) around valid JSON is parsed from
+inside the fence, and the `submitted` record carries a `Normalized` note.
+Prose outside the fence, another info string or a second block is refused.
 Only parent directories are created, and replacement units get fresh paths.
 Programmatic `Submit` and `Done(Submission)` retain their raw submission
 behavior. Exit codes, instruction fields and flags are documented in

@@ -514,9 +514,11 @@ func (e *Engine) DoneEscalated(run RunID, name string, s Submission, escalated [
 		if err := c.childClaimCheck(name, e.opts.childClaim, e.opts.caller); err != nil {
 			return err
 		}
-		if _, _, err := c.settling("done", name); err != nil {
+		in, _, err := c.settling("done", name)
+		if err != nil {
 			return err
 		}
+		s = unfencedFor(in.node(), s)
 		return c.unitResultPaths(name, s.Output)
 	}); err != nil {
 		return SubmitResult{}, e.childClaimError(run, "done", err)
@@ -540,7 +542,7 @@ func (e *Engine) DoneEscalated(run RunID, name string, s Submission, escalated [
 			// A seat settled for its join while it ran: its output is a late
 			// vote, and the decision is never reopened.
 			res = SubmitResult{Class: Accepted}
-			if err := c.emit(in, JournalLateVote, 0, LateVoteData{Name: name, Output: s.Output, Tokens: s.Tokens}); err != nil {
+			if err := c.emit(in, JournalLateVote, 0, LateVoteData{Name: name, Output: s.Output, Tokens: s.Tokens, Normalized: s.Normalized}); err != nil {
 				return err
 			}
 			return c.drainCleanups()
@@ -572,6 +574,7 @@ func (e *Engine) Validate(run RunID, name string, s Submission) (SubmitResult, e
 		if in.Settled {
 			return fmt.Errorf("%w: validate: unit %s already settled", ErrRejected, name)
 		}
+		s = unfencedFor(in.node(), s)
 		tok, _ := c.st.tokenForName(name)
 		s.Token, s.Child = tok, in.ID
 		renew = c.renewDue(in)

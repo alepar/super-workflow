@@ -1635,13 +1635,46 @@ func (c *cli) submission(cmd string, f *flags) (Submission, int) {
 		tokens = n
 	}
 	raw = bytes.TrimSpace(raw)
-	if !json.Valid(raw) {
+	wrapped := !json.Valid(raw)
+	if wrapped {
 		// The engine journals the submission, so malformed output is handed over
-		// as a JSON string: it fails the state's output type and spends the
-		// attempt as Refused, like any other bad output.
+		// as a JSON string: unless the state's output type takes text, or the
+		// file is one fenced block the engine unwraps (unfencedFor), it fails
+		// the output type and spends the attempt as Refused, like any other bad
+		// output.
 		raw, _ = json.Marshal(string(raw))
 	}
-	return Submission{Output: raw, Tokens: tokens}, exitOK
+	return Submission{Output: raw, Tokens: tokens, textWrapped: wrapped}, exitOK
+}
+
+// unfenced returns the contents of a result file that is exactly one fenced
+// code block around valid JSON: a first line of ``` or ```json, a last line
+// of ```, and no other fence line between them. Whitespace around the
+// fence lines is ignored. Nothing more lenient is tolerated: prose outside the fence,
+// another info string or a second block leaves the file as written.
+func unfenced(raw []byte) ([]byte, bool) {
+	lines := bytes.Split(raw, []byte("\n"))
+	if len(lines) < 3 {
+		return nil, false
+	}
+	line := func(i int) string { return string(bytes.TrimSpace(lines[i])) }
+	if open := line(0); open != "```" && open != "```json" {
+		return nil, false
+	}
+	if line(len(lines)-1) != "```" {
+		return nil, false
+	}
+	body := lines[1 : len(lines)-1]
+	for _, l := range body {
+		if bytes.HasPrefix(bytes.TrimLeft(l, " \t"), []byte("```")) {
+			return nil, false
+		}
+	}
+	inner := bytes.TrimSpace(bytes.Join(body, []byte("\n")))
+	if !json.Valid(inner) {
+		return nil, false
+	}
+	return inner, true
 }
 
 // result prints a SubmitResult and maps its class to an exit code.
