@@ -46,10 +46,25 @@ func assetContents(root string, states []StateView) (map[string]string, []Proble
 
 // assetContentsIn is assetContents reading through fsys.
 func assetContentsIn(root string, states []StateView, fsys assetFS) (map[string]string, []Problem) {
-	var contents map[string]string
-	var problems []Problem
+	return readAssetRefs(root, assetRefs(states), fsys)
+}
+
+// stateAssetRefs is one state's asset references, in first-reference order
+// across the definition (a path another state referenced first is left
+// out), with the problems found collecting them.
+type stateAssetRefs struct {
+	node     *node
+	rels     []string
+	problems []Problem
+}
+
+// assetRefs collects each state's asset references. It reads no file, so
+// its result depends on the definition alone.
+func assetRefs(states []StateView) []stateAssetRefs {
+	var out []stateAssetRefs
 	seen := map[string]bool{}
 	for _, s := range states {
+		sr := stateAssetRefs{node: s.node}
 		var refs, texts []string
 		add := func(value string, prompt bool) {
 			if _, tail, ok := strings.Cut(value, "="); ok && strings.HasPrefix(tail, "{assets}/") {
@@ -86,7 +101,7 @@ func assetContentsIn(root string, states []StateView, fsys assetFS) (map[string]
 		addArgs := func(args map[string]any) {
 			values, err := genericArgs(args)
 			if err != nil {
-				problems = append(problems, s.node.problem(RuleBuild, "asset arguments: %v", err))
+				sr.problems = append(sr.problems, s.node.problem(RuleBuild, "asset arguments: %v", err))
 				return
 			}
 			var walk func(any)
@@ -130,10 +145,24 @@ func assetContentsIn(root string, states []StateView, fsys assetFS) (map[string]
 			}
 		}
 		for _, rel := range refs {
-			if seen[rel] {
-				continue
+			if !seen[rel] {
+				seen[rel] = true
+				sr.rels = append(sr.rels, rel)
 			}
-			seen[rel] = true
+		}
+		out = append(out, sr)
+	}
+	return out
+}
+
+// readAssetRefs reads each reference under root through fsys: a file's
+// content digest, "directory", or "unavailable" with a problem.
+func readAssetRefs(root string, refs []stateAssetRefs, fsys assetFS) (map[string]string, []Problem) {
+	var contents map[string]string
+	var problems []Problem
+	for _, sr := range refs {
+		problems = append(problems, sr.problems...)
+		for _, rel := range sr.rels {
 			if contents == nil {
 				contents = map[string]string{}
 			}
@@ -160,7 +189,7 @@ func assetContentsIn(root string, states []StateView, fsys assetFS) (map[string]
 				}
 			}
 			if err != nil {
-				problems = append(problems, s.node.problem(RuleBuild, "asset %q: %v", rel, err))
+				problems = append(problems, sr.node.problem(RuleBuild, "asset %q: %v", rel, err))
 			}
 		}
 	}

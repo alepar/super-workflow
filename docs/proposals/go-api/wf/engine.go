@@ -276,6 +276,7 @@ func NewEngine(j Journal, reg *Adapters, opts EngineOptions) Executor {
 	e.reg = reg.withRuntime(engineRuntime{e})
 	for _, d := range opts.Defs {
 		e.defs[d.name] = d
+		d.freeze()
 	}
 	return e
 }
@@ -589,6 +590,7 @@ func (e *Engine) Run(d *Def, params map[string]string, options any) (RunID, erro
 	e.mu.Lock()
 	e.defs[d.name] = d
 	e.mu.Unlock()
+	d.freeze()
 	params = d.normalizeAliases(params)
 	if _, ok := params[scratchName]; ok {
 		return "", errors.New("scratch is an engine binding (the step's scratch directory), not a run parameter")

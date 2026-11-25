@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -56,6 +57,21 @@ type Def struct {
 
 	trackerOnce sync.Once
 	hasTracker  bool
+
+	// frozen: the definition was handed to an engine (NewEngine), so it is
+	// complete and its walk and hash are memoised (inspectStructure,
+	// definitionHashAssetsIn). Before that, every walk is fresh.
+	frozen atomic.Bool
+}
+
+// freeze marks d and every child definition it reaches as complete.
+func (d *Def) freeze() {
+	if d == nil || d.frozen.Swap(true) {
+		return
+	}
+	for _, c := range d.children {
+		c.freeze()
+	}
 }
 
 // failureDefault is one Def.OnFailure: the state a failure of class goes to

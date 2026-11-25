@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sync"
 )
 
 // Hash returns the definition hash: "sha256:" and the first 16 hex characters
@@ -21,7 +22,7 @@ import (
 // route candidates (Route and OnRoute: labels, targets and effects, pinned
 // like Cases edges), retry policies, prompts and every other shown field are.
 func (d *Def) Hash() string {
-	return hashView(Inspect(d))
+	return definitionHashAssets(d, nil)
 }
 
 func hashView(view DefView) string {
@@ -44,11 +45,19 @@ func definitionHashAssets(d *Def, roots map[string]string) string {
 
 // definitionHashAssetsIn is definitionHashAssets reading each root's assets
 // through open(root).
+//
+// For a definition handed to an engine, the definition's part of the hash
+// is computed once per *Def per process (inspectStructure and hashPlanOf).
+// Every call still reads the assets it references, so a changed asset
+// changes the hash within one process, and the view is marshalled again only
+// for asset contents not seen before.
 func definitionHashAssetsIn(d *Def, roots map[string]string, open func(root string) assetFS) string {
 	// Structural inspection reads no asset: every read below goes through
 	// open. A definition without a selected root reads its declared (or
 	// inherited) one, as Inspect would.
 	v := inspectStructure(d)
+	p := hashPlanOf(d, v)
+	var assets []map[string]string
 	var walk func(*DefView, string)
 	walk = func(v *DefView, prefix string) {
 		key := prefix + v.Name
@@ -56,11 +65,74 @@ func definitionHashAssetsIn(d *Def, roots map[string]string, open func(root stri
 		if !ok {
 			root = v.assetRoot
 		}
-		v.Assets, _ = assetContentsIn(root, v.States, open(root))
+		v.Assets, _ = readAssetRefs(root, p.refs[len(assets)], open(root))
+		assets = append(assets, v.Assets)
 		for i := range v.Children {
 			walk(&v.Children[i], key+"/")
 		}
 	}
 	walk(&v, "")
-	return hashView(v)
+	if p.hashes == nil {
+		return hashView(v) // not frozen: nothing is kept
+	}
+	b, err := json.Marshal(assets)
+	if err != nil {
+		panic("wf: keying definition assets: " + err.Error()) // string maps cannot fail to marshal
+	}
+	key := string(b)
+	p.mu.Lock()
+	h, ok := p.hashes[key]
+	p.mu.Unlock()
+	if ok {
+		return h
+	}
+	if onHashCompute != nil {
+		onHashCompute(d)
+	}
+	h = hashView(v)
+	p.mu.Lock()
+	p.hashes[key] = h
+	p.mu.Unlock()
+	return h
+}
+
+// hashPlan is what a definition's hash reuses across calls: each view's
+// asset references, collected once, depth first in the order the hash walks
+// the views, and the hashes computed so far by the asset contents read.
+type hashPlan struct {
+	refs [][]stateAssetRefs
+
+	mu     sync.Mutex
+	hashes map[string]string // JSON of the views' asset contents to the hash
+}
+
+var hashPlans sync.Map // *Def to *hashPlan
+
+// onHashCompute, when set (tests), sees each definition hash computed
+// rather than reused.
+var onHashCompute func(*Def)
+
+// hashPlanOf is d's plan, made from v (inspectStructure(d)) when none is
+// kept: kept for a frozen definition, made afresh with no hashes kept for
+// one that may still be under construction.
+func hashPlanOf(d *Def, v DefView) *hashPlan {
+	frozen := d.frozen.Load()
+	if p, ok := hashPlans.Load(d); ok && frozen {
+		return p.(*hashPlan)
+	}
+	p := &hashPlan{}
+	var walk func(DefView)
+	walk = func(v DefView) {
+		p.refs = append(p.refs, assetRefs(v.States))
+		for _, c := range v.Children {
+			walk(c)
+		}
+	}
+	walk(v)
+	if !frozen {
+		return p
+	}
+	p.hashes = map[string]string{}
+	actual, _ := hashPlans.LoadOrStore(d, p)
+	return actual.(*hashPlan)
 }

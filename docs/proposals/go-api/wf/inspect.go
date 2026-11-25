@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,10 +18,52 @@ func Inspect(d *Def) DefView { return inspectDef(d, "", "", map[*Def]bool{}, tru
 // inspectStructure is Inspect without reading any asset: Assets stay nil.
 // Who reads assets (the definition hash, a confined resolver) reads them
 // itself, through its own reader.
-func inspectStructure(d *Def) DefView { return inspectDef(d, "", "", map[*Def]bool{}, false) }
+//
+// A definition handed to an engine (frozen: complete, and building onto it
+// is a misuse) is walked once per process. Asset roots are the exception,
+// resolved again on every call, since Def.Assets may still move them. Each
+// caller gets its own DefView and Children slices, so setting a view's
+// fields never reaches another caller; the slices and maps inside a view are
+// shared and read-only. A definition not yet handed to an engine may still
+// be under construction, and is walked afresh every time.
+func inspectStructure(d *Def) DefView {
+	if !d.frozen.Load() {
+		return inspectDef(d, "", "", map[*Def]bool{}, false)
+	}
+	v, ok := structures.Load(d)
+	if !ok {
+		if onStructureWalk != nil {
+			onStructureWalk(d)
+		}
+		v, _ = structures.LoadOrStore(d, inspectDef(d, "", "", map[*Def]bool{}, false))
+	}
+	return cloneViewTree(v.(DefView), "")
+}
+
+var structures sync.Map // *Def to its structural DefView
+
+// onStructureWalk, when set (tests), sees each structure walk.
+var onStructureWalk func(*Def)
+
+// cloneViewTree copies v's Children slices, recursively, and resolves each
+// view's asset root from its definition, inheriting root, as inspectDef does.
+func cloneViewTree(v DefView, root string) DefView {
+	if v.def.assets != "" {
+		root = v.def.assets
+	}
+	v.assetRoot = root
+	if v.Children != nil {
+		v.Children = append([]DefView(nil), v.Children...)
+		for i := range v.Children {
+			v.Children[i] = cloneViewTree(v.Children[i], root)
+		}
+	}
+	return v
+}
 
 // DefView is the data-only view of one definition.
 type DefView struct {
+	def       *Def
 	assetRoot string // resolved declaration root, excluded from definition identity
 
 	Assets     map[string]string `json:",omitempty"`
@@ -144,7 +187,7 @@ type PolicyView struct{ Gate, Answer, When, Park string }
 func inspectDef(d *Def, prefix, assetRoot string, onPath map[*Def]bool, withAssets bool) DefView {
 	onPath[d] = true
 	defer delete(onPath, d)
-	v := DefView{Name: d.name, Version: d.version, Enums: map[string][]string{}}
+	v := DefView{def: d, Name: d.name, Version: d.version, Enums: map[string][]string{}}
 	if len(d.pathParams) > 0 {
 		v.ParamPaths = map[string]PathBase{}
 		for name, base := range d.pathParams {
