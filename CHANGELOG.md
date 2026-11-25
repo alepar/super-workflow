@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.1
+
+v0.2.0's plugin payload was missing an engine source file and did not build;
+use v0.2.1. The missing file was `wf/lint_maxlen.go`, so any workflow built
+from the v0.2.0 plugin failed with `undefined: ruleMaxlenTag`. The engine
+module at `docs/proposals/go-api/v0.2.0` is complete and unaffected.
+
+- The plugin payload lists `wf/lint_maxlen.go`.
+- An engine test fails when a non-test Go file is missing from the payload
+  allowlist, and the package test builds the staged payload offline.
+
+Everything in v0.2.0 below applies, including its Upgrading notes.
+
 ## v0.2.0
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

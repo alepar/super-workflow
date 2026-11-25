@@ -48,6 +48,14 @@ with tempfile.TemporaryDirectory(prefix=".test-package-", dir=repo) as scratch:
     assert {p.relative_to(plugin).as_posix() for p in plugin.rglob("*") if p.is_file()} == files | {
         ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "release.json"}
     assert json.loads((plugin / ".claude-plugin/plugin.json").read_text())["version"] == release["version"]
+    if not os.environ.get("SW_PACKAGE_TEST_NESTED"):
+        # The staged engine, shipped tests included, must compile offline from the payload alone.
+        go_env = {k: v for k, v in os.environ.items() if k != "WF_HARNESS_FIXTURES_DIR"}
+        go_env.update(GOWORK="off", GOTOOLCHAIN="local", GOFLAGS="-mod=readonly", GOPROXY="off")
+        module = plugin / "docs/proposals/go-api"
+        subprocess.run(["go", "vet", "./..."], cwd=module, env=go_env, check=True)
+        subprocess.run(["go", "run", "./cmd/wfcheck", "check", "feature"], cwd=module, env=go_env,
+                       check=True, stdout=subprocess.DEVNULL)
     zip_path = output / f'super-workflow-{release["version"]}-codex.zip'
     assert zip_path.read_bytes() == (repeat / zip_path.name).read_bytes()
     with zipfile.ZipFile(zip_path) as archive:

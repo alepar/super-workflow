@@ -161,6 +161,7 @@ docs/proposals/go-api/wf/lint.go
 docs/proposals/go-api/wf/lint_checks.go
 docs/proposals/go-api/wf/lint_exec.go
 docs/proposals/go-api/wf/lint_loud.go
+docs/proposals/go-api/wf/lint_maxlen.go
 docs/proposals/go-api/wf/lint_outcomes.go
 docs/proposals/go-api/wf/lint_output_path.go
 docs/proposals/go-api/wf/lint_reachability.go
