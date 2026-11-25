@@ -269,6 +269,15 @@ For machine readers, `workflow next <run> <n> --json` hands out at once and prin
 `n` can be `all`. A named binary such as `super` puts driving verbs under `wf`
 and supplies the run id. Use the command lines the engine prints.
 
+An agent's result type is shown to the child as JSON schema and checked on
+validate and done. Two string tags add form checks: `pattern:"re"` (the whole
+value must match) and `maxlen:"N"` (at most N characters, counted as runes;
+shown as `maxLength`). Both apply to a string, a `*string` or each element of a
+`[]string`. A `maxlen` refusal names the field, its length and the limit, not
+the value. Lint refuses a `maxlen` that is not a positive whole number or that
+sits on a field of another type. A recursive type shows its caps only at its
+first level, though every level is checked.
+
 Agent instructions allocate an absolute `output` JSON file under
 `<state-dir>/runs/<run>/out/`. The brief and prompt name that same file; write
 it, then run `done <run> <unit>` without `--output`. An optional `--output`

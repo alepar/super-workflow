@@ -2,6 +2,7 @@ package wf
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 )
 
@@ -15,6 +16,10 @@ func checkedAgentOutput[O any](raw json.RawMessage, d *Def) (out O, stage string
 		return out, "enum", err
 	}
 	if err = validatePatterns(reflect.ValueOf(out), "output"); err != nil {
+		var long *maxlenError
+		if errors.As(err, &long) {
+			return out, "maxlen", err
+		}
 		return out, "pattern", err
 	}
 	return out, "", nil

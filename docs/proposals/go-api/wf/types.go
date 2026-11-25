@@ -345,6 +345,7 @@ const (
 	RuleMapParallelReview   RuleID = "map-parallel-review" // a note, not an error
 	RuleAgentOutputPath     RuleID = "agent-output-path"
 	RuleArtifactName        RuleID = "artifact-name"
+	RuleMaxlenTag           RuleID = "maxlen-tag"
 	RuleArtifactTemplated   RuleID = "artifact-templated" // staged (LintStaged): a note until every client allocates
 )
 

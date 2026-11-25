@@ -155,12 +155,20 @@ func (w *schemaWalk) object(t reflect.Type) map[string]any {
 
 // fields follows encoding/json: "-" skips a field, an untagged embedded struct
 // flattens, unexported fields are skipped, and omitempty or omitzero means not
-// required. A pattern:"..." tag on a string field becomes its "pattern".
+// required. A pattern:"..." tag on a string field becomes its "pattern", and
+// a maxlen:"N" tag its "maxLength" (on a list of strings, its items').
 func (w *schemaWalk) fields(t reflect.Type, props map[string]any, required *[]string) {
 	for _, f := range jsonFields(t) {
 		fs := w.of(f.field.Type)
 		if p, ok := f.field.Tag.Lookup("pattern"); ok && fs["type"] == "string" {
 			fs["pattern"] = p
+		}
+		if n, ok, err := maxlenOf(f.field.Tag); ok && err == nil {
+			if fs["type"] == "string" {
+				fs["maxLength"] = n
+			} else if items, _ := fs["items"].(map[string]any); fs["type"] == "array" && items["type"] == "string" {
+				items["maxLength"] = n
+			}
 		}
 		props[f.name] = fs
 		if !f.optional {

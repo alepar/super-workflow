@@ -38,7 +38,7 @@ var allRules = []wf.RuleID{
 	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNameDuplicate, wf.RuleChildNotExported,
 	wf.RuleHoldEffectOutside, wf.RuleComputeUnavailable, wf.RuleRouteNoCandidates,
 	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge,
-	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath,
+	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath, wf.RuleMaxlenTag,
 }
 
 // okDef is a valid agent -> terminal definition; fixtures break one thing in it.
@@ -198,6 +198,18 @@ var ruleCases = []struct {
 		return d
 	}},
 	{wf.RuleAgentOutputPath, func() *wf.Def { return outputPathDef[wf.RunPath]("") }},
+	{wf.RuleMaxlenTag, func() *wf.Def {
+		type capped struct {
+			N int `json:"n" maxlen:"3"`
+		}
+		d := wf.New("maxlen-tag")
+		a := wf.NewAgent[rA, capped](d)
+		end := wf.NewTerminal[rEnd](d, wf.Success)
+		done := a.To(end, "done")
+		a.Spec(wf.PromptText("p"), wf.Retry(wf.Const(1), done).OnClass(wf.Blocked, a.To(end, "blocked")))
+		a.Route(func(capped, wf.Ctx) wf.Edge[rA] { return done }, done)
+		return d
+	}},
 	{wf.RuleArtifactName, func() *wf.Def {
 		d, a, _, _ := okDef("artifact-name")
 		wf.NewArtifact[string](a, "sub/x.md")
