@@ -7,9 +7,9 @@ import (
 
 // ruleMaxlenTag is RuleMaxlenTag: a maxlen tag, anywhere in a type the engine
 // checks tags on (an agent's or a compute's output, the definition's input, a
-// yield's result), whose value is not a positive whole number or whose field
-// is not a string, a *string or a list of strings with no JSON encoding of
-// their own. It is refused here, before any run, so the check and the shown
+// yield's result; maxlen itself is enforced only on an agent's output), whose
+// value is not a positive whole number or whose field is not a string, a
+// *string or a list of strings with no JSON encoding of their own. It is refused here, before any run, so the check and the shown
 // schema never meet a bad tag.
 func ruleMaxlenTag(c *lintCtx) []Problem {
 	var out []Problem

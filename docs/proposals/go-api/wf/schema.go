@@ -16,7 +16,7 @@ import (
 // json tags, omitempty and the pattern tag of string fields) and the block's
 // wording.
 // Does not: validate submissions (Submit decodes into O and runs the checks;
-// a pattern tag is shown to the agent here and checked by validatePatterns),
+// a pattern tag is shown to the agent here and checked by validateAgentTags),
 // share a layer with fsx's schema-subset validator (a different direction), or
 // choose the submit command line (the caller passes it verbatim).
 // Extend by: a new supported Go type shape is one case in schemaWalk.shape.

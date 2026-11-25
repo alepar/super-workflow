@@ -17,9 +17,10 @@ import (
 //
 // A maxlen:"N" tag caps a string field (a *string's string, each element of
 // a []string) at N characters, counted as runes like JSON Schema's maxLength.
-// It is shown to the agent as maxLength and checked in the same places as a
-// pattern; a refusal names the field, its length and the limit, never the
-// value. N is a positive decimal integer (ruleMaxlenTag lints it).
+// It is shown to the agent as maxLength and checked only where an agent
+// submits (validate and done): it bounds model output, not values the
+// definition's own code builds. A refusal names the field, its length and the
+// limit, never the value. N is a positive decimal integer (ruleMaxlenTag lints it).
 
 // maxlenOf parses a field's maxlen tag: ok false when there is none, an error
 // when its value is not a positive decimal integer.
@@ -76,7 +77,18 @@ func compiledPattern(p string) (*regexp.Regexp, error) {
 }
 
 // validatePatterns checks every pattern-tagged string field reachable in v.
-func validatePatterns(v reflect.Value, path string) error {
+// It is the guard for values the definition's code builds or reads from the
+// world: compute outputs, child inputs, Map items and yield results. maxlen is
+// not checked there: it bounds what an agent submits (validateAgentTags), not
+// what the definition stores.
+func validatePatterns(v reflect.Value, path string) error { return validateTags(v, path, false) }
+
+// validateAgentTags checks an agent's submitted output: every pattern tag and
+// every maxlen cap reachable in v.
+func validateAgentTags(v reflect.Value, path string) error { return validateTags(v, path, true) }
+
+// validateTags walks v checking pattern tags and, when maxlen is set, maxlen caps.
+func validateTags(v reflect.Value, path string, maxlen bool) error {
 	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
 		if v.IsNil() {
 			return nil
@@ -102,7 +114,7 @@ func validatePatterns(v reflect.Value, path string) error {
 				fv = fv.Elem()
 			}
 			// A maxlen tag caps the string (each element of a list of strings).
-			if _, capped := f.field.Tag.Lookup("maxlen"); capped {
+			if _, capped := f.field.Tag.Lookup("maxlen"); capped && maxlen {
 				sv := fv
 				for sv.Kind() == reflect.Pointer && !sv.IsNil() {
 					sv = sv.Elem()
@@ -145,7 +157,7 @@ func validatePatterns(v reflect.Value, path string) error {
 				}
 				continue
 			}
-			if err := validatePatterns(fv, path+"."+f.name); err != nil {
+			if err := validateTags(fv, path+"."+f.name, maxlen); err != nil {
 				return err
 			}
 		}
@@ -154,14 +166,14 @@ func validatePatterns(v reflect.Value, path string) error {
 			return nil
 		}
 		for i := range v.Len() {
-			if err := validatePatterns(v.Index(i), fmt.Sprintf("%s[%d]", path, i)); err != nil {
+			if err := validateTags(v.Index(i), fmt.Sprintf("%s[%d]", path, i), maxlen); err != nil {
 				return err
 			}
 		}
 	case reflect.Map:
 		iter := v.MapRange()
 		for iter.Next() {
-			if err := validatePatterns(iter.Value(), fmt.Sprintf("%s[%v]", path, iter.Key())); err != nil {
+			if err := validateTags(iter.Value(), fmt.Sprintf("%s[%v]", path, iter.Key()), maxlen); err != nil {
 				return err
 			}
 		}

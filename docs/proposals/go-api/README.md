@@ -274,7 +274,10 @@ validate and done. Two string tags add form checks: `pattern:"re"` (the whole
 value must match) and `maxlen:"N"` (at most N characters, counted as runes;
 shown as `maxLength`). Both apply to a string, a `*string` or each element of a
 `[]string`. A `maxlen` refusal names the field, its length and the limit, not
-the value. Lint refuses a `maxlen` that is not a positive whole number or that
+the value. `maxlen` bounds what an agent submits; it is not a storage limit.
+It is not checked on compute outputs, child inputs, Map items or yield
+results, which the definition's code builds or reads from the world. Lint
+refuses a `maxlen` that is not a positive whole number or that
 sits on a field of another type. A recursive type shows its caps only at its
 first level, though every level is checked.
 

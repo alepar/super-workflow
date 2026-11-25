@@ -15,7 +15,7 @@ func checkedAgentOutput[O any](raw json.RawMessage, d *Def) (out O, stage string
 	if err = validateEnums(reflect.ValueOf(out), d.enums, "output", raw); err != nil {
 		return out, "enum", err
 	}
-	if err = validatePatterns(reflect.ValueOf(out), "output"); err != nil {
+	if err = validateAgentTags(reflect.ValueOf(out), "output"); err != nil {
 		var long *maxlenError
 		if errors.As(err, &long) {
 			return out, "maxlen", err

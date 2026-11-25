@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **`maxlen` bounds only what an agent submits.** It is checked on validate
+  and done (and the calibration and recorded-output probes), no longer on
+  compute outputs, Sub inputs, Map items or yield results. Those are built by
+  the definition's code or read from the world, and a cap there turned
+  ordinary data into a refusal or a halt with no agent to fix it. `pattern`
+  is still checked everywhere. A workflow that relied on `maxlen` to refuse a
+  computed, read or yielded value must check that length itself.
+
 ## v0.2.1
 
 v0.2.0's plugin payload was missing an engine source file and did not build;
