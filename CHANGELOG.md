@@ -1,23 +1,22 @@
 # Changelog
 
-## Unreleased
+## v0.4.0
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.0`. GitHub installs use the plugin tag
+`plugin-v0.4.0`. This release breaks compatibility: effects gain the outcomes
+`uncertain` and `refused`, and a keyed effect is checked before it is applied
+again; sandboxed runs refuse adapters that implement only `Apply`; Map keys
+enter instance ids escaped; `run_started` carries a build stamp; the `spawn`
+verb, offered as one bare command, and the cross-family hint add the journal
+kinds `harness_checked` and `headless_started`; `LintExec` gains the
+`exec-unbound` rule and takes param names (`LintExec(params...)`);
+`{records}` ignores document fields; the git adapter ignores inherited
+`GIT_*` repository selectors; and so do shell commands. Read Upgrading before
+you move a definition, a binary or a live run to it.
 
 ### What changed
 
-- **A Codex coordinator's spawn offer matches its rule (sw-7mam).** `next`
-  printed a cross-harness unit's offer as `cd <ws> && <wf> spawn ...`. Codex
-  splits that chain into two commands, and no rule matches `cd`, so the
-  spawn verb ran sandboxed even with the rule installed and refused to
-  start the child. The offer is now one bare command,
-  `<wf> spawn <run> --claim <token> --state-dir <dir>`, for every
-  coordinator harness. Spawn needs no `cd`: it starts the child in the run's
-  recorded workspace from any directory. The preflight's `codex execpolicy check`
-  asks about that exact printed form (`EngineOptions.HeadlessCheck` takes
-  it as a new `spawn` argument), so it cannot pass while the real command
-  is refused. A spawn that finds itself sandboxed after the check passed
-  now says the command was most likely run chained or altered, and no
-  longer tells the person to install the rule again. Other Codex commands
-  keep their `cd` prefix.
 - **Every run records its build (sw-wxp8).** `run_started` gains a `Build`
   stamp: the engine and workflow modules (path, version, any replacement,
   revision, modified flag), the Go toolchain, GOOS/GOARCH and
@@ -168,6 +167,27 @@
     Lost attempts and a run's end stop their children's process groups.
   - **Status:** it shows each unit's harness, its pid and why it did not
     start, and each child harness's preflight.
+  - **Live testing:** a Claude coordinator with a Codex child has passed a
+    live run. A Codex coordinator's launch of a Claude child passed an
+    uncoached live smoke with the sw-7mam fix below. Codex-to-Claude children
+    are experimental in this release: a Codex coordinator's sandboxed commands
+    cannot see its headless children's processes, so it may get a spurious
+    recovery offer right after a child claims its unit and cannot stop its
+    children when the run ends (sw-gzdt, planned for v0.4.1).
+- **A Codex coordinator's spawn offer matches its rule (sw-7mam).** `next`
+  printed a cross-harness unit's offer as `cd <ws> && <wf> spawn ...`. Codex
+  splits that chain into two commands, and no rule matches `cd`, so the
+  spawn verb ran sandboxed even with the rule installed and refused to
+  start the child. The offer is now one bare command,
+  `<wf> spawn <run> --claim <token> --state-dir <dir>`, for every
+  coordinator harness. Spawn needs no `cd`: it starts the child in the run's
+  recorded workspace from any directory. The preflight's `codex execpolicy check`
+  asks about that exact printed form (`EngineOptions.HeadlessCheck` takes
+  it as a new `spawn` argument), so it cannot pass while the real command
+  is refused. A spawn that finds itself sandboxed after the check passed
+  now says the command was most likely run chained or altered, and no
+  longer tells the person to install the rule again. Other Codex commands
+  keep their `cd` prefix.
 - **The git adapter ignores an inherited repository environment (sw-j721).**
   An engine started from a git hook, or with `GIT_DIR` and `GIT_WORK_TREE`
   exported for a worktree, sent the adapter's ordinary calls (commit, merge,
@@ -216,8 +236,8 @@
   and `refused`. Code that reads journals or `EdgeResult` and compares
   outcomes against `failed`/`unavailable` should treat both as failures. An
   older engine does not know them and would not stop the edge on them. Do
-  not drive such a run with an older binary; the journal format range
-  (sw-u94w) will refuse it.
+  not drive such a run with an older binary: nothing in this release
+  refuses it, and a journal format range is planned (sw-u94w).
 - **A rewind no longer reaches remotes through `gh`.** A rewind used to carry
   a fix into an in-flight run now stops at that run's first `gh` effect. A
   live takeover is planned (sw-yl5d).
