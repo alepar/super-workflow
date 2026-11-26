@@ -158,6 +158,7 @@ docs/proposals/go-api/wf/hash.go
 docs/proposals/go-api/wf/headless_live.go
 docs/proposals/go-api/wf/headless_proc_linux.go
 docs/proposals/go-api/wf/headless_proc_other.go
+docs/proposals/go-api/wf/headless_supervisor.go
 docs/proposals/go-api/wf/inspect.go
 docs/proposals/go-api/wf/inspect_effects.go
 docs/proposals/go-api/wf/journal.go

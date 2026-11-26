@@ -1444,8 +1444,10 @@ type HarnessCheckedData struct {
 // HeadlessStartedData is the spawn verb's start of a headless child: the
 // unit and the claim it was started for, its harness, its process (pid and
 // the kernel's start time of that pid, which guards against pid reuse), the
-// session id its launch named ("" when the CLI chose its own) and its
-// stderr and stdout files.
+// session id its launch named ("" when the CLI chose its own), its stderr
+// and stdout files, and its supervisor's status file (HeadlessProcess),
+// through which every later verb reads its state and asks for its stop.
+// A record without Status (an earlier binary's) is judged by its pid.
 type HeadlessStartedData struct {
 	Name    string
 	Claim   string
@@ -1455,6 +1457,7 @@ type HeadlessStartedData struct {
 	Session string `json:",omitempty"`
 	ErrLog  string `json:",omitempty"`
 	Out     string `json:",omitempty"`
+	Status  string `json:",omitempty"`
 }
 
 // HandOutSpawn is the model and effort a hand-out spawned its child with.

@@ -702,19 +702,24 @@ func TestFamilyNamingTheCoordinatorKeepsItsTier(t *testing.T) {
 }
 
 // fakeProc is a HeadlessProcess whose child runs until the test says it
-// exited, and which records kills.
+// exited, and which records stop requests.
 type fakeProc struct {
 	live    bool
 	kills   int
 	sandbox string // Sandboxed's answer: pid 1's name inside a per-command sandbox
 }
 
-func (p *fakeProc) Start(_, _ []string, _, _, _, _ string) (int, uint64, error) {
+func (p *fakeProc) Start(_, _ []string, _, _, _, _, _ string) (int, uint64, error) {
 	p.live = true
 	return 4242, 1, nil
 }
-func (p *fakeProc) Live(int, uint64) bool { return p.live }
-func (p *fakeProc) Kill(int, uint64) error {
+func (p *fakeProc) State(wf.HeadlessStartedData) wf.HeadlessState {
+	if p.live {
+		return wf.HeadlessRunning
+	}
+	return wf.HeadlessExited
+}
+func (p *fakeProc) Stop(wf.HeadlessStartedData) error {
 	p.kills++
 	return nil
 }

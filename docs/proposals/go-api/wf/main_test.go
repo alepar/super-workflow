@@ -129,6 +129,9 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == shell.DetachedVerb { // the detached runner re-executes this binary
 		os.Exit(shell.RunDetached(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == wf.HeadlessSupervisorVerb { // the spawn verb re-executes this binary
+		os.Exit(wf.RunHeadlessSupervisor(os.Args[2:], os.Stderr))
+	}
 	if os.Getenv("WF_TEST_FAKE_HEADLESS") == "1" { // a fake codex or claude CLI (headless_test.go)
 		os.Exit(fakeHeadlessMain())
 	}

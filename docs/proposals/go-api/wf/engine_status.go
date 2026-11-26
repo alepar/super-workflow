@@ -81,7 +81,7 @@ func (c *cycle) statusUnits(rs *RunStatus, now time.Time) {
 			us.Harness = u.ChildHarness
 			if hs := headlessOf(u); hs != nil {
 				us.Pid = hs.Pid
-				if u.State == UnitHanded && !c.e.recordedReplay && !c.e.headlessProcess().Live(hs.Pid, hs.Start) {
+				if u.State == UnitHanded && !c.e.recordedReplay && c.e.headlessProcess().State(*hs) == HeadlessExited {
 					us.StartErr = strings.TrimPrefix(errTailText(hs.ErrLog), "; its stderr ends: ")
 					if us.StartErr == "" {
 						us.StartErr = "exited before fetching its prompt; its stderr (" + hs.ErrLog + ") is empty"

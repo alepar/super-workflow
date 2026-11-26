@@ -11,13 +11,13 @@ import (
 // crash scenarios exercise the records, not process liveness.
 type liveProc struct{ starts *int }
 
-func (p liveProc) Start(_, _ []string, _, _, _, _ string) (int, uint64, error) {
+func (p liveProc) Start(_, _ []string, _, _, _, _, _ string) (int, uint64, error) {
 	*p.starts++
 	return 4000 + *p.starts, 1, nil
 }
-func (liveProc) Live(int, uint64) bool  { return true }
-func (liveProc) Kill(int, uint64) error { return nil }
-func (liveProc) Sandboxed() string      { return "" }
+func (liveProc) State(wf.HeadlessStartedData) wf.HeadlessState { return wf.HeadlessRunning }
+func (liveProc) Stop(wf.HeadlessStartedData) error             { return nil }
+func (liveProc) Sandboxed() string                             { return "" }
 
 // crHeadlessDef is crSimpleDef's agent on the claude harness, for a codex
 // coordinator.

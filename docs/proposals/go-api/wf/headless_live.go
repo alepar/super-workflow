@@ -22,14 +22,15 @@ func headlessOf(u *unit) *HeadlessStartedData {
 	return u.Headless
 }
 
-// headlessLive reports whether u's headless child for its latest offer is
-// still running.
+// headlessLive reports whether u's headless child for its latest offer may
+// still be running: running, or unknown (a stale supervisor heartbeat with
+// no exit), which is left to the unit's lease rather than taken for dead.
 func (c *cycle) headlessLive(u *unit) bool {
 	if c.headlessInert() {
 		return false
 	}
 	hs := headlessOf(u)
-	return hs != nil && c.e.headlessProcess().Live(hs.Pid, hs.Start)
+	return hs != nil && c.e.headlessProcess().State(*hs) != HeadlessExited
 }
 
 // errTailText is the last lines of a child's stderr as one quoted line, ""
@@ -69,8 +70,8 @@ func (c *cycle) loseGoneHeadless() error {
 		if hs == nil || !u.State.claimed() || u.Claim == nil || u.Recovery != nil || u.waveClaim() {
 			continue
 		}
-		if c.e.headlessProcess().Live(hs.Pid, hs.Start) {
-			continue
+		if c.e.headlessProcess().State(*hs) != HeadlessExited {
+			continue // running, or unknown: the lease decides, not a guess
 		}
 		cause := fmt.Sprintf("the headless %s child of %s (pid %d) exited with no done or failed%s", hs.Harness, u.Name, hs.Pid, errTailText(hs.ErrLog))
 		if err := c.offerEnded(in, cause); err != nil {
@@ -84,14 +85,16 @@ func (c *cycle) loseGoneHeadless() error {
 // its prompt before the engine stops it as hung.
 const headlessFetchBound = 120 * time.Second
 
-// killHeadless stops u's headless child, if it still runs: its attempt is
-// over (lost, given up, or the run ended).
+// killHeadless asks for u's headless child to be stopped: its attempt is
+// over (lost, given up, or the run ended). Its supervisor does the
+// stopping, of the child or of tool processes it left behind; this verb may
+// not see the child's pids.
 func (c *cycle) killHeadless(u *unit) {
 	if c.headlessInert() {
 		return
 	}
 	if hs := headlessOf(u); hs != nil {
-		_ = c.e.headlessProcess().Kill(hs.Pid, hs.Start)
+		_ = c.e.headlessProcess().Stop(*hs)
 	}
 }
 

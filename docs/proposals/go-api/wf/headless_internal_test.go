@@ -18,7 +18,7 @@ func TestHeadlessChildOutlivesItsCoordinator(t *testing.T) {
 	}
 }
 
-// Kill reaches the child's tool processes after the child itself exited:
+// killGroup reaches the child's tool processes after the child itself exited:
 // its process group is signalled while members of it remain.
 func TestKillReachesTheGroupAfterItsLeaderExited(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -40,7 +40,7 @@ func TestKillReachesTheGroupAfterItsLeaderExited(t *testing.T) {
 	if !groupMembers(pid) {
 		t.Fatal("the sleeps left the group before the test could check it")
 	}
-	if err := (osProcess{}).Kill(pid, start); err != nil {
+	if err := killGroup(pid, start); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(5 * time.Second)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -34,70 +33,86 @@ type SpawnResult struct {
 // HeadlessProcess starts and checks the processes of headless children.
 //
 // Owns: how a child process is started (its own session and process group,
-// detached from the caller) and how its liveness and end are read.
+// detached from the caller, watched by a supervisor outside any sandbox)
+// and how its liveness and end are read and its stop is asked for.
 // Does not: choose what runs (the spawn verb builds argv and env) or judge
 // the child's work.
+//
+// The verbs that read a child's state or stop it may run in another PID
+// namespace than the child (a Codex coordinator's sandbox), so State and
+// Stop work through files under the run's state directory, never through
+// the caller's view of pids.
 type HeadlessProcess interface {
 	// Start runs argv in dir with env, stdin from the file stdin and stdout
-	// and stderr appended to their files, in a new session; it returns the
+	// and stderr appended to their files, in a new session under a
+	// supervisor that keeps the status file status; it returns the child's
 	// pid and the kernel's start time of it (0 where unknown).
-	Start(argv, env []string, dir, stdin, stdout, stderr string) (pid int, start uint64, err error)
-	// Live reports whether pid is still the process started at start.
-	Live(pid int, start uint64) bool
-	// Kill signals the child's process group (its session leader's pid).
-	Kill(pid int, start uint64) error
+	Start(argv, env []string, dir, stdin, stdout, stderr, status string) (pid int, start uint64, err error)
+	// State is the recorded child's state now.
+	State(h HeadlessStartedData) HeadlessState
+	// Stop asks for the child's process group to be stopped and returns:
+	// TERM, then KILL after killGrace if any of it remains.
+	Stop(h HeadlessStartedData) error
 	// Sandboxed is the per-command sandbox this process runs inside, "" for
 	// none: a child started from it would be confined by it.
 	Sandboxed() string
 }
 
-// osProcess is the HeadlessProcess of the host.
+// HeadlessState is what a headless child's supervisor last said of it.
+type HeadlessState int
+
+const (
+	// HeadlessRunning: the child runs, by a fresh supervisor heartbeat.
+	HeadlessRunning HeadlessState = iota
+	// HeadlessExited: the child exited (or its status file is gone).
+	HeadlessExited
+	// HeadlessUnknown: the heartbeat is stale and no exit was recorded (a
+	// suspended host, a killed supervisor). It counts as still running: the
+	// unit's lease, not a guess, decides what happens to it.
+	HeadlessUnknown
+)
+
+// osProcess is the HeadlessProcess of the host: the spawn verb starts this
+// binary as the supervisor (HeadlessSupervisorVerb), which owns the child.
 type osProcess struct{}
 
-func (osProcess) Start(argv, env []string, dir, stdin, stdout, stderr string) (int, uint64, error) {
-	in, err := os.Open(stdin)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer in.Close()
-	files := make([]*os.File, 0, 2)
-	defer func() {
-		for _, f := range files {
-			f.Close()
-		}
-	}()
-	for _, p := range []string{stdout, stderr} {
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-		if err != nil {
-			return 0, 0, err
-		}
-		files = append(files, f)
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, env, in, files[0], files[1]
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		return 0, 0, err
-	}
-	pid := cmd.Process.Pid
-	start := procStart(pid)
-	// The child outlives this process: reap nothing, keep nothing open.
-	_ = cmd.Process.Release()
-	return pid, start, nil
+func (osProcess) Start(argv, env []string, dir, stdin, stdout, stderr, status string) (int, uint64, error) {
+	return startSupervised(argv, env, dir, stdin, stdout, stderr, status)
 }
 
-func (osProcess) Live(pid int, start uint64) bool { return procLive(pid, start) }
+// State reads the supervisor's files. A record from before the supervisor
+// (no Status) is judged by its pid, as it was then.
+func (osProcess) State(h HeadlessStartedData) HeadlessState {
+	if h.Status == "" {
+		if procLive(h.Pid, h.Start) {
+			return HeadlessRunning
+		}
+		return HeadlessExited
+	}
+	return supervisedState(h.Status)
+}
 
-// Kill sends the child's process group SIGTERM, then SIGKILL after
+// Stop writes the stop request the supervisor watches. A record from before
+// the supervisor is signalled by its pid, as it was then.
+func (osProcess) Stop(h HeadlessStartedData) error {
+	if h.Status == "" {
+		return killGroup(h.Pid, h.Start)
+	}
+	return os.WriteFile(headlessStopPath(h.Status), []byte("stop\n"), 0o600)
+}
+
+// killGroup sends the process group of pid SIGTERM, then SIGKILL after
 // killGrace if any of it remains. The group is signalled while its leader
-// (the child) runs, or, once the leader is gone, while members of the group
-// remain: a pid in use as a group id is not reused, so those members are
-// the child's own tool processes, never an unrelated group.
-func (p osProcess) Kill(pid int, start uint64) error {
+// runs, or, once the leader is gone, while members of the group remain: a
+// pid in use as a group id is not reused, so those members are the child's
+// own tool processes, never an unrelated group. Only a process in the
+// child's PID namespace can do this: the supervisor, or a caller of a
+// record from before it.
+func killGroup(pid int, start uint64) error {
 	if pid <= 0 {
 		return nil
 	}
-	alive := func() bool { return p.Live(pid, start) || groupMembers(pid) }
+	alive := func() bool { return procLive(pid, start) || groupMembers(pid) }
 	if !alive() {
 		return nil
 	}
@@ -183,7 +198,7 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 			return fmt.Errorf("%w: spawn: claim %s is not unit %s's latest offer: run next and use the command it prints", ErrRejected, claim, u.Name)
 		}
 		p := e.headlessProcess()
-		if hs := u.Headless; hs != nil && hs.Claim == claim && p.Live(hs.Pid, hs.Start) {
+		if hs := u.Headless; hs != nil && hs.Claim == claim && p.State(*hs) != HeadlessExited {
 			return fmt.Errorf("%w: spawn: unit %s's child is already running (pid %d): keep running next", ErrRejected, u.Name, hs.Pid)
 		}
 		coord := c.segmentHarness(len(c.st.segments) - 1)
@@ -205,7 +220,7 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 			return fmt.Errorf("%w: spawn: the run has no state dir for the child's logs", ErrRejected)
 		}
 		base := strings.TrimSuffix(errLog, ".stderr")
-		briefFile, outFile := base+".brief", base+".stdout"
+		briefFile, outFile, statusFile := base+".brief", base+".stdout", base+".status"
 		if err := makeChildLogDir(c.e.opts.StateRoot, filepath.Dir(errLog)); err != nil {
 			return fmt.Errorf("spawn: create the child log directory: %w", err)
 		}
@@ -227,12 +242,13 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 		if dir == "" {
 			dir = c.e.opts.StateRoot
 		}
-		pid, start, err := p.Start(argv, env, dir, briefFile, outFile, errLog)
+		pid, start, err := p.Start(argv, env, dir, briefFile, outFile, errLog, statusFile)
 		if err != nil {
 			return fmt.Errorf("%w: spawn: start %s: %v", ErrRejected, argv[0], err)
 		}
-		if err := c.emit(in, JournalHeadlessStarted, 0, HeadlessStartedData{Name: u.Name, Claim: claim, Harness: target, Pid: pid, Start: start, Session: session, ErrLog: errLog, Out: outFile}); err != nil {
-			_ = p.Kill(pid, start) // unrecorded, it would run unwatched
+		started := HeadlessStartedData{Name: u.Name, Claim: claim, Harness: target, Pid: pid, Start: start, Session: session, ErrLog: errLog, Out: outFile, Status: statusFile}
+		if err := c.emit(in, JournalHeadlessStarted, 0, started); err != nil {
+			_ = p.Stop(started) // unrecorded, it would run unwatched
 			return err
 		}
 		res = SpawnResult{Unit: u.Name, Harness: target, Pid: pid, Session: session, ErrLog: errLog}

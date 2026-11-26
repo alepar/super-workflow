@@ -1162,6 +1162,9 @@ func CLIWithEnv(cfg MainConfig, args []string, stdout, stderr io.Writer, env har
 	if len(args) > 0 {
 		cmd = args[0]
 	}
+	if cmd == HeadlessSupervisorVerb { // the spawn verb re-executes this binary
+		return RunHeadlessSupervisor(args[1:], stderr)
+	}
 	disposition := &refusalDisposition{}
 	defer func() {
 		if env == nil || len(harness.Markers(env)) == 0 || code == exitOK || code == exitEnded {

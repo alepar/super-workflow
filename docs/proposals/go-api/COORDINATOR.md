@@ -519,12 +519,21 @@ after the check passed was most likely run chained or altered, and its refusal
 says so. `spawn` itself refuses to start a child
 from inside a per-command sandbox.
 
-A headless child's process is watched: when it exits without `done` or
-`failed`, its unit's recovery offer (section 7a) comes at once, quoting the end
-of its stderr, with no resume (you cannot message a separate process): restart
-or give up. A child that never fetched its prompt is offered again, quoting the
-same stderr. A lost attempt's child, and every child still running when the run
-ends, is stopped (its process group is signalled).
+A headless child's process is watched by a supervisor: `spawn` starts its own
+binary again (a hidden verb) outside your sandbox, and that process
+starts the child and owns it. It keeps a status file beside the child's
+stderr: the pid once the child runs, a heartbeat every few seconds, then the
+exit code. Your verbs read that file and never the child's pid, which your
+sandbox may not see (Codex runs each command in its own PID namespace). When
+the child exits without `done` or `failed`, its unit's recovery offer
+(section 7a) comes at once, quoting the end of its stderr, with no resume
+(you cannot message a separate process): restart or give up. A stale
+heartbeat with no exit recorded (a suspended host, a killed supervisor) is
+not taken for an exit: the unit's lease decides. A child that never fetched
+its prompt is offered again, quoting the same stderr. A lost attempt's child,
+and every child still running when the run ends, is stopped: the verb writes
+a stop request, and the supervisor sends the child's process group SIGTERM,
+then SIGKILL.
 
 ## 5. Claims and identity: the engine finds its children
 

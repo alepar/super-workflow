@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Headless children are supervised, so a sandboxed coordinator sees them
+  (sw-gzdt).** A Codex coordinator runs each command in its own PID
+  namespace, so `next` could not see the pid that `spawn` recorded. It took
+  every live claude child for dead, with a spurious recovery offer right
+  after the claim, and its stop at run end did nothing. Now `spawn`
+  re-executes the workflow binary as a hidden supervisor,
+  `__headless-supervisor`, outside the sandbox. The supervisor starts the
+  child and owns it. It writes `<log>.status` with the pid, a heartbeat
+  file and then the exit code, and it watches a `.stop` request, on which
+  it sends the child's process group SIGTERM, then SIGKILL. `next`,
+  `recover`, `status` and the run end only read and write those files, in
+  any PID namespace and on every harness. A stale heartbeat with no exit is
+  unknown, left to the lease, not dead. This ends the experimental status
+  of Codex-to-Claude children.
+
+### Upgrading
+
+- `HeadlessProcess` is now `Start(..., status)`, `State(record)` (running,
+  exited, unknown), `Stop(record)` and `Sandboxed()`. `headless_started`
+  gains `Status`. A record without it, from an earlier binary, is judged by
+  pid as before. A binary whose main is not `MainWith` or `CLI` must
+  dispatch `wf.HeadlessSupervisorVerb` to `wf.RunHeadlessSupervisor`, or
+  its spawns fail with "the headless supervisor ended before starting".
+
 ## v0.4.0
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
