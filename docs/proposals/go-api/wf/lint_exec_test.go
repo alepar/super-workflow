@@ -238,3 +238,39 @@ func TestPatternTagOnAListAppliesToEachElement(t *testing.T) {
 		t.Fatalf("an option-shaped list element was not refused:\n%s", tr)
 	}
 }
+
+type xdRead struct{}
+
+// sw-j95s: script source passed inline in a read's argv is bound like a
+// template, so JavaScript destructuring ({execFileSync}) halts the run as an
+// unresolved placeholder when the state runs. Lint reports it at definition
+// time; params (declared, or supplied by the entry), builtins and stored
+// fields stay quiet.
+func TestLintExecUnboundPlaceholder(t *testing.T) {
+	d := wf.New("exu")
+	d.Param("slug")
+	script := `const {execFileSync} = require("node:child_process"); process.stdout.write(execFileSync("git", ["rev-parse", "HEAD"]))`
+	read := shell.Observe(shell.Run("node", "-e", script, "{slug}", "{network}", "{run}", "{records}").In("{workdir}"))
+	r := wf.NewCompute[xdRead, bool](d, func(c wf.Ctx) (bool, error) { _, err := wf.Observed(c, read); return true, err }).Observes(read)
+	done := wf.NewTerminal[xaDone](d, wf.Success)
+	end := r.To(done, "read")
+	r.Route(func(bool, wf.Ctx) wf.Edge[xdRead] { return end }, end)
+	unbound := func(name string) string {
+		return `lint: exec-unbound exu/xdRead read · {` + name + `} (argument) binds no param, builtin or stored field`
+	}
+	lines := func(ps []wf.Problem) []string {
+		var out []string
+		for _, p := range ps {
+			out = append(out, p.Line())
+		}
+		return out
+	}
+	got := lines(d.LintExec())
+	if len(got) != 2 || !strings.HasPrefix(got[0], unbound("execFileSync")) || !strings.HasPrefix(got[1], unbound("network")) {
+		t.Fatalf("exec lint = %q, want {execFileSync} and {network} unbound", got)
+	}
+	got = lines(d.LintExec("network"))
+	if len(got) != 1 || !strings.HasPrefix(got[0], unbound("execFileSync")) {
+		t.Fatalf("exec lint with the entry's network param = %q, want only {execFileSync} unbound", got)
+	}
+}

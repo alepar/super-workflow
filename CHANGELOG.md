@@ -36,6 +36,17 @@
   `wf.ErrNewerFormat`. Before, the refusal was a generic one, such as
   "unsupported snapshot metadata". A newer hash cache is still discarded and
   rebuilt, since it is only a cache, and its error now names the version.
+- **`LintExec` reports a placeholder nothing can bind (sw-j95s).** The new rule
+  `exec-unbound` flags a `{name}` in a command's or a read's argv that no param,
+  builtin or stored field can bind. The engine binds every such `{name}` when
+  the state runs, so that state was certain to halt on an unresolved
+  placeholder. The usual cause is script source passed inline (`node -e`,
+  `bash -c`), where JavaScript destructuring such as `{execFileSync}` or a
+  `${var}` expansion reads as a placeholder. Put the script in a file. Edge
+  effects are not checked for this, because a route may attach their run-time
+  form with literal args. `LintExec` takes the names of the params a served
+  entry supplies (its `Registration` `ParamSpecs`), since a definition may read
+  params it never declares with `Param`.
 
 ### Upgrading
 
@@ -44,6 +55,10 @@
   this engine wrote.
 - **Eval and gate builds that pass `-buildvcs=false`** record an unknown
   workflow revision unless they pass the `-ldflags` above.
+- **`LintExec` callers** should pass each entry's param names
+  (`d.LintExec(names...)`). Without them, a read of a param that only the
+  entry supplies is reported as `exec-unbound`. The call without arguments
+  still compiles.
 
 ## v0.3.0
 

@@ -2,6 +2,7 @@ package wf
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp/syntax"
 	"slices"
@@ -31,10 +32,32 @@ import (
 // It is not in rules: LintExec reports it.
 const RuleExecTainted RuleID = "exec-tainted"
 
-var execRules = []rule{ruleExecArgv}
+// RuleExecUnbound: a {name} in a command's or a read's argv that no param,
+// builtin or stored field can ever bind. The engine binds every such {name} when the
+// state runs, so the run halts there on an unresolved placeholder. It is
+// usually script source passed inline (JavaScript destructuring, a ${var}
+// expansion) that the binder reads as a placeholder; put the script in a file.
+// LintExec reports it.
+const RuleExecUnbound RuleID = "exec-unbound"
 
-// LintExec is the exec rule over d and its children.
-func (d *Def) LintExec() []Problem { return lintDef(d, "", map[*Def]bool{}, execRules, false) }
+// execBuiltins are the names lookup binds without a param or a stored field.
+var execBuiltins = map[string]bool{
+	"run": true, "workspace": true, "harness": true, "resolvedModels": true,
+	"assets": true, "skillsRoot": true, workdirName: true, recordsName: true,
+	scratchName: true, blockedCauseName: true, predecessorName: true,
+}
+
+// LintExec is the exec rule over d and its children. params names the run
+// params the served entry supplies beyond those d and its children declare
+// with Param (a Registration's ParamSpecs): each binds like a declared one.
+func (d *Def) LintExec(params ...string) []Problem {
+	entry := map[string]bool{}
+	for _, p := range params {
+		entry[p] = true
+	}
+	exec := func(c *lintCtx) []Problem { return ruleExecArgv(c, entry) }
+	return lintDef(d, "", map[*Def]bool{}, []rule{exec}, false)
+}
 
 // execBinder is one stored value type that can bind a placeholder.
 type execBinder struct {
@@ -257,13 +280,13 @@ func argvPosition(argv []string, i int) string {
 	return "argument"
 }
 
-func ruleExecArgv(c *lintCtx) []Problem {
+func ruleExecArgv(c *lintCtx, entry map[string]bool) []Problem {
 	binders := execBinders(c)
 	var enums []*enumData
 	for _, d := range append(slices.Clone(c.ancestors), c.d) {
 		enums = append(enums, d.enums...)
 	}
-	params := map[string]bool{}
+	params := maps.Clone(entry)
 	for _, d := range append(slices.Clone(c.ancestors), c.d) {
 		for _, p := range d.params {
 			params[p.name] = true
@@ -271,7 +294,11 @@ func ruleExecArgv(c *lintCtx) []Problem {
 	}
 	var out []Problem
 	seen := map[string]bool{}
-	check := func(path, where string, argv []string) {
+	// bound: argv is bound as declared when the state runs (a command, a
+	// read), so a placeholder nothing binds is certain to halt it. An edge's
+	// declared effects may stand for effects a route attaches at run time with
+	// literal args, so only their taint is checked.
+	check := func(path, where string, argv []string, bound bool) {
 		for i, a := range argv {
 			for _, m := range bindPattern.FindAllStringSubmatch(a, -1) {
 				name := m[1]
@@ -282,12 +309,23 @@ func ruleExecArgv(c *lintCtx) []Problem {
 					continue
 				}
 				var tainted []string
+				binds := execBuiltins[name]
 				for _, b := range binders {
-					if binding(b.t, strings.Split(name, "."), "", enums) == bindsTainted {
+					switch binding(b.t, strings.Split(name, "."), "", enums) {
+					case bindsTainted:
 						tainted = append(tainted, b.where)
+						binds = true
+					case bindsClean:
+						binds = true
 					}
 				}
-				if len(tainted) == 0 {
+				var msg string
+				switch {
+				case !binds && bound:
+					msg = fmt.Sprintf("%s · {%s} (%s) binds no param, builtin or stored field: the run halts here; pass script text in a file, not inline", where, name, argvPosition(argv, i))
+				case len(tainted) > 0:
+					msg = fmt.Sprintf("%s · {%s} (%s) can bind an unvalidated value: %s", where, name, argvPosition(argv, i), strings.Join(tainted, ", "))
+				default:
 					continue
 				}
 				key := path + "|" + where + "|" + name
@@ -295,26 +333,29 @@ func ruleExecArgv(c *lintCtx) []Problem {
 					continue
 				}
 				seen[key] = true
-				out = append(out, Problem{Rule: RuleExecTainted, Path: path,
-					Msg: fmt.Sprintf("%s · {%s} (%s) can bind an unvalidated value: %s", where, name, argvPosition(argv, i), strings.Join(tainted, ", "))})
+				rule := RuleExecTainted
+				if !binds {
+					rule = RuleExecUnbound
+				}
+				out = append(out, Problem{Rule: rule, Path: path, Msg: msg})
 			}
 		}
 	}
 	for i, n := range c.d.nodes {
 		v := c.states[i]
 		if k, ok := n.kind.(*commandKind); ok {
-			check(v.Path, "command", k.argv)
+			check(v.Path, "command", k.argv, true)
 		}
 		// A read runs its argv the same way an effect does.
 		for _, d := range nodeReads(n) {
 			if d.Adapter == "shell" && d.Op == "run" {
-				check(v.Path, "read", argvOf(ExternalEffect{Adapter: "shell", Op: "run", Args: d.Args}))
+				check(v.Path, "read", argvOf(ExternalEffect{Adapter: "shell", Op: "run", Args: d.Args}), true)
 			}
 		}
 		for _, u := range v.uses {
 			for _, ef := range u.effects {
 				if argv := argvOf(ef); argv != nil {
-					check(v.Path, fmt.Sprintf("edge %q effect", useLabel(u)), argv)
+					check(v.Path, fmt.Sprintf("edge %q effect", useLabel(u)), argv, false)
 				}
 			}
 		}
