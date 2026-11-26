@@ -177,12 +177,16 @@ func (r runtime) run(workspace string, args map[string]any, sandboxBin string) (
 // at a repository other than its workspace's: an engine started from a git
 // hook, or with GIT_DIR exported for a worktree, inherits them. The workspace
 // defines the repository; a command that wants another names it in its own
-// argv (git -C). Identity, credential, transport and config variables
+// argv (git -C). It holds the git adapter's repository-local drops less the
+// config variables and GIT_NO_REPLACE_OBJECTS, plus GIT_NAMESPACE. Identity,
+// credential, transport and config variables
 // (GIT_AUTHOR_*, GIT_COMMITTER_*, GIT_SSH*, GIT_ASKPASS, GIT_TERMINAL_PROMPT,
 // GIT_CONFIG_*) pass through.
 var repoSelectors = map[string]bool{
 	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true, "GIT_OBJECT_DIRECTORY": true,
 	"GIT_COMMON_DIR": true, "GIT_NAMESPACE": true, "GIT_PREFIX": true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true, "GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true,
+	"GIT_REPLACE_REF_BASE": true, "GIT_IMPLICIT_WORK_TREE": true,
 }
 
 // commandEnv is the environment a workflow command runs with: this process's,

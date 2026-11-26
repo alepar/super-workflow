@@ -12,15 +12,20 @@ import (
 
 // A workflow command run with a hostile inherited GIT_DIR acts on its
 // workspace's repository, inline and through the detached runner; identity
-// and config variables still arrive (sw-itkk).
+// and config variables still arrive (sw-itkk). The other repository-local
+// variables the git adapter drops are gone too (sw-xb23).
 func TestACommandIgnoresAnInheritedRepositorySelector(t *testing.T) {
 	ws, other := gitRepo(t), gitRepo(t)
 	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
 	t.Setenv("GIT_WORK_TREE", other)
 	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE", "GIT_IMPLICIT_WORK_TREE"} {
+		t.Setenv(name, filepath.Join(other, ".git", "fixture"))
+	}
 	t.Setenv("GIT_AUTHOR_NAME", "Fixture Author")
 	t.Setenv("GIT_CONFIG_COUNT", "0")
-	argv := []string{"sh", "-c", `git rev-parse --show-toplevel; echo "author=$GIT_AUTHOR_NAME count=$GIT_CONFIG_COUNT"; echo "dir=${GIT_DIR-unset} tree=${GIT_WORK_TREE-unset} index=${GIT_INDEX_FILE-unset}"`}
+	argv := []string{"sh", "-c", `git rev-parse --show-toplevel; env | grep -E '^GIT_(DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|COMMON_DIR|NAMESPACE|PREFIX|ALTERNATE_OBJECT_DIRECTORIES|GRAFT_FILE|SHALLOW_FILE|REPLACE_REF_BASE|IMPLICIT_WORK_TREE)='; echo "author=$GIT_AUTHOR_NAME count=$GIT_CONFIG_COUNT"; echo "dir=${GIT_DIR-unset} tree=${GIT_WORK_TREE-unset} index=${GIT_INDEX_FILE-unset}"`}
 	want := ws + "\nauthor=Fixture Author count=0\ndir=unset tree=unset index=unset\n"
 
 	raw, err := Runtime(Config{}).Read(ws, Observe(Run(argv...)).Desc())

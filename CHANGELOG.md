@@ -18,6 +18,13 @@
   any PID namespace and on every harness. A stale heartbeat with no exit is
   unknown, left to the lease, not dead. This ends the experimental status
   of Codex-to-Claude children.
+- **Shell commands drop the rest of git's repository-local variables
+  (sw-xb23).** Besides `GIT_DIR` and the six sw-itkk dropped, `shell.Run`
+  commands, inline and detached, now also run without
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_GRAFT_FILE`, `GIT_SHALLOW_FILE`,
+  `GIT_REPLACE_REF_BASE` and `GIT_IMPLICIT_WORK_TREE`, as the git adapter
+  already does. `GIT_CONFIG_*`, identity, credential and transport
+  variables still pass through.
 
 ### Upgrading
 
@@ -27,6 +34,11 @@
   pid as before. A binary whose main is not `MainWith` or `CLI` must
   dispatch `wf.HeadlessSupervisorVerb` to `wf.RunHeadlessSupervisor`, or
   its spawns fail with "the headless supervisor ended before starting".
+- **A shell command that relied on an inherited
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_GRAFT_FILE`, `GIT_SHALLOW_FILE`,
+  `GIT_REPLACE_REF_BASE` or `GIT_IMPLICIT_WORK_TREE`** no longer sees it.
+  Set it in the command's own argv, for example
+  `env GIT_SHALLOW_FILE=<file> git ...`.
 
 ## v0.4.0
 
