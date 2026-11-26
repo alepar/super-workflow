@@ -106,6 +106,13 @@
   fault apply the real effect first and then kill the engine, so the
   adapter's check must find it. The fuzz `effect-timeout` fault on an
   adapter op now models a real timeout (`wf.ErrTimedOut`).
+- **A Map inside a Map child is a stated guarantee (sw-fcsg).** The suite
+  now runs one nested fixture, a panel of seats for each candidate. It covers
+  `Parallel` limits per outer item, stopped seats in both levels' results, a
+  budget stop, distinct artifact paths, a crash before and after every
+  journal write of the drive, and a `wftest.Check` of a nested definition.
+  The guide's Map section states identity, limits, results, budget and
+  recovery for nested Maps. No behavior changed.
 - **`wftest.Check` simulates named option variants (sw-145v).**
   `CheckConfig.Variants` maps a name to a value of the definition's options
   struct. Check then calibrates and runs every simulation phase once per

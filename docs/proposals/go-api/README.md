@@ -189,6 +189,24 @@ The tour names its fourth type argument `TaskResult` to distinguish it from
 the third, `string` key. A compiler complaint about `comparable` often means
 the key and result types were swapped.
 
+A Map's child may hold a Map of its own, such as a panel of judge seats for
+each candidate. The nested case has the same guarantees as a single Map.
+**Identity:** an inner child's id extends its parent's
+(`Cand[c1]/Seat[s1]`), with the key escaped at each level, so ids and
+allocated artifact paths stay distinct at any depth. **Limits:** an inner
+`Parallel` counts the children of that one parent, and the outer `Parallel`
+bounds the parents, so an outer limit of N and an inner limit of M run up to
+N×M seats at once. **Results:** each outer child joins its own inner Map,
+whose result records every seat's terminal, result and class. The outer
+result sees an inner Map only through that child's terminal and `Yield`.
+**Budget:** one run budget covers every level. A seat the budget stops is
+`BudgetStopped` in its own panel's result, never `Refused`. Its panel then
+joins on the seats that returned; under `AllOK` it takes the partial edge.
+**Recovery:** a crash before or after any journal write
+resumes to the same result, with every child spawned once and every state
+accepted once. `wf/nested_map_test.go` and `wftest`'s `TestCheckNestedMap`
+hold these cases.
+
 Compute callbacks return `(T, error)` even when they cannot fail:
 
 ```go
