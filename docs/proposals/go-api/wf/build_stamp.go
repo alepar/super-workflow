@@ -123,7 +123,8 @@ func depStamp(dep *debug.Module) ModuleStamp {
 	m := ModuleStamp{Path: dep.Path, Version: dep.Version}
 	if r := dep.Replace; r != nil {
 		m.Replace = r.Path
-		if r.Version != "" {
+		// A directory replacement reports "(devel)", which names no source.
+		if realVersion(r.Version) {
 			m.Replace += "@" + r.Version
 			m.Source = StampModule
 		}
