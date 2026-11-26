@@ -1467,6 +1467,13 @@ load. A unit claimed by a wave alias belongs to session `wave`.
 
 Inspection verbs run over the registered definitions and need no run:
 `workflow lint`, `workflow graph`, `workflow mermaid` and `workflow hash`.
+`workflow version [--json]` prints this binary's build stamp: the source of the
+engine and of the workflow (version, revision, modified flag, each marked `vcs`,
+`module`, `declared` or unknown), the Go toolchain and target, and the
+journal format. Every run records the stamp of the binary that created it in
+`run_started`. `status --full` prints it on a `build:` line, and adds `this
+binary differs: <what>` when another build reads the run. That line is a note
+for people, not a refusal.
 
 The generic CLI verb `workflow check <definition>` runs structural lint,
 check-example calibration and deterministic simulation without a model.

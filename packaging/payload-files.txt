@@ -95,6 +95,7 @@ docs/proposals/go-api/wf/authoring.go
 docs/proposals/go-api/wf/bootstrap.go
 docs/proposals/go-api/wf/breakpoint.go
 docs/proposals/go-api/wf/budget.go
+docs/proposals/go-api/wf/build_stamp.go
 docs/proposals/go-api/wf/calibrate.go
 docs/proposals/go-api/wf/child_claim.go
 docs/proposals/go-api/wf/child_log.go

@@ -54,6 +54,7 @@ Review/l#1     lost       --  (attempt 1 lost)
 Review/x#1     withdrawn  --  item left the source
 subagents ≥ 13: 1 stalled, 2 running, 1 started, 1 handed, 3 pending, 1 waiting, 1 done, 1 failed, 1 lost, 1 withdrawn (+3 future steps not counted) · elapsed 0:42 · eta ~1:05 · graph-bound
 harness: generic (legacy generic fallback)
+build: not recorded (the run predates build stamps)
 units: 3 ready, 1 handed, 4 running
 `
 	if got := wf.RenderStatus(rs); got != want {
@@ -188,7 +189,7 @@ func TestStatusUnitsMatchJSON(t *testing.T) {
 	}
 	var lines []string
 	for _, l := range strings.Split(wf.RenderStatus(st), "\n") {
-		if !strings.HasPrefix(l, "subagents") && l != "" && !strings.HasPrefix(l, "units:") && !strings.HasPrefix(l, "harness:") && !isReasonLine(l) {
+		if !strings.HasPrefix(l, "subagents") && l != "" && !strings.HasPrefix(l, "units:") && !strings.HasPrefix(l, "harness:") && !strings.HasPrefix(l, "build:") && !isReasonLine(l) {
 			lines = append(lines, l)
 		}
 	}

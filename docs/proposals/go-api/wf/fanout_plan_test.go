@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -101,7 +102,7 @@ func TestFanoutOutcomeIgnoresSourcePrefixAndOtherTargets(t *testing.T) {
 }
 
 func TestPlanFanoutUsesOnlyExactHistoricalCheckpoint(t *testing.T) {
-	for _, mode := range []string{"valid", "reused", "reencoded", "other-metadata", "unknown-adapter", "missing-adapter-dir", "missing", "intervening", "wrong-attempt", "wrong-before", "unavailable", "missing-artifact"} {
+	for _, mode := range []string{"valid", "reused", "reencoded", "other-metadata", "unknown-adapter", "missing-adapter-dir", "missing", "intervening", "wrong-attempt", "wrong-before", "unavailable", "missing-artifact", "newer-version"} {
 		t.Run(mode, func(t *testing.T) {
 			issued := newIssuedRun(t)
 			j := MemJournal()
@@ -125,6 +126,9 @@ func TestPlanFanoutUsesOnlyExactHistoricalCheckpoint(t *testing.T) {
 			}
 			if mode == "unavailable" {
 				data.Unavailable = "live children"
+			}
+			if mode == "newer-version" {
+				data.Version = 3
 			}
 			manifest := data
 			if mode == "reencoded" {
@@ -193,6 +197,8 @@ func TestPlanFanoutUsesOnlyExactHistoricalCheckpoint(t *testing.T) {
 				t.Fatalf("accepted %s: %+v", mode, got)
 			} else if err == nil && len(plan.Skipped) != 1 {
 				t.Fatalf("%s left out unnamed: %+v", mode, plan.Skipped)
+			} else if mode == "newer-version" && !strings.Contains(plan.Skipped[0].Reason, "world snapshot is format 3; this engine reads up to 2") {
+				t.Fatalf("newer snapshot not named: %+v", plan.Skipped)
 			}
 			unlock, _ = j.Lock(run)
 			after, _ := j.Records(run)

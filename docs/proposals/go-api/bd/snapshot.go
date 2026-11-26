@@ -316,6 +316,9 @@ func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		return err
 	}
+	if meta.Version > 1 {
+		return fmt.Errorf("bd restore: %w", wf.NewerFormat("bd checkpoint metadata", meta.Version, 1))
+	}
 	if meta.Version != 1 || (meta.Tracker != "absent" && meta.Tracker != "embedded") {
 		return fmt.Errorf("bd restore: unsupported snapshot metadata")
 	}

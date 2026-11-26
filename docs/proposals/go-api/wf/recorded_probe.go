@@ -28,6 +28,9 @@ func (s StateView) CheckRecordedOutput(output json.RawMessage, context *CheckCon
 }
 
 func (o agentOps[S, O]) probeRecorded(raw json.RawMessage, context *CheckContexts) (map[string]string, error) {
+	if context != nil && context.Version > 1 {
+		return nil, fmt.Errorf("%w: %w", ErrContextUnknown, NewerFormat("check context", context.Version, 1))
+	}
 	if context == nil || context.Version != 1 {
 		return nil, fmt.Errorf("%w: absent or unsupported check context", ErrContextUnknown)
 	}

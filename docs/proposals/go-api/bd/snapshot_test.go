@@ -544,3 +544,12 @@ func TestSnapshotRefusesAStorageOverrideInTheTrackersEnvFile(t *testing.T) {
 		}
 	}
 }
+
+// Metadata from a newer engine is refused by name, not as invalid.
+func TestSnapshotRestoreRefusesNewerMetadata(t *testing.T) {
+	s := snapshotter(t)
+	err := s.Restore(wf.RestoreRequest{Workspace: t.TempDir()}, json.RawMessage(`{"version":2,"tracker":"embedded"}`))
+	if !errors.Is(err, wf.ErrNewerFormat) || !strings.Contains(err.Error(), "format 2; this engine reads up to 1") {
+		t.Fatalf("newer metadata: %v", err)
+	}
+}

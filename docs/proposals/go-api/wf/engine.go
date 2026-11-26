@@ -837,13 +837,14 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 		}
 		c.st.hash = definitionHashAssets(d, roots)
 	}
+	build := currentBuild()
 	err = c.emitAs("", "", 0, JournalRunStarted, 0, RunStartedData{
 		PagedPrompts: pagedPrompts, HaltBefore: haltBefore, Snapshots: snapshots, Def: d.name, Version: d.version, Params: nilIfEmpty(normalizedParams), ParamPaths: paramPaths, Options: opts,
 		Assets: assets, AssetRoots: roots, Worktrees: successorWorktrees(pred),
 		Harness: harness, HarnessFromEnv: e.opts.HarnessFromEnv && harness == e.opts.Harness,
 		Workspace: workspace, ModelMap: modelMap, Models: nilIfEmpty(models), Efforts: nilIfEmpty(efforts), Budget: e.opts.RunBudget,
 		Delegations: nilIfEmpty(delegations), Predecessor: predID, Given: given(e.opts.GivenParams, params),
-		Detach: e.detachFact(), Shape: defShape(d), Manufactured: e.opts.manufactured,
+		Detach: e.detachFact(), Shape: defShape(d), Manufactured: e.opts.manufactured, Build: &build,
 	})
 	if err != nil {
 		return "", nil, err
@@ -1233,6 +1234,9 @@ func (e *Engine) status(run RunID, strict bool) (RunStatus, error) {
 		rs.Harness, rs.LegacyHarness = recordedHarness(*c.st.started)
 		rs.Predecessor = c.st.started.Predecessor
 		rs.Manufactured = c.st.started.Manufactured
+		if b := c.st.started.Build; b != nil {
+			rs.Build, rs.BuildDiffers = b, b.differs(currentBuild())
+		}
 		if t := c.st.turn; t != nil {
 			rs.CoordinatorTurn = &CoordinatorTurnStatus{Continuations: t.count, LastSeq: t.last, StallSeq: t.stall}
 		}

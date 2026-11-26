@@ -566,6 +566,9 @@ func (e *Engine) forkPreflight(run RunID, recs []JournalRecord, seq int64) (*for
 	if data.Unavailable != "" {
 		return nil, fmt.Errorf("%w: snapshot unavailable: %s", ErrUnavailable, data.Unavailable)
 	}
+	if data.Version > 2 {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, NewerFormat("world snapshot", data.Version, 2))
+	}
 	if data.Version != 1 && data.Version != 2 {
 		return nil, fmt.Errorf("%w: unsupported snapshot version", ErrUnavailable)
 	}

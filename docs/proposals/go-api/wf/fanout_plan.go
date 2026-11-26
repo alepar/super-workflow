@@ -107,7 +107,9 @@ func (e *Engine) PlanFanout(run RunID, states string) (FanoutPlan, error) {
 						if c.snapshot.Before == r.Kind {
 							c.target.SnapshotSeq = prev.Seq
 							c.problem = c.snapshot.Unavailable
-							if c.snapshot.Version != 1 && c.snapshot.Version != 2 {
+							if c.snapshot.Version > 2 {
+								c.problem = NewerFormat("world snapshot", c.snapshot.Version, 2).Error()
+							} else if c.snapshot.Version != 1 && c.snapshot.Version != 2 {
 								c.problem = "unsupported snapshot version"
 							}
 						}

@@ -358,6 +358,11 @@ type RunStatus struct {
 	// Manufactured: the run (or the run it was forked from) was built by
 	// wf dev manufacture; its world is scripted, never a model's outcome.
 	Manufactured *ManufacturedData `json:",omitempty"`
+	// Build is the run's stamp from run_started; nil before stamps.
+	Build *BuildStamp `json:",omitempty"`
+	// BuildDiffers names how the binary reading the status differs from
+	// Build: a note only, the freeze check is separate.
+	BuildDiffers string `json:",omitempty"`
 	// Detach is the run's detach mode: the one journaled at start (this
 	// process's for a run from before G1) lowered by any step-down, "" when
 	// none was probed. At DetachNone a long command runs inside next itself.
@@ -759,6 +764,9 @@ type RunStartedData struct {
 	// Detach is the host's detach mode when the run was created, nil when the
 	// effect runner does not probe one (no runner, or a runner from before G1).
 	Detach *DetachFact `json:",omitempty"`
+	// Build is the source identity of the binary that created the run
+	// (BuildStamp). nil on a journal from before stamps. A fork keeps it.
+	Build *BuildStamp `json:",omitempty"`
 }
 
 // InstructionIssuedData is the payload of instruction_issued: the whole

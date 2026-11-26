@@ -1171,8 +1171,14 @@ func (s *snapshotStore) view(tree string) (*checkpointView, error) {
 		}
 		if e.name == storeMetaName {
 			gotMeta = json.Unmarshal(raw, &v.meta) == nil && v.meta.Version == 2
+			if v.meta.Version > 2 {
+				return nil, fmt.Errorf("%w: checkpoint %s: %w", ErrUnavailable, tree, NewerFormat("its meta", v.meta.Version, 2))
+			}
 		} else {
 			gotManifest = json.Unmarshal(raw, &manifest) == nil && manifest.Version == 2
+			if manifest.Version > 2 {
+				return nil, fmt.Errorf("%w: checkpoint %s: %w", ErrUnavailable, tree, NewerFormat("its manifest", manifest.Version, 2))
+			}
 		}
 	}
 	if !gotMeta || !gotManifest {

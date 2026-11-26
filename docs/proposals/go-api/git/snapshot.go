@@ -651,7 +651,7 @@ func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
 		return err
 	}
 	if meta.Version > 3 {
-		return fmt.Errorf("git restore: checkpoint metadata version %d is newer than this engine supports (3); fork it with the engine that took it", meta.Version)
+		return fmt.Errorf("git restore: %w", wf.NewerFormat("git checkpoint metadata", meta.Version, 3))
 	}
 	if meta.Version < 1 || len(meta.Trees) == 0 || meta.Trees[0].Path != "." {
 		return fmt.Errorf("git restore: invalid metadata")

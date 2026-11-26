@@ -1,6 +1,7 @@
 package wf
 
 import (
+	"runtime/debug"
 	"time"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
@@ -146,4 +147,12 @@ func RepeatedFailed(e Executor, run RunID, claim, reason, class string, caller h
 		return nil
 	})
 	return repeated, err
+}
+
+// SetBuildInfo replaces the build info the stamp reads, for tests; the
+// returned func restores it.
+func SetBuildInfo(bi *debug.BuildInfo) (restore func()) {
+	old := readBuildInfo
+	readBuildInfo = func() (*debug.BuildInfo, bool) { return bi, bi != nil }
+	return func() { readBuildInfo = old }
 }

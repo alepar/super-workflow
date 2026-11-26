@@ -308,6 +308,9 @@ func resolveCheckContexts(context *CheckContexts, accept JournalRecord, records 
 	if context == nil {
 		return nil, nil
 	}
+	if context.Version > 1 {
+		return nil, NewerFormat("check context", context.Version, 1)
+	}
 	if context.Version != 1 {
 		return nil, fmt.Errorf("unsupported check context version %d", context.Version)
 	}

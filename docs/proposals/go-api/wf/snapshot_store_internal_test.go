@@ -497,6 +497,14 @@ func TestStoreValidationRefusesDamagedCheckpoints(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	for name, lines := range map[string][]string{
+		"newer meta":     {good[0], "100644 blob " + putBlob(t, s, `{"version":3,"entries":{}}`) + "\t" + storeMetaName, good[2]},
+		"newer manifest": {good[0], good[1], "100644 blob " + putBlob(t, s, `{"version":3,"adapters":{}}`) + "\t" + storeManifestName},
+	} {
+		if _, err := s.validate(mkCheckpoint(t, s, lines...), adapters); !errors.Is(err, ErrNewerFormat) || !strings.Contains(err.Error(), "is format 3; this engine reads up to 2") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, lines := range map[string][]string{
 		"no meta":            {good[0], good[2]},
 		"no manifest":        {good[0], good[1]},
 		"other adapters":     {good[0], good[1], "100644 blob " + manifest(`{"world":{"v":2}}`) + "\t" + storeManifestName},

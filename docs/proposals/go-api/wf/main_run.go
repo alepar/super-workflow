@@ -247,6 +247,24 @@ func inspect(c *cli, row Subcommand, args []string) int {
 	return run(append([]string{row.Name}, args...), defs, c.stdout, c.stderr)
 }
 
+// version prints this binary's build stamp, the one a run it creates records.
+func version(c *cli, row Subcommand, args []string) int {
+	fs := flag.NewFlagSet(row.Name, flag.ContinueOnError)
+	fs.SetOutput(c.stderr)
+	asJSON := fs.Bool("json", false, "print the BuildStamp as JSON")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		return c.failf(exitUsage, "version: usage: version [--json]")
+	}
+	b := currentBuild()
+	if *asJSON {
+		return c.printJSON(b)
+	}
+	for _, line := range b.Lines() {
+		fmt.Fprintln(c.stdout, line)
+	}
+	return exitOK
+}
+
 // Subcommands is the verb table. Only CLI and usage read it: the handlers it
 // names must not, or the package fails to initialize.
 var Subcommands = []Subcommand{
@@ -255,6 +273,7 @@ var Subcommands = []Subcommand{
 	{Name: "graph", Summary: "render the definitions (the default)", handle: inspect},
 	{Name: "mermaid", Summary: "render the definitions as Mermaid", handle: inspect},
 	{Name: "hash", Summary: "print the definition hashes", handle: inspect},
+	{Name: "version", Flags: []string{"--json"}, Summary: "print this binary's build stamp: engine and workflow source, Go toolchain, journal format (--json: the BuildStamp)", handle: version},
 	{
 		Name:    "run",
 		Flags:   []string{"--param k=v", "--options file", "--workspace dir", "--state-dir dir", "--assets dir", "--run-id id", "--snapshots", "--paged-prompts", "--halt-before STATE[,STATE]", "--model-map key=model[,key=model]", "--delegate gate=value", "--harness h", "--continue run"},

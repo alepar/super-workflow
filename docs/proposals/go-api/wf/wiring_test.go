@@ -449,8 +449,10 @@ func TestEveryFlagReachesTheEngine(t *testing.T) {
 		}
 		// The parser defines exactly the flags the row documents.
 		localHook := row.Name == "coordinator-stop" || row.Name == "install-coordinator-stop"
+		// version takes no run: its --json is exercised by TestVersionVerb.
+		selfOnly := row.Name == "version"
 		args := []string{row.Name, "x"}
-		if localHook {
+		if localHook || selfOnly {
 			args = args[:1]
 		}
 		for range row.Args {
@@ -483,8 +485,8 @@ func TestEveryFlagReachesTheEngine(t *testing.T) {
 		for name := range documented {
 			key := row.Name + " --" + name
 			seen[key] = true
-			if localHook {
-				continue // native flag handling is exercised by TestCoordinatorHookCLIFlags
+			if localHook || selfOnly {
+				continue // native flag handling is exercised by TestCoordinatorHookCLIFlags; version's by TestVersionVerb
 			}
 			if name == "workspace" && row.Name != "run" {
 				// Common root remapping is exercised by TestCLIMovedRunUsesExplicitRootsAndRememberedAssets.
@@ -631,6 +633,11 @@ func structFields(typ reflect.Type, out map[string]bool) {
 func TestStatusSchemaRoundTrips(t *testing.T) {
 	// Fields no CLI-driven run in this test reaches.
 	unreached := map[string]string{
+		"ModuleStamp.Revision":       "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Modified":       "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Source":         "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Replace":        "needs a replaced engine dependency; TestBuildStampFromBuildInfo covers it",
+		"RunStatus.BuildDiffers":     "needs another binary reading the status; TestRunStartedRecordsTheBuild covers it",
 		"LockHolder.Session":         "a coordinator verb that names no unit records its harness session; TestLockHolderNamesVerbUnitAndHostPid covers it",
 		"RunStatus.PendingCleanups":  "needs shared-workspace units; TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
 		"PendingCleanup.Deferred":    "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",

@@ -196,7 +196,14 @@ func loadHashCache(path string) (map[hashKey][]string, error) {
 	}
 	r := bytes.NewReader(body)
 	var v uint64
-	if err := binary.Read(r, binary.LittleEndian, &v); err != nil || v != hashCacheVersion {
+	if err := binary.Read(r, binary.LittleEndian, &v); err != nil {
+		return nil, errors.New("hash cache: damaged")
+	}
+	if v > hashCacheVersion {
+		// A cache only: the caller discards it and rebuilds.
+		return nil, NewerFormat("hash cache", int(min(v, 1<<31)), hashCacheVersion)
+	}
+	if v != hashCacheVersion {
 		return nil, errors.New("hash cache: unknown version")
 	}
 	m := map[hashKey][]string{}

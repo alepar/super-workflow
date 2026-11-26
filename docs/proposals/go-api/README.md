@@ -84,6 +84,26 @@ Register each adapter your definition uses; `wf.Main(def)` alone does not
 register shell or Git runtimes. The tour uses inline commands. For detached
 commands, see the effect runner registration in [cmd/workflow](cmd/workflow/main.go).
 
+### Build stamps
+
+Every run records the source identity of the binary that created it: the
+engine and workflow module versions and revisions, the modified flag, the Go
+toolchain and the journal format. `workflow version` prints this binary's
+stamp; `workflow status <run> --full` prints the run's stamp. It notes
+`this binary differs` when another build reads it. Where Go's build info has
+no revision, the stamp says it is unknown. This happens with `-buildvcs=false`,
+with an engine from `go.work` and with an engine from a local `replace`. To
+record a revision for such a build, declare it at link time. A declared
+revision fills only a gap and is shown as declared:
+
+```sh
+M=github.com/alepar/super-workflow/docs/proposals/go-api/wf
+go build -buildvcs=false -ldflags "-X $M.declaredWorkflowRevision=$(git rev-parse HEAD) -X $M.declaredEngineRevision=<engine rev> -X $M.declaredModified=false" ./cmd/workflow
+```
+
+A checkpoint, snapshot store or check context written by a newer engine is
+refused with its format version named (`wf.ErrNewerFormat`).
+
 ## Routing and child results
 
 Use `d.OnFailures(stopped, wf.Blocked, wf.Unavailable, wf.Uncertain)` for a

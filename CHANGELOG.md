@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Every run records its build (sw-wxp8).** `run_started` gains a `Build`
+  stamp: the engine and workflow modules (path, version, any replacement,
+  revision, modified flag), the Go toolchain, GOOS/GOARCH and
+  `JournalFormat` 1. It is read from `runtime/debug.ReadBuildInfo`. A gap is
+  recorded as unknown, never guessed. A build with `-buildvcs=false`, an
+  engine from a `go.work` workspace and an engine from a local-directory
+  `replace` all have no revision. The stamp also says where each revision
+  came from: `vcs`, `module` (a real module version) or `declared`. A build
+  without VCS stamping can declare its revisions at link time:
+
+  ```sh
+  M=github.com/alepar/super-workflow/docs/proposals/go-api/wf
+  go build -buildvcs=false -ldflags "-X $M.declaredWorkflowRevision=<rev> -X $M.declaredEngineRevision=<rev> -X $M.declaredModified=false" ./cmd/workflow
+  ```
+
+  A declared value only fills a gap. A VCS revision or a module version
+  always wins. A fork keeps its source run's stamp. The stamp enters no
+  definition hash, prompt digest or effect key.
+- **`workflow version` prints this binary's stamp** (`--json` for the
+  `BuildStamp`). **`status` prints the run's stamp** on a `build:` line, with
+  `exact` or `not exact: <why>`. When the binary reading the status is not
+  the one that created the run, status adds `this binary differs: <what>`. That
+  line is a note only: nothing is refused and nothing is journaled. A run
+  started before stamps shows `build: not recorded`.
+- **Artifacts from a newer engine are refused by name.** Git and bd
+  checkpoint metadata, the snapshot store's meta and manifest, world snapshot
+  records and recorded check contexts now refuse a version this engine does
+  not know. The refusal reads "<artifact> is format N; this engine reads up to M:
+  written by a newer engine, so use that engine or a newer one" and wraps
+  `wf.ErrNewerFormat`. Before, the refusal was a generic one, such as
+  "unsupported snapshot metadata". A newer hash cache is still discarded and
+  rebuilt, since it is only a cache, and its error now names the version.
+
+### Upgrading
+
+- **Older engines read stamped journals.** They decode `run_started`
+  leniently and ignore `Build`: a v0.3.0 binary's `status` reads a journal
+  this engine wrote.
+- **Eval and gate builds that pass `-buildvcs=false`** record an unknown
+  workflow revision unless they pass the `-ldflags` above.
+
 ## v0.3.0
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

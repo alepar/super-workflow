@@ -935,6 +935,7 @@ usage: workflow <subcommand> [args]
   graph     render the definitions (the default)
   mermaid   render the definitions as Mermaid
   hash      print the definition hashes
+  version  --json print this binary's build stamp: engine and workflow source, Go toolchain, journal format (--json: the BuildStamp)
   run      --param k=v --options file --workspace dir --state-dir dir --assets dir --run-id id --snapshots --paged-prompts --halt-before STATE[,STATE] --model-map key=model[,key=model] --delegate gate=value --harness h --continue run start or resume a run of <def>; prints the RunID on stdout and the coordinator bootstrap on stderr
   next     --expected-admission seq --until-unit name --state-dir dir --assets dir --workspace dir --timeout d --children k --adopt --json block until <run> has something for the coordinator, hand out up to n ready units (left out: up to your child cap, --children or the harness's own limit where its adapter reads one, less your children running or starting, else every ready unit) and print one line per item; --json: hand out at once, without blocking, as JSON, for a program
   stop     --state-dir dir --assets dir --workspace dir --reason r stop <run>: next offers nothing from now on and running children finish; a person's resume continues it

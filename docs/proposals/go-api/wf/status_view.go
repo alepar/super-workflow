@@ -72,6 +72,7 @@ func RenderStatus(rs RunStatus) string {
 		}
 	}
 	b.WriteString(harnessLine(rs) + "\n")
+	b.WriteString(buildLine(rs))
 	if line := modelsLine(rs.Models, segmentHarnessOf(rs)); line != "" {
 		b.WriteString(line + "\n")
 	}
@@ -340,4 +341,17 @@ func RenderLock(st LockState) string {
 		fmt.Fprintf(&b, "last written by %s\n", h.describe())
 	}
 	return b.String()
+}
+
+// buildLine is the run's build stamp, and a note when the binary reading the
+// status is not the one the stamp names.
+func buildLine(rs RunStatus) string {
+	if rs.Build == nil {
+		return "build: not recorded (the run predates build stamps)\n"
+	}
+	line := "build: " + rs.Build.Summary() + "\n"
+	if rs.BuildDiffers != "" {
+		line += "this binary differs: " + rs.BuildDiffers + "\n"
+	}
+	return line
 }

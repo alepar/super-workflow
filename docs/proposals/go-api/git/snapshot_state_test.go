@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -364,5 +365,14 @@ func TestSnapshotRestoreIgnoresHostInitTemplate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Metadata from a newer engine is refused by name, before any path check.
+func TestSnapshotRestoreRefusesNewerMetadata(t *testing.T) {
+	s := rt().(wf.WorldSnapshotter)
+	err := s.Restore(wf.RestoreRequest{}, json.RawMessage(`{"version":4,"trees":[{"path":"."}]}`))
+	if !errors.Is(err, wf.ErrNewerFormat) || !strings.Contains(err.Error(), "git checkpoint metadata is format 4; this engine reads up to 3") {
+		t.Fatalf("newer metadata: %v", err)
 	}
 }
