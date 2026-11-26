@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## v0.4.1
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.1`. GitHub installs use the plugin tag
+`plugin-v0.4.1`. This patch release changes one interface: `HeadlessProcess`
+gains a supervisor (`Start(..., status)`, `State`, `Stop`, `Sandboxed`), and a
+binary whose main is not `MainWith` or `CLI` must dispatch
+`wf.HeadlessSupervisorVerb`. Shell commands also drop five more inherited
+`GIT_*` repository variables, and in `wftest` a keyed shell effect scripted to
+exit non-zero runs again on a loop back, as in production. Codex-to-Claude
+children are no longer experimental: an uncoached live Codex-to-Claude smoke
+on sw-gzdt succeeded with no spurious recovery offer. Read Upgrading before
+you move a binary, a test or a live run to it.
 
 ### What changed
 
