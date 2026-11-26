@@ -545,8 +545,16 @@ func (claude) Markers() []string {
 	return []string{"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID"}
 }
 
+// Caller: a Claude Code shell's session. A headless claude -p child started
+// by the spawn verb also carries ParentVar: it is that coordinator's child,
+// its own session its agent id.
 func (claude) Caller(env Env) Caller {
-	return Caller{Harness: "claude", Session: env("CLAUDE_CODE_SESSION_ID"), Root: home(env, "CLAUDE_CONFIG_DIR", ".claude"), FromEnv: true}
+	own := env("CLAUDE_CODE_SESSION_ID")
+	c := Caller{Harness: "claude", Session: own, Root: home(env, "CLAUDE_CONFIG_DIR", ".claude"), FromEnv: true}
+	if kid, ok := headlessChild(c, own, env); ok {
+		return kid
+	}
+	return c
 }
 
 // OutputLimit: Claude Code shows a Bash command's output inline up to its
@@ -566,9 +574,31 @@ func (claude) OutputLimit(env Env) (int, int) {
 }
 
 func (claude) Resolve(root, session string, wants []Want) map[Want]Child {
-	if root == "" || session == "" || len(wants) == 0 {
+	if root == "" || len(wants) == 0 {
 		return nil
 	}
+	// A headless claude -p child (the spawn verb's) is its own top-level
+	// session, named by the agent id its environment gave: its transcript is
+	// <root>/projects/<cwd slug>/<session id>.jsonl, not a subagent file.
+	var out map[Want]Child
+	var rest []Want
+	for _, w := range wants {
+		if w.Agent == "" {
+			rest = append(rest, w)
+			continue
+		}
+		files, _ := filepath.Glob(filepath.Join(root, "projects", "*", w.Agent+".jsonl"))
+		if len(files) == 1 {
+			if out == nil {
+				out = map[Want]Child{}
+			}
+			out[w] = Child{Agent: w.Agent, Transcript: files[0]}
+		}
+	}
+	if session == "" || len(rest) == 0 {
+		return out
+	}
+	wants = rest
 	all, _ := filepath.Glob(filepath.Join(root, "projects", "*", session, "subagents", "agent-*.jsonl"))
 	sort.Strings(all)
 	// A child's transcript is written after its hand-out: a file last
@@ -585,9 +615,16 @@ func (claude) Resolve(root, session string, wants []Want) map[Want]Child {
 			files = append(files, f)
 		}
 	}
-	return byToken(files, wants, func(f string) string {
+	found := byToken(files, wants, func(f string) string {
 		return strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "agent-"), ".jsonl")
 	})
+	for w, c := range out {
+		if found == nil {
+			found = map[Want]Child{}
+		}
+		found[w] = c
+	}
+	return found
 }
 
 func (claude) Tiers() map[string]Tier {
@@ -625,6 +662,11 @@ func (codex) Caller(env Env) Caller {
 	thread := env("CODEX_THREAD_ID")
 	session := env("CODEX_SESSION_ID")
 	c := Caller{Harness: "codex", Session: session, Root: home(env, "CODEX_HOME", ".codex"), FromEnv: true}
+	// A headless codex exec child has its own thread as its session; only
+	// the spawn verb's ParentVar tells it from a coordinator.
+	if kid, ok := headlessChild(c, thread, env); ok {
+		return kid
+	}
 	switch {
 	case thread == "":
 	case session == "":

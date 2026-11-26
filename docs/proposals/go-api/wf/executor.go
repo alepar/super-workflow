@@ -196,53 +196,57 @@ const (
 
 // Instruction is one actionable step the executor hands to the agent.
 type Instruction struct {
-	IntValues          []GateIntValueView `json:"intValues,omitempty"`
-	PromptHash         string             `json:",omitempty"`
-	PromptShapeHash    string             `json:",omitempty"`
-	Run                RunID              `json:"run"`
-	State              string             `json:"state"`            // child def names joined with "/", then the state; the root def is omitted
-	Kind               InstructionKind    `json:"kind"`             // the closed set above
-	Attempt            int                `json:"attempt"`          // 1-based attempt number
-	Name               string             `json:"name,omitempty"`   // the unit name (paged agent units)
-	Output             string             `json:"output,omitempty"` // allocated result JSON file for file-backed units
-	Class              string             `json:"class,omitempty"`  // the unit's class: child definition names, then the state
-	Brief              string             `json:"brief,omitempty"`  // the fixed spawn brief the coordinator passes verbatim
-	Token              string             `json:"token,omitempty"`  // token to echo in the submission; a paged unit has none
-	Prompt             string             `json:"prompt,omitempty"` // resolved prompt, Inputs block and Submission block; a paged unit fetches it
-	Inputs             map[string]string  `json:"inputs,omitempty"`
-	Submit             string             `json:"submit,omitempty"`       // how to submit
-	Child              string             `json:"child,omitempty"`        // child instance id, "" for the run itself
-	Dispatch           DispatchHints      `json:"dispatch"`               // per-agent hints the coordinator spawns the subagent with
-	GitAuthority       *GitAuthority      `json:"gitAuthority,omitempty"` // agent: the git authority the state declares; absent when it declares none
-	Context            ContextMode        `json:"context,omitempty"`      // agent: always ContextFresh
-	Workspace          string             `json:"workspace,omitempty"`    // the run's workspace directory
-	Effect             int64              `json:"effect,omitempty"`       // manual verification: the effect id to settle
-	Transient          bool               `json:"transient,omitempty"`    // manual verification: the effect's Check failed transiently and is checked again on the next call
-	Person             bool               `json:"person,omitempty"`       // manual verification: the effect is outside the run (wf.Outside), so a person settles it; otherwise the coordinator does
-	RetryAfterSeconds  int                `json:"retryAfterSeconds,omitempty"`
-	Question           string             `json:"question,omitempty"`
-	Answers            []string           `json:"answers,omitempty"`
-	Visit              int                `json:"visit,omitempty"`              // a human gate: which arrival at the gate this is; echo it to answer --visit
-	Delegated          bool               `json:"delegated,omitempty"`          // a human gate the run's starter delegated: DelegatedAnswer is the answer to give
-	DelegatedAnswer    string             `json:"delegatedAnswer,omitempty"`    // the delegated answer, journaled in run_started
-	CoordinatorAnswers bool               `json:"coordinatorAnswers,omitempty"` // a fanout fork's gate target: the coordinator chooses the answer itself
-	Deadline           time.Time          `json:"deadline,omitzero"`            // a timed gate: when it takes its timeout edge; RetryAfterSeconds counts down to it
-	Terminal           string             `json:"terminal,omitempty"`           // ended: the terminal state the run reached
-	Outcome            Outcome            `json:"outcome,omitempty"`            // ended: the terminal's outcome
-	Cause              string             `json:"cause,omitempty"`              // ended: why, from the Run cause walk (see runCause)
-	Resume             string             `json:"resume,omitempty"`             // ended: the command that continues the work as a successor run
-	PreviousRefusal    []string           `json:"previousRefusal,omitempty"`    // agent, attempt > 1: the reasons the state's last refused output was refused
-	NotStarted         bool               `json:"notStarted,omitempty"`         // agent: offered to this coordinator before and never started: passed over, or unfetched for UnstartedGrace
-	ErrLog             string             `json:"errLog,omitempty"`             // agent: the file this hand-out's child writes its stderr to (adapters with StartLog)
-	SameClaim          bool               `json:"sameClaim,omitempty"`          // agent, NotStarted: this is the offer made before, under the same claim token (a re-list): a second child of it would work under that claim and is not told to stop, so start one only if the earlier start is no longer running
-	PrevErrLog         string             `json:"prevErrLog,omitempty"`         // agent, NotStarted: the earlier hand-out's stderr file
-	PrevErrTail        []string           `json:"prevErrTail,omitempty"`        // agent, NotStarted: the last lines of PrevErrLog, when it holds any
-	HandoffReceipt     int64              `json:"handoffReceipt,omitempty"`     // person handoff acknowledgement
-	Breakpoint         *BreakpointStatus  `json:"breakpoint,omitempty"`         // stopped at a run breakpoint
-	Counts             string             `json:"counts,omitempty"`             // stopped, ended: the run's subagent totals exactly as status prints them, for the coordinator's report to quote
-	Holds              []HoldView         `json:"holds,omitempty"`              // waiting: each held unit with its cause and fix
-	Recovery           *RecoveryView      `json:"recovery,omitempty"`           // InstructionRecovery: where the unit stopped and the choices
-	Advice             string             `json:"advice,omitempty"`             // a run that stepped down to detach none mid-run: the bootstrap's detach-none line
+	IntValues       []GateIntValueView `json:"intValues,omitempty"`
+	PromptHash      string             `json:",omitempty"`
+	PromptShapeHash string             `json:",omitempty"`
+	Run             RunID              `json:"run"`
+	State           string             `json:"state"`            // child def names joined with "/", then the state; the root def is omitted
+	Kind            InstructionKind    `json:"kind"`             // the closed set above
+	Attempt         int                `json:"attempt"`          // 1-based attempt number
+	Name            string             `json:"name,omitempty"`   // the unit name (paged agent units)
+	Output          string             `json:"output,omitempty"` // allocated result JSON file for file-backed units
+	Class           string             `json:"class,omitempty"`  // the unit's class: child definition names, then the state
+	Brief           string             `json:"brief,omitempty"`  // the fixed spawn brief the coordinator passes verbatim
+	Token           string             `json:"token,omitempty"`  // token to echo in the submission; a paged unit has none
+	Prompt          string             `json:"prompt,omitempty"` // resolved prompt, Inputs block and Submission block; a paged unit fetches it
+	Inputs          map[string]string  `json:"inputs,omitempty"`
+	Submit          string             `json:"submit,omitempty"` // how to submit
+	Child           string             `json:"child,omitempty"`  // child instance id, "" for the run itself
+	Dispatch        DispatchHints      `json:"dispatch"`         // per-agent hints the coordinator spawns the subagent with
+	// Spawn is the spawn verb's command line for a unit of another harness
+	// than the coordinator's (Dispatch.Family): the coordinator runs it and
+	// it starts the child as a headless process; "" for an ordinary unit.
+	Spawn              string            `json:"spawn,omitempty"`
+	GitAuthority       *GitAuthority     `json:"gitAuthority,omitempty"` // agent: the git authority the state declares; absent when it declares none
+	Context            ContextMode       `json:"context,omitempty"`      // agent: always ContextFresh
+	Workspace          string            `json:"workspace,omitempty"`    // the run's workspace directory
+	Effect             int64             `json:"effect,omitempty"`       // manual verification: the effect id to settle
+	Transient          bool              `json:"transient,omitempty"`    // manual verification: the effect's Check failed transiently and is checked again on the next call
+	Person             bool              `json:"person,omitempty"`       // manual verification: the effect is outside the run (wf.Outside), so a person settles it; otherwise the coordinator does
+	RetryAfterSeconds  int               `json:"retryAfterSeconds,omitempty"`
+	Question           string            `json:"question,omitempty"`
+	Answers            []string          `json:"answers,omitempty"`
+	Visit              int               `json:"visit,omitempty"`              // a human gate: which arrival at the gate this is; echo it to answer --visit
+	Delegated          bool              `json:"delegated,omitempty"`          // a human gate the run's starter delegated: DelegatedAnswer is the answer to give
+	DelegatedAnswer    string            `json:"delegatedAnswer,omitempty"`    // the delegated answer, journaled in run_started
+	CoordinatorAnswers bool              `json:"coordinatorAnswers,omitempty"` // a fanout fork's gate target: the coordinator chooses the answer itself
+	Deadline           time.Time         `json:"deadline,omitzero"`            // a timed gate: when it takes its timeout edge; RetryAfterSeconds counts down to it
+	Terminal           string            `json:"terminal,omitempty"`           // ended: the terminal state the run reached
+	Outcome            Outcome           `json:"outcome,omitempty"`            // ended: the terminal's outcome
+	Cause              string            `json:"cause,omitempty"`              // ended: why, from the Run cause walk (see runCause)
+	Resume             string            `json:"resume,omitempty"`             // ended: the command that continues the work as a successor run
+	PreviousRefusal    []string          `json:"previousRefusal,omitempty"`    // agent, attempt > 1: the reasons the state's last refused output was refused
+	NotStarted         bool              `json:"notStarted,omitempty"`         // agent: offered to this coordinator before and never started: passed over, or unfetched for UnstartedGrace
+	ErrLog             string            `json:"errLog,omitempty"`             // agent: the file this hand-out's child writes its stderr to (adapters with StartLog)
+	SameClaim          bool              `json:"sameClaim,omitempty"`          // agent, NotStarted: this is the offer made before, under the same claim token (a re-list): a second child of it would work under that claim and is not told to stop, so start one only if the earlier start is no longer running
+	PrevErrLog         string            `json:"prevErrLog,omitempty"`         // agent, NotStarted: the earlier hand-out's stderr file
+	PrevErrTail        []string          `json:"prevErrTail,omitempty"`        // agent, NotStarted: the last lines of PrevErrLog, when it holds any
+	HandoffReceipt     int64             `json:"handoffReceipt,omitempty"`     // person handoff acknowledgement
+	Breakpoint         *BreakpointStatus `json:"breakpoint,omitempty"`         // stopped at a run breakpoint
+	Counts             string            `json:"counts,omitempty"`             // stopped, ended: the run's subagent totals exactly as status prints them, for the coordinator's report to quote
+	Holds              []HoldView        `json:"holds,omitempty"`              // waiting: each held unit with its cause and fix
+	Recovery           *RecoveryView     `json:"recovery,omitempty"`           // InstructionRecovery: where the unit stopped and the choices
+	Advice             string            `json:"advice,omitempty"`             // a run that stepped down to detach none mid-run: the bootstrap's detach-none line
 }
 
 // GateAnswer is an answer to a human gate bound to the instruction that showed
@@ -367,6 +371,9 @@ type RunStatus struct {
 	// process's for a run from before G1) lowered by any step-down, "" when
 	// none was probed. At DetachNone a long command runs inside next itself.
 	Detach string `json:",omitempty"`
+	// Children is the latest preflight of each child harness the
+	// definition's family hints reach (harness_checked), by harness name.
+	Children []HarnessCheckedData `json:",omitempty"`
 	// Resume is, on an ended run, the command that continues its work as a
 	// successor run.
 	Resume string `json:",omitempty"`
@@ -475,6 +482,13 @@ type UnitStatus struct {
 	Window         time.Duration `json:",omitempty"` // handed: the hand-out window
 	Note           string        `json:",omitempty"` // "(attempt 1 lost)", "deps", a withdrawal reason
 	Observed       string        `json:",omitempty"` // claimed units: the coordinator's latest heartbeat active --note on this attempt's work
+	// Harness is the child's harness when it is not the coordinator's (a
+	// headless child started by the spawn verb); Pid its process, once
+	// started; StartErr, for a handed unit whose child exited without
+	// fetching its prompt, the end of that child's stderr.
+	Harness  string `json:",omitempty"`
+	Pid      int    `json:",omitempty"`
+	StartErr string `json:",omitempty"`
 }
 
 // JournalKind is the closed set of journal record kinds.
@@ -545,6 +559,12 @@ const (
 	JournalCoordinatorHandoff
 	JournalCoordinatorContinued
 	JournalCoordinatorStopStalled
+	// JournalHarnessChecked is a segment's preflight of one child harness
+	// its definition's family hints reach (HarnessCheckedData).
+	JournalHarnessChecked
+	// JournalHeadlessStarted is the spawn verb's start of a unit's headless
+	// child of another harness (HeadlessStartedData).
+	JournalHeadlessStarted
 )
 
 var journalKindNames = [...]string{
@@ -559,6 +579,8 @@ var journalKindNames = [...]string{
 	JournalCoordinatorHandoff:     "coordinator_handoff",
 	JournalCoordinatorContinued:   "coordinator_continued",
 	JournalCoordinatorStopStalled: "coordinator_stop_stalled",
+	JournalHarnessChecked:         "harness_checked",
+	JournalHeadlessStarted:        "headless_started",
 	JournalUntilUnitBound:         "until_unit_bound",
 	JournalWorldSnapshot:          "world_snapshot",
 	JournalRunStarted:             "run_started",
@@ -757,7 +779,13 @@ type RunStartedData struct {
 	// journaled as EffortHarnessDefault. A journal without it (models only, as
 	// plain strings) loads every tier at harness-default effort.
 	Efforts map[string]string `json:",omitempty"`
-	Budget  RunBudget
+	// ChildModels are the tier tables of the child harnesses the
+	// definition's family hints reach from the start harness, resolved with
+	// Models (harness.Headless children); nil when no state hints a family.
+	ChildModels map[string]SegmentModels `json:",omitempty"`
+	// Headless is the run's configuration of its cross-harness children.
+	Headless *HeadlessConfig `json:",omitempty"`
+	Budget   RunBudget
 	// Delegations maps a qualified gate to the answer its starter delegated to
 	// the coordinator; the gate instruction shows it and the engine never answers.
 	Delegations map[string]string `json:",omitempty"`
@@ -1300,6 +1328,10 @@ type SegmentModels struct {
 	// keeps it with the models, so the fork's history keeps its harness
 	// without inheriting its coordinator.
 	Harness string `json:",omitempty"`
+	// Children are the tier tables of the child harnesses the definition's
+	// family hints reach from Harness, keyed by child harness: journaled with
+	// the segment, so a resume spawns them as the binding did.
+	Children map[string]SegmentModels `json:",omitempty"`
 }
 
 // Where a segment's models came from (SegmentModels.From).
@@ -1395,11 +1427,44 @@ type HandedOutData struct {
 	Spawn *HandOutSpawn `json:",omitempty"`
 }
 
+// HarnessCheckedData is a segment's preflight of a child harness: its CLI
+// is on PATH, logged in, and (for a coordinator whose sandbox would confine
+// the launch) the spawn verb is allowed to start it outside that sandbox.
+// An unavailable harness fails its units with class Unavailable; it never
+// blocks the run.
+type HarnessCheckedData struct {
+	Harness     string // the child harness
+	Coordinator string // the coordinator harness that would launch it
+	Available   bool
+	Version     string `json:",omitempty"` // the CLI's --version, for harness identity records
+	Why         string `json:",omitempty"` // why unavailable
+	Fix         string `json:",omitempty"` // what a person does about it
+}
+
+// HeadlessStartedData is the spawn verb's start of a headless child: the
+// unit and the claim it was started for, its harness, its process (pid and
+// the kernel's start time of that pid, which guards against pid reuse), the
+// session id its launch named ("" when the CLI chose its own) and its
+// stderr and stdout files.
+type HeadlessStartedData struct {
+	Name    string
+	Claim   string
+	Harness string
+	Pid     int
+	Start   uint64 `json:",omitempty"`
+	Session string `json:",omitempty"`
+	ErrLog  string `json:",omitempty"`
+	Out     string `json:",omitempty"`
+}
+
 // HandOutSpawn is the model and effort a hand-out spawned its child with.
 type HandOutSpawn struct {
 	Model  string `json:",omitempty"`
 	Effort string `json:",omitempty"`
 	ErrLog string `json:",omitempty"` // the claim's stderr path; empty for an adapter without StartLog
+	// Harness is the child's harness when it is not the coordinator's: the
+	// unit is started by the spawn verb as a headless process of it.
+	Harness string `json:",omitempty"`
 }
 
 // AttemptStartedData is the payload of attempt_started: the claim of a handed
@@ -1614,6 +1679,8 @@ var JournalPayloads = map[JournalKind]reflect.Type{
 	JournalCoordinatorHandoff:     reflect.TypeFor[CoordinatorHandoffData](),
 	JournalCoordinatorContinued:   reflect.TypeFor[CoordinatorContinuationData](),
 	JournalCoordinatorStopStalled: reflect.TypeFor[CoordinatorContinuationData](),
+	JournalHarnessChecked:         reflect.TypeFor[HarnessCheckedData](),
+	JournalHeadlessStarted:        reflect.TypeFor[HeadlessStartedData](),
 	JournalResumed:                reflect.TypeFor[ResumedData](),
 	JournalNote:                   reflect.TypeFor[NoteData](),
 	JournalRouteOffCandidates:     reflect.TypeFor[RouteOffCandidatesData](),

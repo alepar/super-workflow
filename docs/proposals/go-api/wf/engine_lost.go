@@ -24,6 +24,7 @@ func (c *cycle) loseUnit(in *instance, cause string, noted bool) error {
 	if u == nil || !u.State.live() {
 		return nil
 	}
+	c.killHeadless(u) // a lost attempt's headless child must not work on
 	if !noted {
 		if err := c.emit(in, JournalDegraded, 0, DegradedData{Unit: u.Name, Kind: DegradedLost, Cause: cause, Action: c.lostAction(in, cause)}); err != nil {
 			return err

@@ -273,7 +273,7 @@ func TestBootstrapIsTheRulesAndTheLoopUnderThreeKB(t *testing.T) {
 		}
 		for _, want := range []string{
 			rules,
-			"When you hand out this run's units, start each sub-agent with your own harness's sub-agent tool. Do not start another agent CLI (codex, claude, hermes) to do a unit, except through the engine's child dispatch (the call next prints), unless the workflow or the person who started the run explicitly asks you to.",
+			"When you hand out this run's units, start each sub-agent with your own harness's sub-agent tool. Do not start another agent CLI (codex, claude, hermes) to do a unit, except through the engine's child dispatch (the call or the spawn command next prints), unless the workflow or the person who started the run explicitly asks you to.",
 			"a coordinator goes on with next, and reports to the person who started the run when a command asks for a person.",
 			"End your turn only if your child is running, the run ends, or next says to wait or stop.",
 		} {

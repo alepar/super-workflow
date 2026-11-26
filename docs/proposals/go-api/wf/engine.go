@@ -86,6 +86,15 @@ type EngineOptions struct {
 	Defs      []*Def            // name to Def lookup for a fresh process
 	Workspace string            // journaled in run_started
 	ModelMap  map[string]string // journaled in run_started; the CLI's PreflightContext map
+	// Headless configures the run's cross-harness children (journaled in
+	// run_started).
+	Headless *HeadlessConfig
+	// HeadlessCheck is the preflight of a child harness for a coordinator
+	// harness, run once per segment at its binding (harness_checked); nil
+	// checks nothing. The CLI's checks its PATH, login and launch route.
+	HeadlessCheck func(child, coordinator string, cfg *HeadlessConfig) HarnessCheckedData
+	// HeadlessProcess starts and checks headless children; nil is the host's.
+	HeadlessProcess HeadlessProcess
 	// BoundaryModelMap is the --model-map a resume, rewind or fork journals
 	// on the segment boundary it opens; nil carries the map on.
 	BoundaryModelMap map[string]string
@@ -770,10 +779,16 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 			efforts[t] = EffortHarnessDefault
 		}
 	}
+	headlessCfg := e.opts.Headless
+	childModels, err := childTables(d, harness, modelMap, headlessCfg)
+	if err != nil {
+		return "", nil, err
+	}
 	if e.recordedReplay && e.replayStarted != nil {
 		// Replay never consults the live tier table for what the run
 		// recorded: its start models are the recorded ones.
 		models, efforts = maps.Clone(e.replayStarted.Models), maps.Clone(e.replayStarted.Efforts)
+		childModels, headlessCfg = e.replayStarted.ChildModels, e.replayStarted.Headless
 		unresolved = nil
 	}
 	// Model tiers are hints (A3c): a harness with no model for a tier runs
@@ -842,7 +857,7 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 		PagedPrompts: pagedPrompts, HaltBefore: haltBefore, Snapshots: snapshots, Def: d.name, Version: d.version, Params: nilIfEmpty(normalizedParams), ParamPaths: paramPaths, Options: opts,
 		Assets: assets, AssetRoots: roots, Worktrees: successorWorktrees(pred),
 		Harness: harness, HarnessFromEnv: e.opts.HarnessFromEnv && harness == e.opts.Harness,
-		Workspace: workspace, ModelMap: modelMap, Models: nilIfEmpty(models), Efforts: nilIfEmpty(efforts), Budget: e.opts.RunBudget,
+		Workspace: workspace, ModelMap: modelMap, Models: nilIfEmpty(models), Efforts: nilIfEmpty(efforts), ChildModels: childModels, Headless: headlessCfg, Budget: e.opts.RunBudget,
 		Delegations: nilIfEmpty(delegations), Predecessor: predID, Given: given(e.opts.GivenParams, params),
 		Detach: e.detachFact(), Shape: defShape(d), Manufactured: e.opts.manufactured, Build: &build,
 	})
@@ -1246,6 +1261,9 @@ func (e *Engine) status(run RunID, strict bool) (RunStatus, error) {
 		}
 		if f := c.runDetach(); f != nil {
 			rs.Detach = f.Mode
+		}
+		for _, h := range slices.Sorted(maps.Keys(c.st.harnessChecks)) {
+			rs.Children = append(rs.Children, c.st.harnessChecks[h])
 		}
 		if c.st.ended {
 			rs.Resume = c.resumeLine()
@@ -1679,6 +1697,9 @@ func (c *cycle) driveOnce() error {
 		return err
 	}
 	if err := c.loseEndedChildren(); err != nil {
+		return err
+	}
+	if err := c.loseGoneHeadless(); err != nil {
 		return err
 	}
 	if err := c.expireTimers(); err != nil {

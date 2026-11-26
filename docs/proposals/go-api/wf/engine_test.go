@@ -445,7 +445,7 @@ func TestBlockedHaltsInstance(t *testing.T) {
 }
 
 func TestEveryJournalKindHasPayload(t *testing.T) {
-	last := wf.JournalCoordinatorStopStalled
+	last := wf.JournalHeadlessStarted
 	for k := wf.JournalRunStarted; k <= last; k++ {
 		if strings.HasPrefix(k.String(), "JournalKind(") {
 			t.Errorf("kind %d has no name", int(k))

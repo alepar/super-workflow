@@ -37,7 +37,7 @@ func (c *cycle) segmentModels(i int, h string) (SegmentModels, error) {
 		return c.resolveSegment(h, s.mapGiven, ModelsFromMap)
 	}
 	rec, _ := recordedHarness(*st.started)
-	start := SegmentModels{ModelMap: st.started.ModelMap, Models: st.started.Models, Efforts: st.started.Efforts, From: ModelsFromStart, Harness: rec}
+	start := SegmentModels{ModelMap: st.started.ModelMap, Models: st.started.Models, Efforts: st.started.Efforts, From: ModelsFromStart, Harness: rec, Children: st.started.ChildModels}
 	if s.Harness != "" {
 		// A binding from before per-segment maps recorded no resolution: the
 		// only recorded models are the start's, whatever harness bound it
@@ -85,6 +85,9 @@ func (c *cycle) resolveSegment(h string, modelMap map[string]string, from string
 	sm := SegmentModels{ModelMap: maps.Clone(modelMap), From: from, Harness: h}
 	resolved, _, err := resolveTiers(h, collectTiers(c.st.def), modelMap)
 	if err != nil {
+		return SegmentModels{}, err
+	}
+	if sm.Children, err = childTables(c.st.def, h, modelMap, c.headless()); err != nil {
 		return SegmentModels{}, err
 	}
 	for t, tm := range resolved {
@@ -317,7 +320,7 @@ func spawnDispatch(own DispatchHints, h string, sm SegmentModels) DispatchHints 
 // "models: strong=gpt-6.2-astra top=gpt-6.2-astra (codex defaults)", tiers in
 // dispatch order; "" when the definition uses no tier and no map is in force.
 func modelsLine(sm *SegmentModels, h string) string {
-	if sm == nil || len(sm.Models) == 0 && len(sm.ModelMap) == 0 {
+	if sm == nil || len(sm.Models) == 0 && len(sm.ModelMap) == 0 && len(sm.Children) == 0 {
 		return ""
 	}
 	if why, ok := noModelHarness(h); ok {
@@ -328,7 +331,13 @@ func modelsLine(sm *SegmentModels, h string) string {
 	if tiers == "" {
 		tiers = "no tiers"
 	}
-	return "models: " + tiers + " (" + modelsSource(sm, h) + ")"
+	line := "models: " + tiers + " (" + modelsSource(sm, h) + ")"
+	for _, ch := range slices.Sorted(maps.Keys(sm.Children)) {
+		if t := tiersOf(sm.Children[ch].Models); t != "" {
+			line += "; " + ch + " children: " + t
+		}
+	}
+	return line
 }
 
 // segmentHarnessOf is the harness rs's current segment is driven from, for

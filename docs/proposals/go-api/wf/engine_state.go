@@ -31,6 +31,14 @@ const (
 // Extend by: a new record kind is a payload type in JournalPayloads and one
 // case in apply; callers never mutate a runState.
 type runState struct {
+	// harnessChecks is the latest preflight of each child harness
+	// (harness_checked), keyed by harness.
+	harnessChecks map[string]HarnessCheckedData
+	// checkedSegment is the start of the segment the latest harness_checked
+	// was journaled in: a bound segment without one (a crash between its
+	// coordinator record and its preflight) checks on its next call.
+	checkedSegment int64
+
 	// forked: the run was made by a rewind or a snapshot restore (a
 	// rewound record), so no adapter call of it may reach a real remote.
 	forked       bool
@@ -877,6 +885,14 @@ func (st *runState) apply(r JournalRecord) error {
 		// Its adapters run sandboxed from here on (EffectContext.Sandboxed).
 		st.forked = true
 		st.forkOrphans = map[string]bool{}
+		// The source run's headless children are its processes, not the
+		// fork's: the fork neither watches nor signals them. Children the
+		// fork spawns itself are recorded after this record.
+		for _, fin := range st.insts {
+			if fin != nil && fin.Unit != nil {
+				fin.Unit.Headless, fin.Unit.HeadlessAt = nil, time.Time{}
+			}
+		}
 		for _, in := range st.insts {
 			if in.Unit != nil && in.Unit.State.live() {
 				st.forkOrphans[in.Unit.Name] = true
@@ -900,6 +916,14 @@ func (st *runState) apply(r JournalRecord) error {
 		}
 	case *PostDoneMutationData:
 		// An audit record: nothing to fold.
+	case *HarnessCheckedData:
+		if st.harnessChecks == nil {
+			st.harnessChecks = map[string]HarnessCheckedData{}
+		}
+		st.harnessChecks[d.Harness] = *d
+		if cur := st.segment(); cur != nil {
+			st.checkedSegment = cur.Start
+		}
 	case *DegradedData:
 		st.degraded = append(st.degraded, *d)
 		if _, known := st.coordOrder[d.Session]; d.Session != "" && !known && d.Kind == DegradedChildRefused &&

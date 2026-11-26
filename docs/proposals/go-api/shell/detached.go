@@ -435,7 +435,7 @@ var (
 // Codex's sandbox shows pid 1 "codex" with a one-field NSpid line. A
 // container's nested namespace (docker, podman toolbox, a k8s pod) keeps
 // processes past their command, so nesting alone is not none.
-var perCommandInit = []string{"bwrap", "codex-linux-sandbox", "codex"}
+var perCommandInit = wf.PerCommandSandboxInit
 
 // detachModeOf decides the mode from its inputs: a PID namespace whose pid 1 is
 // a per-command sandbox is none, however many NSpid fields it shows; a user bus

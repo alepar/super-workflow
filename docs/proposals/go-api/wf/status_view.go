@@ -40,6 +40,16 @@ func RenderStatus(rs RunStatus) string {
 		if u.Context != "" {
 			parts = append(parts, "context "+u.Context)
 		}
+		if u.Harness != "" {
+			h := "on " + u.Harness
+			if u.Pid != 0 {
+				h += fmt.Sprintf(" (pid %d)", u.Pid)
+			}
+			parts = append(parts, h)
+		}
+		if u.StartErr != "" {
+			parts = append(parts, "did not start: "+escapeControl(u.StartErr))
+		}
 		fmt.Fprintf(&b, "%-*s  %-*s  %s\n", nameW, u.Name, stateW, u.State, strings.Join(parts, "  "))
 	}
 
@@ -60,6 +70,13 @@ func RenderStatus(rs RunStatus) string {
 	}
 	if bpt := rs.Breakpoint; bpt != nil {
 		fmt.Fprintf(&b, "%s\n", bpt.summary())
+	}
+	for _, ch := range rs.Children {
+		if ch.Available {
+			fmt.Fprintf(&b, "children on %s: available (%s)\n", ch.Harness, escapeControl(ch.Version))
+		} else {
+			fmt.Fprintf(&b, "children on %s: unavailable: %s; fix: %s\n", ch.Harness, escapeControl(ch.Why), escapeControl(ch.Fix))
+		}
 	}
 	b.WriteString(StatusTotals(rs) + "\n")
 	if rs.Phase == RunEnded {

@@ -94,6 +94,9 @@ func collectTiers(def *Def) []Tier {
 		seen[d] = true
 		for _, n := range d.nodes {
 			if k, ok := n.kind.(*agentKind); ok {
+				// A state on another family also resolves on its child
+				// harness (childTables); its tier stays here for the case
+				// where its family is the coordinator's own harness.
 				if t := hintsOf(k.dispatch).Tier; t != "" {
 					used[t] = true
 				}
@@ -131,6 +134,7 @@ func collectTiers(def *Def) []Tier {
 // gives one. A "<tier>.effort" value outside dispatchEfforts and
 // EffortHarnessDefault is an error, returned before anything is resolved.
 func resolveTiers(harness string, tiers []Tier, modelMap map[string]string) (models map[string]TierModel, unresolved []Tier, err error) {
+	modelMap = ownKeys(modelMap) // keys qualified with a harness are its children's (keysFor)
 	if err := checkEfforts(modelMap); err != nil {
 		return nil, nil, err
 	}
@@ -247,6 +251,14 @@ func checkModelMap(def *Def, modelMap map[string]string) error {
 	sort.Strings(keys)
 	known := knownModels(def)
 	for _, k := range keys {
+		if h, rest := qualifiedHarness(k); h != "" {
+			// A child harness's key: a tier or all, either with .effort.
+			base, _ := strings.CutSuffix(rest, effortKeySuffix)
+			if base == allTiersKey || slices.Contains(dispatchTiers, Tier(base)) {
+				continue
+			}
+			return fmt.Errorf("%w: key %q: a key qualified with harness %s names a tier or all (each also as <key>%s)", errBadModelMap, k, h, effortKeySuffix)
+		}
 		base, isEffort := strings.CutSuffix(k, effortKeySuffix)
 		if base == allTiersKey || slices.Contains(dispatchTiers, Tier(base)) || (!isEffort && slices.Contains(known, k)) {
 			continue

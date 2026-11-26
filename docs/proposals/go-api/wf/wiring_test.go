@@ -37,6 +37,7 @@ var engineOnlyOptions = map[string]string{
 	"ProgressEvery":   "tuning default (30s)",
 	"StallDefault":    "tuning default (20m)",
 	"TranscriptMtime": "test seam: default os.Stat's ModTime",
+	"HeadlessProcess": "test seam: default the host's processes (setsid start, /proc liveness)",
 }
 
 func readSource(t *testing.T, name string) string {
@@ -102,6 +103,7 @@ func wiConfig() wf.MainConfig {
 	fan := fanDef("fan-opts", chItems(1, 2), 2, wf.AllSettled())
 	wf.Options[wiOpts](fan)
 	cfg.Defs = append(cfg.Defs, wf.Registration{Def: intGateCLIDef()}, wf.Registration{Def: opts}, wf.Registration{Def: hoGateFan(2)}, wf.Registration{Def: fan})
+	cfg.Defs = append(cfg.Defs, familyDefs()...)
 	return cfg
 }
 
@@ -358,6 +360,11 @@ var wiProbes = map[string]wiProbe{
 	"run --model-map":      {"none", "run agent-cli --run-id w1 --model-map opus=sonnet", "run agent-cli --run-id w1"},
 	"run --delegate":       {"none", "run gate-cli --run-id w1 --delegate clGate=no", "run gate-cli --run-id w1"},
 	"run --harness":        {"none", "run agent-cli --run-id w1 --harness claude", "run agent-cli --run-id w1 --harness generic"},
+	"run --family":         {"none", "run family-other --run-id w1 --family claude=claude", "run family-other --run-id w1"},
+	"run --family-home":    {"none", "run family-codex --run-id w1 --family-home codex=/h", "run family-codex --run-id w1"},
+	"run --child-env-drop": {"none", "run family-codex --run-id w1 --child-env-drop HERDR_*", "run family-codex --run-id w1"},
+	"run --headless-cmd":   {"none", `run family-codex --run-id w1 --headless-cmd codex=["x","{model}"]`, "run family-codex --run-id w1"},
+	"spawn --claim":        {"fresh", "spawn w1 --claim 0123456789abcdef", "spawn w1"},
 	"next --timeout":       {"claimed", "next w1 1 --timeout 100ms", "next w1 1 --timeout 300ms"},
 	"next --json":          {"agent", "next w1 1 --json", "next w1 1"},
 	"next --children":      {"fan-fresh", "next w1 all --children 1 --json", "next w1 all --json"},
@@ -450,7 +457,7 @@ func TestEveryFlagReachesTheEngine(t *testing.T) {
 		// The parser defines exactly the flags the row documents.
 		localHook := row.Name == "coordinator-stop" || row.Name == "install-coordinator-stop"
 		// version takes no run: its --json is exercised by TestVersionVerb.
-		selfOnly := row.Name == "version"
+		selfOnly := row.Name == "version" || row.Name == "setup-codex-rules" // setup-codex-rules: TestSetupCodexRules
 		args := []string{row.Name, "x"}
 		if localHook || selfOnly {
 			args = args[:1]
@@ -633,44 +640,55 @@ func structFields(typ reflect.Type, out map[string]bool) {
 func TestStatusSchemaRoundTrips(t *testing.T) {
 	// Fields no CLI-driven run in this test reaches.
 	unreached := map[string]string{
-		"ModuleStamp.Revision":       "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
-		"ModuleStamp.Modified":       "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
-		"ModuleStamp.Source":         "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
-		"ModuleStamp.Replace":        "needs a replaced engine dependency; TestBuildStampFromBuildInfo covers it",
-		"RunStatus.BuildDiffers":     "needs another binary reading the status; TestRunStartedRecordsTheBuild covers it",
-		"LockHolder.Session":         "a coordinator verb that names no unit records its harness session; TestLockHolderNamesVerbUnitAndHostPid covers it",
-		"RunStatus.PendingCleanups":  "needs shared-workspace units; TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
-		"PendingCleanup.Deferred":    "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
-		"PendingCleanup.Instance":    "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
-		"PendingCleanup.Effect":      "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
-		"OpenIntent.Detached":        "needs a detached effect with a runner; TestDetachedSuiteStepEndToEnd drives one",
-		"OpenIntent.Due":             "needs a detached effect with a runner; TestDetachedStatusNamesGroupWait covers it",
-		"OpenIntent.WaitGroup":       "needs a detached re-run waiting on a dead launch's group; TestDetachedStatusNamesGroupWait covers it",
-		"OpenIntent.Reason":          "needs a detached re-run after a dead launch; TestDetachedStatusNamesGroupWait covers it",
-		"OpenIntent.RerunOf":         "needs a detached re-run after a dead launch; TestDetachedStatusNamesGroupWait covers it",
-		"OpenIntent.Instance":        "an open intent of a child instance; the effect scenario's is the run's own",
-		"RecoveryView.GiveUp":        "needs a failure with no route offered for recovery; TestBlockedFailureWithNoRouteIsOfferedToTheCoordinator covers it",
-		"UnitStatus.Quiet":           "needs the engine clock advanced past a stall; engine_liveness_test covers it",
-		"InstanceStatus.Reason":      "needs a halted instance; TestDefaultUnavailableBackoffBounded covers it",
-		"RecoveryView.Transcript":    "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
-		"RecoveryView.LastTool":      "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
-		"RecoveryView.LastMessage":   "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
-		"RecoveryView.Result":        "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
-		"RecoveryView.Resume":        "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
-		"RunStatus.Held":             "approval holds are covered by TestApprovalHoldPreservesRetriesAndClaimOwnership",
-		"HeldUnit.Child":             "requires a held nested instance; the approval hold coverage uses a root unit",
-		"HeldUnit.Name":              "requires an approval hold or the legacy unit_held record",
-		"HeldUnit.Cause":             "requires an approval hold or the legacy unit_held record",
-		"HeldUnit.Parked":            "legacy autonomous holds only",
-		"HeldUnit.ApprovalAction":    "exact action checked by TestApprovalHoldPreservesRetriesAndClaimOwnership",
-		"HeldUnit.ApprovalHold":      "release scoping checked by TestApprovalHoldPreservesRetriesAndClaimOwnership",
-		"RunStatus.Future":           "needs agent states ahead of the current one; TestStatusFutureCount covers it",
-		"RunStatus.Predecessor":      "needs a run on an ended run (a successor); TestRunOnAnEndedRunStartsASuccessor covers it",
-		"RunStatus.Detach":           "needs an effect runner that probes a detach mode; shell's TestBootstrapNamesDetachNone and TestDetachNoneRunsInline cover it",
-		"Progress.WaitingOnDeps":     "needs units with dependencies; TestWaitingOnDepsCounted covers it",
-		"Progress.TotalIsLowerBound": "needs a source that can still grow; TestProgressLowerBound covers it",
-		"SegmentView.End":            "needs a run that changed harness segments (stop and resume, rewind); TestHarnessSegmentsMigrateThroughStopAndResume covers it",
-		"SegmentView.Harness":        "needs a segment bound by a coordinator with a session; TestHarnessSegmentsMigrateThroughStopAndResume covers it",
+		"ModuleStamp.Revision":           "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Modified":           "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Source":             "a test binary has no VCS stamp; TestRunStartedRecordsTheBuild sets one through the status",
+		"ModuleStamp.Replace":            "needs a replaced engine dependency; TestBuildStampFromBuildInfo covers it",
+		"RunStatus.BuildDiffers":         "needs another binary reading the status; TestRunStartedRecordsTheBuild covers it",
+		"LockHolder.Session":             "a coordinator verb that names no unit records its harness session; TestLockHolderNamesVerbUnitAndHostPid covers it",
+		"RunStatus.PendingCleanups":      "needs shared-workspace units; TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
+		"PendingCleanup.Deferred":        "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
+		"PendingCleanup.Instance":        "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
+		"PendingCleanup.Effect":          "TestWorktreeRemovalWaitsForOpenUnitWorkspace checks the pending status",
+		"OpenIntent.Detached":            "needs a detached effect with a runner; TestDetachedSuiteStepEndToEnd drives one",
+		"OpenIntent.Due":                 "needs a detached effect with a runner; TestDetachedStatusNamesGroupWait covers it",
+		"OpenIntent.WaitGroup":           "needs a detached re-run waiting on a dead launch's group; TestDetachedStatusNamesGroupWait covers it",
+		"OpenIntent.Reason":              "needs a detached re-run after a dead launch; TestDetachedStatusNamesGroupWait covers it",
+		"OpenIntent.RerunOf":             "needs a detached re-run after a dead launch; TestDetachedStatusNamesGroupWait covers it",
+		"OpenIntent.Instance":            "an open intent of a child instance; the effect scenario's is the run's own",
+		"RecoveryView.GiveUp":            "needs a failure with no route offered for recovery; TestBlockedFailureWithNoRouteIsOfferedToTheCoordinator covers it",
+		"UnitStatus.Quiet":               "needs the engine clock advanced past a stall; engine_liveness_test covers it",
+		"InstanceStatus.Reason":          "needs a halted instance; TestDefaultUnavailableBackoffBounded covers it",
+		"RecoveryView.Transcript":        "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
+		"RecoveryView.LastTool":          "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
+		"RecoveryView.LastMessage":       "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
+		"RecoveryView.Result":            "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
+		"RecoveryView.Resume":            "needs a child transcript that ended without done (F1); TestEndedChildIsOfferedForRecovery covers it",
+		"RunStatus.Held":                 "approval holds are covered by TestApprovalHoldPreservesRetriesAndClaimOwnership",
+		"HeldUnit.Child":                 "requires a held nested instance; the approval hold coverage uses a root unit",
+		"HeldUnit.Name":                  "requires an approval hold or the legacy unit_held record",
+		"HeldUnit.Cause":                 "requires an approval hold or the legacy unit_held record",
+		"HeldUnit.Parked":                "legacy autonomous holds only",
+		"HeldUnit.ApprovalAction":        "exact action checked by TestApprovalHoldPreservesRetriesAndClaimOwnership",
+		"HeldUnit.ApprovalHold":          "release scoping checked by TestApprovalHoldPreservesRetriesAndClaimOwnership",
+		"RunStatus.Future":               "needs agent states ahead of the current one; TestStatusFutureCount covers it",
+		"RunStatus.Predecessor":          "needs a run on an ended run (a successor); TestRunOnAnEndedRunStartsASuccessor covers it",
+		"RunStatus.Detach":               "needs an effect runner that probes a detach mode; shell's TestBootstrapNamesDetachNone and TestDetachNoneRunsInline cover it",
+		"Progress.WaitingOnDeps":         "needs units with dependencies; TestWaitingOnDepsCounted covers it",
+		"Progress.TotalIsLowerBound":     "needs a source that can still grow; TestProgressLowerBound covers it",
+		"SegmentView.End":                "needs a run that changed harness segments (stop and resume, rewind); TestHarnessSegmentsMigrateThroughStopAndResume covers it",
+		"UnitStatus.Harness":             "needs a unit on another harness; TestHeadlessStatusShowsChildHarness covers it",
+		"UnitStatus.Pid":                 "needs a started headless child; TestHeadlessStatusShowsChildHarness covers it",
+		"UnitStatus.StartErr":            "needs a headless child that exited before fetching; TestHeadlessStatusShowsChildHarness covers it",
+		"RunStatus.Children":             "needs a family hint and a bound segment; TestHeadlessStatusShowsChildHarness covers it",
+		"HarnessCheckedData.Harness":     "needs a family hint and a bound segment; TestHeadlessStatusShowsChildHarness covers it",
+		"HarnessCheckedData.Coordinator": "as Harness",
+		"HarnessCheckedData.Available":   "as Harness",
+		"HarnessCheckedData.Version":     "as Harness",
+		"HarnessCheckedData.Why":         "needs an unavailable child harness; TestHeadlessUnavailableNeverFallsBack covers it",
+		"HarnessCheckedData.Fix":         "as Why",
+		"SegmentModels.Children":         "needs a definition with a family hint; TestHeadlessPrimitiveClaudeToCodex and TestChildTablesSurviveResume cover it",
+		"SegmentView.Harness":            "needs a segment bound by a coordinator with a session; TestHarnessSegmentsMigrateThroughStopAndResume covers it",
 	}
 	var statuses []string
 	snap := func(w *wiEnv) { statuses = append(statuses, w.must("status", "w1", "--json")) }

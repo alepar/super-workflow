@@ -239,7 +239,7 @@ func (c *cycle) liveCoordinator(co Coordinator, admission int64) (session, pid s
 			continue
 		}
 		old := u.childOwner()
-		if checked[old] || !c.displacedBy(co, old, u.childOfferSeq(), admission) || !harness.For(u.Claim.Harness).ChildrenDieWithCoordinator() {
+		if checked[old] || !c.displacedBy(co, old, u.childOfferSeq(), admission) || !childDiesWithCoordinator(u) {
 			continue
 		}
 		checked[old] = true
@@ -297,6 +297,9 @@ func (c *cycle) bindSegment(co Coordinator) error {
 		}
 	}
 	if cur.Harness != "" || c.st.paused {
+		if cur.Harness != "" && !c.st.paused && c.st.checkedSegment != cur.Start {
+			return c.checkChildHarnesses(normalizeHarness(cur.Harness))
+		}
 		return nil
 	}
 	h := normalizeHarness(co.Harness)
@@ -308,6 +311,9 @@ func (c *cycle) bindSegment(co Coordinator) error {
 		return fmt.Errorf("%w (the segment is bound by %s): re-issue the boundary verb (wf resume, rewind or fork) with a corrected --model-map; never retry next", err, h)
 	}
 	if err := c.emitAs("", "", 0, JournalCoordinator, 0, CoordinatorData{Harness: co.Harness, Session: co.Session, Root: co.Root, SegmentStart: cur.Start, Models: &sm}); err != nil {
+		return err
+	}
+	if err := c.checkChildHarnesses(h); err != nil {
 		return err
 	}
 	return c.segmentModelsNote(h, sm)
@@ -433,7 +439,7 @@ func (c *cycle) meetCoordinator(co Coordinator) error {
 		// its coordinator is never retired on elapsed time: silence is no
 		// evidence of death (rule 5). It finishes and submits, or its lease
 		// runs out and the new coordinator is asked.
-		if !harness.For(u.Claim.Harness).ChildrenDieWithCoordinator() || u.HandSegment != c.st.segment().Start {
+		if !childDiesWithCoordinator(u) || u.HandSegment != c.st.segment().Start {
 			continue
 		}
 		cause := fmt.Sprintf("coordinator session %s was replaced by %s; its child of %s ran inside it (%s) and died with it", old, co.Session, name, u.Claim.Harness)
@@ -635,9 +641,22 @@ func (c *cycle) handOut(in *instance) (Instruction, bool, error) {
 	}
 	claim := newClaimToken()
 	brief := c.brief(claim)
+	dispatch := c.callerDispatch(in)
+	if dispatch.Family != "" {
+		// A unit of another harness never falls back to the coordinator's:
+		// its harness unavailable now (another coordinator, a failed
+		// preflight) fails it with class Unavailable.
+		why := c.familyUnavailable(string(dispatch.Family))
+		if harness.HeadlessFor(string(dispatch.Family)) == nil && why == "" {
+			why = fmt.Sprintf("family %s has no harness with a headless launch for coordinator harness %s", dispatch.Family, normalizeHarness(c.caller.Harness))
+		}
+		if why != "" {
+			return Instruction{}, false, c.fail(in, in.node(), Unavailable, []string{why}, "")
+		}
+	}
 	errLog := ""
-	if startLogOf(c.coordinatorAdapter()) != nil {
-		errLog = c.childErrLog(claim)
+	if startLogOf(c.coordinatorAdapter()) != nil || dispatch.Family != "" {
+		errLog = c.childErrLog(claim) // spawn writes a headless child's stderr there
 	}
 	if errLog != "" && !errLogPathOK(errLog) {
 		return Instruction{}, false, c.halt(in, fmt.Sprintf("hand-out of %s refused: the stderr file path %s holds a character the pi launch line cannot carry (only letters, digits and / . _ - are allowed): use a state dir and run id without them", name, errLog))
@@ -655,19 +674,34 @@ func (c *cycle) handOut(in *instance) (Instruction, bool, error) {
 	if c.handCall == 0 {
 		c.handCall = c.nextSeq() // this hand-out's own Seq
 	}
-	dispatch := c.callerDispatch(in)
 	if err := c.emit(in, JournalHandedOut, 0, HandedOutData{
 		Name: name, Token: in.Token, Session: c.caller.Session, Harness: c.caller.Harness, Root: c.caller.Root, Expires: c.now().Add(c.e.opts.HandOutWindow), Claim: claim, Output: rel, Segment: c.st.segment().Start,
-		Call: c.handCall, Spawn: &HandOutSpawn{Model: dispatch.Model, Effort: dispatch.Effort, ErrLog: errLog},
+		Call: c.handCall, Spawn: &HandOutSpawn{Model: dispatch.Model, Effort: dispatch.Effort, ErrLog: errLog, Harness: string(dispatch.Family)},
 	}); err != nil {
 		return Instruction{}, false, err
 	}
 	return Instruction{
 		Run: c.run, State: c.st.qualified(in), Kind: InstructionAgent, Attempt: in.Attempt,
 		Name: name, Output: output, Class: c.st.qualified(in), Brief: brief, Child: in.ID,
-		Dispatch: dispatch, ErrLog: errLog, GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
+		Dispatch: dispatch, Spawn: c.spawnCommand(claim, dispatch), ErrLog: errLog, GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
 		PreviousRefusal: previousRefusal(in),
 	}, true, nil
+}
+
+// spawnCommand is the spawn verb's line for a unit of another harness, ""
+// for one of the coordinator's own.
+func (c *cycle) spawnCommand(claim string, d DispatchHints) string {
+	if d.Family == "" {
+		return ""
+	}
+	return c.verbLine("spawn", "--claim", claim)
+}
+
+// childDiesWithCoordinator: u's child runs inside its coordinator's process
+// (its harness's subagents). A headless child is its own process session
+// and outlives a replaced coordinator.
+func childDiesWithCoordinator(u *unit) bool {
+	return u.ChildHarness == "" && harness.For(u.Claim.Harness).ChildrenDieWithCoordinator()
 }
 
 // coordinatorAdapter is the adapter of the coordinator being handed to.
@@ -774,7 +808,14 @@ func (c *cycle) callerDispatch(in *instance) DispatchHints {
 	}
 	// handOutCycle refused a map this harness does not take before any
 	// hand-out, so the error is unreachable here; none is shown models-less.
-	return spawnDispatch(hintsOf(k.dispatch), h, shown(c.currentModels(h)))
+	// A family with no harness for this coordinator keeps its unresolved
+	// name, which handOut refuses (familyUnavailable).
+	hints := hintsOf(k.dispatch)
+	d, err := c.resolveDispatch(hints, h, shown(c.currentModels(h)))
+	if err != nil {
+		return hints
+	}
+	return d
 }
 
 // brief is the spawn brief of a unit (C2b, I1): the prompt command first,
@@ -1180,7 +1221,7 @@ func (c *cycle) relist(co Coordinator) ([]Instruction, error) {
 	var mine []*instance
 	for _, id := range c.st.order {
 		in := c.st.insts[id]
-		if u := in.Unit; u != nil && !in.Settled && u.State == UnitHanded && u.HandSession == co.Session {
+		if u := in.Unit; u != nil && !in.Settled && u.State == UnitHanded && u.HandSession == co.Session && !c.headlessLive(u) {
 			mine = append(mine, in)
 		}
 	}
@@ -1243,7 +1284,7 @@ func (c *cycle) sameOffer(in *instance) (Instruction, bool, error) {
 	return Instruction{
 		Run: c.run, State: c.st.qualified(in), Kind: InstructionAgent, Attempt: in.Attempt,
 		Name: u.Name, Output: output, Class: c.st.qualified(in), Brief: c.brief(claim), Child: in.ID,
-		Dispatch: c.callerDispatch(in), ErrLog: u.errLogOf(claim), GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
+		Dispatch: c.callerDispatch(in), Spawn: c.spawnCommand(claim, c.callerDispatch(in)), ErrLog: u.errLogOf(claim), GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
 		PreviousRefusal: previousRefusal(in),
 	}, true, nil
 }
@@ -1379,6 +1420,11 @@ func (c *cycle) passNow() time.Time {
 func (c *cycle) unstartedCause(u *unit) string {
 	switch {
 	case u.State != UnitHanded || u.HandSession == "":
+		return ""
+	case c.headlessLive(u):
+		// Its headless child is still starting: not passed over. A child
+		// that never fetches is stopped at headlessFetchBound, then
+		// re-offered.
 		return ""
 	case u.HandSession == c.caller.Session && c.childrenFull(c.caller):
 		// Waiting for a child to finish, not passed over: no strike until one does.

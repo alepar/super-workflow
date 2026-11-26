@@ -69,6 +69,9 @@ func (o agentOps[S, O]) execute(c *cycle, in *instance, n *node) error {
 		return err
 	}
 	dispatch, err := c.mapModel(in, hintsOf(k.dispatch))
+	if errors.Is(err, ErrUnavailable) {
+		return c.fail(in, n, Unavailable, []string{err.Error()}, "")
+	}
 	if err != nil {
 		return c.failErr(in, n, err)
 	}
@@ -595,7 +598,39 @@ func (c *cycle) refuse(in *instance, n *node, reasons []string, fp string) (Subm
 // (callerDispatch), so what a child spawns with is the hand-out's. The
 // state's own hints, and so the definition hash, are untouched.
 func (c *cycle) mapModel(in *instance, h DispatchHints) (DispatchHints, error) {
-	return spawnDispatch(h, c.segmentHarness(len(c.st.segments)-1), c.unitModels(in, JournalInstructionIssued)), nil
+	d, err := c.resolveDispatch(h, c.segmentHarness(len(c.st.segments)-1), c.unitModels(in, JournalInstructionIssued))
+	if err != nil {
+		return DispatchHints{}, err
+	}
+	// Never the coordinator's harness as a fallback: a unit whose harness
+	// is unavailable fails with class Unavailable.
+	if why := c.familyUnavailable(string(d.Family)); d.Family != "" && why != "" {
+		return DispatchHints{}, fmt.Errorf("%w: %s", ErrUnavailable, why)
+	}
+	return d, nil
+}
+
+// resolveDispatch is what a unit with hints h spawns with for a coordinator
+// of harness coord whose segment's models are sm. A unit of another harness
+// (Family): its tier resolves on that harness's table, it names no agent
+// type (a headless launch has none), and its Family is the resolved
+// harness. A family that resolves to coord is an ordinary subagent. A
+// FamilyOther with no other family for coord is ErrUnavailable.
+func (c *cycle) resolveDispatch(h DispatchHints, coord string, sm SegmentModels) (DispatchHints, error) {
+	if h.Family == "" {
+		return spawnDispatch(h, coord, sm), nil
+	}
+	target, ok := resolveFamily(h.Family, coord, c.headless())
+	switch {
+	case !ok:
+		return DispatchHints{}, errNoFamily(normalizeHarness(coord))
+	case target == "":
+		h.Family = ""
+		return spawnDispatch(h, coord, sm), nil
+	}
+	d := spawnDispatch(h, target, c.childModels(sm, coord, target))
+	d.AgentType, d.Family = "", Family(target)
+	return d, nil
 }
 
 // inputDigest reads already-bound input observations and returns their

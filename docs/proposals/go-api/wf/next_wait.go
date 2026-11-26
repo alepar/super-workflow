@@ -491,6 +491,9 @@ func hasAgent(ins []Instruction) bool {
 // child; no line begins with a command to run here. The hand-out sizes an
 // offer by it (handOutCycle).
 func renderUnit(a harness.Adapter, in Instruction) string {
+	if in.Spawn != "" {
+		return renderHeadless(in)
+	}
 	call := a.SpawnLine(harness.Spawn{Brief: briefSlot, Claim: briefClaim(in.Brief), Model: in.Dispatch.Model, Effort: in.Dispatch.Effort, AgentType: in.Dispatch.AgentType, ErrLog: in.ErrLog})
 	call = strings.ReplaceAll(call, strconv.Quote(briefSlot), briefSlotText) // a Go-quoted argument
 	call = strings.ReplaceAll(call, jsonQuoted(briefSlot), briefSlotText)    // a JSON string argument
@@ -519,6 +522,29 @@ func renderUnit(a harness.Adapter, in Instruction) string {
 	}
 	return again + fmt.Sprintf("start a child agent for %s %sIts whole task is the text between the %s lines, passed verbatim with its command first; the unit is a child's to run, which keeps its work out of your context:\n%s\n%s\n%s\n",
 		in.Name, with, briefRule, briefRule, in.Brief, briefRule)
+}
+
+// renderHeadless is a unit of another harness as next prints it: the spawn
+// verb's command, alone on its line, which starts the child as a headless
+// process of that harness and returns. The brief is the engine's to pass,
+// so none is printed. A re-offer quotes the end of the earlier child's
+// stderr, which the spawn verb wrote.
+func renderHeadless(in Instruction) string {
+	again := ""
+	if in.NotStarted {
+		again = fmt.Sprintf(NextNotStarted+"\n", in.Name)
+		if in.SameClaim {
+			again = fmt.Sprintf(NextSameOffer+"\n", in.Name)
+		}
+		if in.PrevErrLog != "" && len(in.PrevErrTail) > 0 {
+			again += "its earlier launch's stderr (" + in.PrevErrLog + ") ends:\n"
+			for _, l := range in.PrevErrTail {
+				again += "  " + escapeControl(l) + "\n"
+			}
+		}
+	}
+	return again + fmt.Sprintf("start a %s child for %s by running this command, as printed; it starts the child as a headless %s process and returns at once (do not wait for the child, keep running next):\n%s\n",
+		in.Dispatch.Family, in.Name, in.Dispatch.Family, in.Spawn)
 }
 
 // jsonQuoted is s as a JSON string literal, the form an adapter that takes

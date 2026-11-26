@@ -1,9 +1,12 @@
 package wf
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
 )
 
 // GitAuthority is the git authority a run grants an agent state's units: the
@@ -48,6 +51,10 @@ type DispatchHints struct {
 	Tier Tier `json:"tier,omitempty"`
 	// StallAfter, when non-zero, is the state's stall threshold.
 	StallAfter time.Duration `json:"stallAfter,omitempty"`
+	// Family is the harness the state's units run on: empty for the
+	// coordinator's own, FamilyOther, or a named harness. On an instruction
+	// it is the resolved harness, set only when it is not the coordinator's.
+	Family Family `json:"family,omitempty"`
 }
 
 // String is the canonical form that render and the hash read: fixed field
@@ -69,6 +76,9 @@ func (h DispatchHints) String() string {
 	if h.StallAfter != 0 {
 		parts = append(parts, "stall-after="+h.StallAfter.String())
 	}
+	if h.Family != "" {
+		parts = append(parts, "family="+string(h.Family))
+	}
 	return strings.Join(parts, " ")
 }
 
@@ -80,6 +90,7 @@ const (
 	dispatchAgentType
 	dispatchStallAfter
 	dispatchTier
+	dispatchFamily
 )
 
 // Tier is an abstract model tier.
@@ -127,6 +138,27 @@ func StallAfter(d time.Duration) DispatchOption {
 // name Tier is taken by the Tier type.)
 func ModelTier(t Tier) DispatchOption { return DispatchOption{field: dispatchTier, value: string(t)} }
 
+// Family is the harness an agent state's units run on: a named harness
+// (FamilyNamed), or FamilyOther, the run's other family for the
+// coordinator's harness. A unit of another harness than the coordinator's is
+// started by the engine's spawn verb as a headless process of that harness's
+// CLI (harness.Headless), never on the coordinator's harness: when that
+// harness is unavailable the unit settles with class Unavailable.
+type Family string
+
+// FamilyOther is the run's other family: claude for a codex coordinator and
+// codex for a claude one by default (run flag --family other=H for others).
+const FamilyOther Family = "other"
+
+// FamilyNamed is the family of one named harness, in its canonical name.
+func FamilyNamed(h string) Family { return Family(harness.Canonical(h)) }
+
+// OnFamily hints the harness the agent's units run on (Family). The default,
+// no hint, is the coordinator's own harness.
+func OnFamily(f Family) DispatchOption {
+	return DispatchOption{field: dispatchFamily, value: string(f)}
+}
+
 // hintsOf folds the options; a repeated option is a lint problem, so which of
 // its values wins does not matter.
 func hintsOf(opts []DispatchOption) DispatchHints {
@@ -143,6 +175,8 @@ func hintsOf(opts []DispatchOption) DispatchHints {
 			h.StallAfter = o.dur
 		case dispatchTier:
 			h.Tier = Tier(o.value)
+		case dispatchFamily:
+			h.Family = Family(o.value)
 		}
 	}
 	return h
@@ -178,12 +212,44 @@ func lintDispatch(n *node, opts []DispatchOption) []Problem {
 			if !slices.Contains(dispatchTiers, Tier(o.value)) {
 				out = append(out, n.problem(RuleDispatchHint, "tier %q is not one of light, standard, strong, top", o.value))
 			}
+		case dispatchFamily:
+			if why := familyProblem(Family(o.value)); why != "" {
+				out = append(out, n.problem(RuleDispatchHint, "%s", why))
+			}
 		case dispatchStallAfter:
 			if o.dur <= 0 {
 				out = append(out, n.problem(RuleDispatchHint, "stall-after must be positive"))
 			}
 		default:
 			out = append(out, n.problem(RuleDispatchHint, "zero DispatchOption"))
+		}
+	}
+	return out
+}
+
+// familyProblem is why f is not a family a state can run on: empty, or a
+// named harness with no headless launch (harness.Headless). FamilyOther is
+// resolved per run and always lints.
+func familyProblem(f Family) string {
+	switch {
+	case f == "":
+		return "empty family hint"
+	case f == FamilyOther:
+		return ""
+	case string(f) != harness.Canonical(string(f)):
+		return fmt.Sprintf("family %q is not a canonical harness name (want %q)", f, harness.Canonical(string(f)))
+	case harness.HeadlessFor(string(f)) == nil:
+		return fmt.Sprintf("family %q: harness %s has no headless launch (have: %s)", f, f, strings.Join(headlessNames(), ", "))
+	}
+	return ""
+}
+
+// headlessNames are the harnesses with a headless launch.
+func headlessNames() []string {
+	var out []string
+	for _, n := range harness.Names() {
+		if harness.HeadlessFor(n) != nil {
+			out = append(out, n)
 		}
 	}
 	return out

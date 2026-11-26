@@ -127,9 +127,15 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == shell.DetachedVerb { // the detached runner re-executes this binary
 		os.Exit(shell.RunDetached(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	if os.Getenv("WF_TEST_FAKE_HEADLESS") == "1" { // a fake codex or claude CLI (headless_test.go)
+		os.Exit(fakeHeadlessMain())
+	}
 	if os.Getenv("WF_TEST_CLI") == "1" {
 		wf.TrustSessionlessCallers = true // as the suite: it drives from CLAUDECODE alone
 		cfg := clConfig()
+		if os.Getenv("WF_TEST_FAMILY") == "1" {
+			cfg = familyConfig()
+		}
 		if os.Getenv("WF_TEST_BOOTSTRAP") == "1" {
 			for _, reg := range cfg.Defs {
 				if reg.Def.Name() == "gate-cli" {
@@ -931,12 +937,13 @@ usage: workflow <subcommand> [args]
   acknowledge-handoff --state-dir dir --assets dir --workspace dir --receipt ID acknowledge a current person handoff
   coordinator-stop --hook HARNESS --workspace DIR handle a native coordinator Stop event
   install-coordinator-stop --hook HARNESS --workspace DIR install a local coordinator Stop hook for this client
+  setup-codex-rules --write print, or with --write write, the Codex execpolicy rule that lets the spawn verb start headless children outside Codex's sandbox (a person's one confirmation)
   lint      lint the definitions (optional definition name)
   graph     render the definitions (the default)
   mermaid   render the definitions as Mermaid
   hash      print the definition hashes
   version  --json print this binary's build stamp: engine and workflow source, Go toolchain, journal format (--json: the BuildStamp)
-  run      --param k=v --options file --workspace dir --state-dir dir --assets dir --run-id id --snapshots --paged-prompts --halt-before STATE[,STATE] --model-map key=model[,key=model] --delegate gate=value --harness h --continue run start or resume a run of <def>; prints the RunID on stdout and the coordinator bootstrap on stderr
+  run      --param k=v --options file --workspace dir --state-dir dir --assets dir --run-id id --snapshots --paged-prompts --halt-before STATE[,STATE] --model-map key=model[,key=model] --delegate gate=value --harness h --continue run --family coord=harness --family-home harness=dir --child-env-drop NAME[*] --headless-cmd harness=JSON-argv start or resume a run of <def>; prints the RunID on stdout and the coordinator bootstrap on stderr
   next     --expected-admission seq --until-unit name --state-dir dir --assets dir --workspace dir --timeout d --children k --adopt --json block until <run> has something for the coordinator, hand out up to n ready units (left out: up to your child cap, --children or the harness's own limit where its adapter reads one, less your children running or starting, else every ready unit) and print one line per item; --json: hand out at once, without blocking, as JSON, for a program
   stop     --state-dir dir --assets dir --workspace dir --reason r stop <run>: next offers nothing from now on and running children finish; a person's resume continues it
   resume   --state-dir dir --assets dir --workspace dir --operator name --reason r --adopt --model-map key=model[,key=model] clear a stop of <run> as its operator (--operator, --reason: journaled; the run's own coordinator session is refused); --adopt carries it onto a changed definition whose live states are unchanged; --model-map sets the models from this resume on
@@ -951,6 +958,7 @@ usage: workflow <subcommand> [args]
   recover  --state-dir dir --assets dir --workspace dir answer a unit's recovery offer: resume (the same child continues, where the harness can), restart or give-up
   status   --state-dir dir --assets dir --workspace dir --json --full print one line per subagent unit and a totals line (--json: the RunStatus as JSON); from an agent's shell on a running run, one line that says to run next (--full: the whole view)
   heartbeat --state-dir dir --assets dir --workspace dir --session s --note text answer a stall: active <name> [--note <work you saw>], died <name>, or died --session <id> for a gone coordinator's orphans
+  spawn    --state-dir dir --assets dir --workspace dir --claim token start the headless child of a unit of another harness than the coordinator's, handed out with --claim (the command next prints for it); returns at once
   explain  --state-dir dir --assets dir --workspace dir explain a unit with its transition, route, checks and effects
   journal  --state-dir dir --assets dir --workspace dir print the journal as JSON Lines
   lock     --state-dir dir --assets dir --workspace dir --json say whether a process holds the run's lock now, and who last held it (read without taking it)

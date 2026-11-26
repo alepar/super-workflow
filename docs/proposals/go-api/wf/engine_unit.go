@@ -144,6 +144,14 @@ type unit struct {
 	HandHarness   string    `json:",omitempty"`
 	HandRoot      string    `json:",omitempty"`
 	FirstHandedAt time.Time `json:",omitzero"`
+	// ChildHarness is the harness the latest hand-out dispatched the unit
+	// to when it is not the coordinator's (HandOutSpawn.Harness): its child
+	// is a headless process of it, and its caller is expected to be of it.
+	ChildHarness string `json:",omitempty"`
+	// Headless is the spawn verb's latest start of the unit's headless
+	// child (headless_started), nil before one.
+	Headless   *HeadlessStartedData `json:",omitempty"`
+	HeadlessAt time.Time            `json:",omitzero"` // when it was started (the record's At)
 	// Recovery is the open recovery offer of a claimed child that ended
 	// without done (F1): the attempt stays open until the coordinator answers.
 	Recovery *RecoveryOfferedData `json:",omitempty"`
@@ -211,6 +219,15 @@ type offerOrigin struct {
 
 // errLogOf is the stderr file the hand-out that minted token recorded.
 func (u *unit) errLogOf(token string) string { return u.Origins[token].ErrLog }
+
+// childHarness is the harness a handed_out record dispatched its unit to
+// when it is not the coordinator's.
+func (d *HandedOutData) childHarness() string {
+	if d.Spawn == nil {
+		return ""
+	}
+	return d.Spawn.Harness
+}
 
 // spawnErrLog is the stderr file a handed_out record carries.
 func (d *HandedOutData) spawnErrLog() string {
@@ -468,6 +485,7 @@ func (st *runState) applyUnit(r JournalRecord, in *instance, data any) (bool, er
 			u.Unstarted = "" // a new offer: its evidence starts over
 			u.HandSegment = st.countHandOut(d)
 			u.HandHarness, u.HandRoot = d.Harness, d.Root
+			u.ChildHarness, u.Headless = d.childHarness(), nil
 			if d.Output != "" {
 				u.Output = d.Output
 			}
@@ -488,10 +506,17 @@ func (st *runState) applyUnit(r JournalRecord, in *instance, data any) (bool, er
 		}
 		in.Unit = &unit{Name: d.Name, State: UnitHanded, Attempt: in.Attempt, Token: d.Token,
 			HandedAt: r.At, HandExpires: d.Expires, Predecessor: pred, Output: d.Output, HandSession: d.Session,
-			HandHarness: d.Harness, HandRoot: d.Root, FirstHandedAt: r.At, SessionSince: r.At, HandCall: d.call(r), HandSegment: st.countHandOut(d)}
+			HandHarness: d.Harness, HandRoot: d.Root, ChildHarness: d.childHarness(), FirstHandedAt: r.At, SessionSince: r.At, HandCall: d.call(r), HandSegment: st.countHandOut(d)}
 		in.Unit.offer(d.Claim, d.Session, d.Call, in.Unit.HandSegment, d.spawnErrLog())
 		st.names[d.Name] = unitRef{Instance: in.ID, State: in.Cur, Attempt: in.Attempt}
 		st.nameToken[d.Name] = d.Token
+	case *HeadlessStartedData:
+		_, u, ok := st.unitByName(d.Name)
+		if !ok || !slices.Contains(u.Offered, d.Claim) {
+			return true, corrupt(r, "headless_started: no live unit %q offered with claim %s", d.Name, d.Claim)
+		}
+		hs := *d
+		u.Headless, u.HeadlessAt = &hs, r.At
 	case *AttemptStartedData:
 		_, u, ok := st.unitByName(d.Name)
 		if !ok {

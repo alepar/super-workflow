@@ -138,7 +138,9 @@ func (c *cycle) offerEnded(in *instance, cause string) error {
 			}
 		}
 	}
-	if line := a.ResumeLine(u.Claim.Agent, c.fixerText(u)); line != "" {
+	// A headless child is a separate process its coordinator cannot send
+	// a message to: no resume line, restart or give-up only.
+	if line := a.ResumeLine(u.Claim.Agent, c.fixerText(u)); line != "" && u.ChildHarness == "" {
 		d.Resume = line
 	}
 	return c.emit(in, JournalRecoveryOffered, 0, d)

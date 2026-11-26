@@ -268,7 +268,7 @@ func version(c *cli, row Subcommand, args []string) int {
 // Subcommands is the verb table. Only CLI and usage read it: the handlers it
 // names must not, or the package fails to initialize.
 var Subcommands = []Subcommand{
-	turnAttachRow(), turnQueryRow(), turnHandoffRow(), turnNativeRow(), turnInstallRow(),
+	turnAttachRow(), turnQueryRow(), turnHandoffRow(), turnNativeRow(), turnInstallRow(), setupCodexRulesRow(),
 	{Name: "lint", Summary: "lint the definitions (optional definition name)", handle: inspect},
 	{Name: "graph", Summary: "render the definitions (the default)", handle: inspect},
 	{Name: "mermaid", Summary: "render the definitions as Mermaid", handle: inspect},
@@ -276,7 +276,7 @@ var Subcommands = []Subcommand{
 	{Name: "version", Flags: []string{"--json"}, Summary: "print this binary's build stamp: engine and workflow source, Go toolchain, journal format (--json: the BuildStamp)", handle: version},
 	{
 		Name:    "run",
-		Flags:   []string{"--param k=v", "--options file", "--workspace dir", "--state-dir dir", "--assets dir", "--run-id id", "--snapshots", "--paged-prompts", "--halt-before STATE[,STATE]", "--model-map key=model[,key=model]", "--delegate gate=value", "--harness h", "--continue run"},
+		Flags:   []string{"--param k=v", "--options file", "--workspace dir", "--state-dir dir", "--assets dir", "--run-id id", "--snapshots", "--paged-prompts", "--halt-before STATE[,STATE]", "--model-map key=model[,key=model]", "--delegate gate=value", "--harness h", "--continue run", "--family coord=harness", "--family-home harness=dir", "--child-env-drop NAME[*]", "--headless-cmd harness=JSON-argv"},
 		Summary: "start or resume a run of <def>; prints the RunID on stdout and the coordinator bootstrap on stderr",
 		handle:  (*cli).drive,
 		subject: "definition name",
@@ -301,6 +301,7 @@ var Subcommands = []Subcommand{
 			fs.StringVar(&f.modelMap, "model-map", "", "tier, all or model = model[,...]: the models the run spawns with")
 			fs.Var(&f.delegates, "delegate", "delegate a gate's answer to the coordinator, gate=value (repeatable)")
 			fs.StringVar(&f.cont, "continue", "", "the ended run this call continues as its successor (status's resume command names it): params derive from its recorded assets, and a run key outside its chain is refused")
+			defineHeadlessFlags(fs, f)
 		},
 	},
 	{
@@ -935,6 +936,40 @@ var Subcommands = []Subcommand{
 		},
 	},
 	{
+		Name:    "spawn",
+		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir", "--claim token"},
+		Summary: "start the headless child of a unit of another harness than the coordinator's, handed out with --claim (the command next prints for it); returns at once",
+		handle:  (*cli).drive,
+		subject: "run id",
+		define: func(fs *flag.FlagSet, f *flags) {
+			fs.StringVar(&f.claim, "claim", "", "the claim token next printed in the spawn command")
+		},
+		act: func(c *cli, row Subcommand, stateDir string, run RunID, f *flags) int {
+			if f.claim == "" {
+				return c.failf(exitUsage, "%s: --claim is required: run the spawn command next printed, as printed", row.Name)
+			}
+			co := envCoordinator(c.env)
+			environ := os.Environ()
+			if c.env != nil {
+				if p := c.env(harness.ParentVar); p != "" {
+					environ = append(environ, harness.ParentVar+"="+p)
+				}
+			}
+			return c.withEngine(row, stateDir, func(x Executor) int {
+				res, err := x.(*Engine).Spawn(run, f.claim, co, environ)
+				if err != nil {
+					return c.fromError(row.Name, err)
+				}
+				session := ""
+				if res.Session != "" {
+					session = " session " + res.Session
+				}
+				fmt.Fprintf(c.stdout, "started %s on %s: pid %d%s; its stderr goes to %s. Do not wait for it: keep running next.\n", res.Unit, res.Harness, res.Pid, session, res.ErrLog)
+				return exitOK
+			})
+		},
+	},
+	{
 		Name:    "explain",
 		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir"},
 		Summary: "explain a unit with its transition, route, checks and effects",
@@ -1354,6 +1389,7 @@ type flags struct {
 	harness, session, agent, transcript, claim, note, cont            string
 	context                                                           ContextMode
 	workspace, options, runID, modelMap                               string
+	headless                                                          HeadlessConfig  // run's --family, --family-home, --child-env-drop, --headless-cmd
 	optionsJSON                                                       json.RawMessage // the options themselves, as a manufacture script gives them
 	effect                                                            int64
 	children                                                          int
@@ -1925,6 +1961,9 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 		return nil, fmt.Errorf("locating the running binary: %w", err)
 	}
 	opts.caller.Executable = bin
+	if opts.HeadlessCheck == nil {
+		opts.HeadlessCheck = c.headlessCheck
+	}
 	opts.InstalledBinary = c.cfg.InstalledBinary
 	opts.SnapshotFiles = c.cfg.SnapshotFiles
 	opts.caller.PromptClaim = c.recordedPromptClaim
@@ -2376,7 +2415,8 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 			fmt.Fprintln(c.stderr, "note: "+h)
 		}
 	}
-	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: f.pagedPrompts, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints})
+	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: f.pagedPrompts, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
+		Headless: f.headless.orNil()})
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)
 	}

@@ -60,7 +60,7 @@ by default as printed, one per line, and that work.
 
 The rules for the run, as the bootstrap prints them:
 
-> Rules for this run. Move this run only with the workflow engine's verbs, the commands it prints; ordinary shell work (mkdir, reading files) is your own. By default run a printed command as printed, one per line, with no wait loop around it: the engine's commands wait by themselves. If a command refuses, say what blocked you and what you need: a child with its failed command; a coordinator goes on with next, and reports to the person who started the run when a command asks for a person. Never edit or delete lock, journal or state files (see the lock verb), use flags that bypass a sandbox or approvals, reach a refused permission or approval another way, or address another run's state. The workflow moves this run's tracker items: change one only if your task's prompt says so. When you hand out this run's units, start each sub-agent with your own harness's sub-agent tool. Do not start another agent CLI (codex, claude, hermes) to do a unit, except through the engine's child dispatch (the call next prints), unless the workflow or the person who started the run explicitly asks you to. The workflow, not your judgment, decides when a phase or the run is over: keep following next. End your turn only if your child is running, the run ends, or next says to wait or stop.
+> Rules for this run. Move this run only with the workflow engine's verbs, the commands it prints; ordinary shell work (mkdir, reading files) is your own. By default run a printed command as printed, one per line, with no wait loop around it: the engine's commands wait by themselves. If a command refuses, say what blocked you and what you need: a child with its failed command; a coordinator goes on with next, and reports to the person who started the run when a command asks for a person. Never edit or delete lock, journal or state files (see the lock verb), use flags that bypass a sandbox or approvals, reach a refused permission or approval another way, or address another run's state. The workflow moves this run's tracker items: change one only if your task's prompt says so. When you hand out this run's units, start each sub-agent with your own harness's sub-agent tool. Do not start another agent CLI (codex, claude, hermes) to do a unit, except through the engine's child dispatch (the call or the spawn command next prints), unless the workflow or the person who started the run explicitly asks you to. The workflow, not your judgment, decides when a phase or the run is over: keep following next. End your turn only if your child is running, the run ends, or next says to wait or stop.
 
 The tracker sentence appears when the definition declares a typed Beads
 observation or effect, including in a nested definition. Workflows that use
@@ -281,6 +281,13 @@ these fields.
   after a boundary spawns with the new segment's models, and its `handed_out`
   record journals the model and effort it was handed with (`Spawn`; a
   record from before has none, and a replay then keeps the issued dispatch).
+- `dispatch.family`: agent only, present when the unit runs on another harness
+  than yours (section 4a): that harness's name. Its `model` and `effort` are
+  that harness's, from its own tier table and the `--model-map` keys qualified
+  with its name (`codex.top=...`).
+- `spawn`: agent only, with `dispatch.family`: the spawn verb's command line,
+  which starts the unit's child as a headless process of that harness. Run it
+  as printed in place of your sub-agent tool; it returns at once.
 - `gitAuthority`: agent only, absent unless the state declares one: `refs`, `allowed`, `forbidden`
   and `section` (the AGENTS.md section naming the same grant). The definition's client sets it; the
   engine only carries it.
@@ -300,7 +307,7 @@ these fields.
   earlier start is no longer running. Absent on a fresh offer under a new token,
   where a second child that starts is told the unit is taken.
 - `errLog`: agent only, harnesses whose launch line writes the child's stderr to a file
-  (pi): the file this offer's child writes it to. The launch line in the text output
+  (pi), and every unit with `spawn`: the file this offer's child writes it to. The launch line in the text output
   already redirects to it.
 - `prevErrLog`, `prevErrTail`: agent only, with `notStarted`, for those harnesses: the
   earlier offer's stderr file and its last non-empty lines (at most 3), where why that
@@ -457,6 +464,59 @@ in the run's `workspace` and uses absolute paths under it for task files.
 
 The coordinator never runs `done` or `failed` for a subagent, so outputs stay
 out of its context. The subagent reports only its result `class` back.
+
+## 4a. Units on another harness (`spawn`)
+
+A definition can run an agent state's units on another harness than the
+coordinator's: `wf.OnFamily(wf.FamilyNamed("codex"))` names one, and
+`wf.OnFamily(wf.FamilyOther)` means the run's other family (codex for a claude
+coordinator, claude for a codex one; `run --family coord=harness`, or
+`--family other=harness` for every coordinator, changes it). With a tier
+(`wf.ModelTier`), the unit runs at that harness's model for the tier: "a top
+class subagent on codex" is `OnFamily(FamilyNamed("codex"))` plus
+`ModelTier(TierTop)`. Harnesses with a headless launch: claude and codex.
+
+Such a unit's offer is one command, alone on its line:
+
+```
+start a codex child for <name> by running this command, as printed; it starts the child as a headless codex process and returns at once (do not wait for the child, keep running next):
+cd <workspace> && workflow spawn <run> --claim <token> --state-dir <abs>
+```
+
+`workflow spawn` starts the child harness's CLI (`codex exec`, `claude -p`)
+with the unit's brief on stdin, in its own process session, and prints
+`started <name> on <harness>: pid <n> ...`. The child is confined by its own
+CLI's protections only: a codex child runs in Codex's workspace-write sandbox
+rooted at the state dir, with approvals never; a claude child runs with
+`--permission-mode dontAsk` and an allow list of the engine's own binary, reads,
+and writes under the state dir (your own settings still apply). The engine adds
+no containment. `run --headless-cmd harness=JSON-argv` replaces a harness's
+launch (placeholders `{workspace} {state} {run} {unit} {model} {effort}
+{session} {wf}`); `run --family-home harness=dir` gives it another login home;
+`run --child-env-drop NAME` (a trailing `*` matches a prefix) scrubs more of
+the environment. The spawn verb always scrubs every harness's session identity
+and sets `SUPER_WF_PARENT=<your harness>:<your session>`, which tells the
+child's own CLI it is your child. Children never start children: `spawn` from a
+child is refused, and so is a second `spawn` of a child still running.
+
+At each segment's binding the engine checks every harness its definition can
+reach (a `harness_checked` record): the CLI is on PATH, `--version`, its own
+login check, and, for a Codex coordinator, that a Codex rule lets the spawn
+verb run outside Codex's sandbox (`codex execpolicy check`), since a sandboxed
+child has no network and hangs. A harness that fails is unavailable: its units
+never fall back to your harness; each attempt fails with class `unavailable`,
+naming why and the fix. `workflow setup-codex-rules` prints the one rule;
+`workflow setup-codex-rules --write` writes it to
+`$CODEX_HOME/rules/super-workflow.rules` (a person's confirmation: it lets Codex
+run that command outside its sandbox). `spawn` itself refuses to start a child
+from inside a per-command sandbox.
+
+A headless child's process is watched: when it exits without `done` or
+`failed`, its unit's recovery offer (section 7a) comes at once, quoting the end
+of its stderr, with no resume (you cannot message a separate process): restart
+or give up. A child that never fetched its prompt is offered again, quoting the
+same stderr. A lost attempt's child, and every child still running when the run
+ends, is stopped (its process group is signalled).
 
 ## 5. Claims and identity: the engine finds its children
 

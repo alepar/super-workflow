@@ -77,6 +77,18 @@ func (c *cycle) statusUnits(rs *RunStatus, now time.Time) {
 		if u.Claim != nil {
 			us.Session, us.Context = u.Claim.Session, u.Claim.Context.display()
 		}
+		if u.ChildHarness != "" {
+			us.Harness = u.ChildHarness
+			if hs := headlessOf(u); hs != nil {
+				us.Pid = hs.Pid
+				if u.State == UnitHanded && !c.e.recordedReplay && !c.e.headlessProcess().Live(hs.Pid, hs.Start) {
+					us.StartErr = strings.TrimPrefix(errTailText(hs.ErrLog), "; its stderr ends: ")
+					if us.StartErr == "" {
+						us.StartErr = "exited before fetching its prompt; its stderr (" + hs.ErrLog + ") is empty"
+					}
+				}
+			}
+		}
 		if u.Predecessor != "" {
 			us.Note = c.lostNote(u.Predecessor)
 		}
@@ -370,6 +382,7 @@ func (c *cycle) settledUnits(lastAt map[string]time.Time) []settledUnit {
 		started, end  time.Time
 		state         UnitState
 		session, note string
+		harness       string // the child's harness when not the coordinator's
 		context       ContextMode
 		settled       bool
 		order         int
@@ -393,11 +406,12 @@ func (c *cycle) settledUnits(lastAt map[string]time.Time) []settledUnit {
 			}
 			switch d := d.(type) {
 			case *HandedOutData:
-				if byName[d.Name] != nil { // a re-offer of the same unit
+				if i := byName[d.Name]; i != nil { // a re-offer of the same unit
+					i.harness = d.childHarness()
 					continue
 				}
 				ref := c.st.names[d.Name]
-				byName[d.Name] = &info{inst: r.Instance, attempt: ref.Attempt, order: len(names)}
+				byName[d.Name] = &info{inst: r.Instance, attempt: ref.Attempt, order: len(names), harness: d.childHarness()}
 				names = append(names, d.Name)
 				cur[r.Instance] = d.Name
 			case *AttemptStartedData:
@@ -467,7 +481,7 @@ func (c *cycle) settledUnits(lastAt map[string]time.Time) []settledUnit {
 		if in != nil && i.note == "" && in.Settled && in.halted() {
 			i.note = in.Reason // the halt its spawner absorbed
 		}
-		u := UnitStatus{Name: name, State: i.state.String(), Class: c.st.classOf(c.st.names[name]), Attempt: i.attempt, Session: i.session, Note: i.note}
+		u := UnitStatus{Name: name, State: i.state.String(), Class: c.st.classOf(c.st.names[name]), Attempt: i.attempt, Session: i.session, Note: i.note, Harness: i.harness}
 		u.PromptCoverage = delivery[name]
 		if !i.started.IsZero() {
 			u.Context = i.context.display()

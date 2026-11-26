@@ -46,6 +46,7 @@ func (o terminalOps[S]) execute(c *cycle, in *instance, n *node) error {
 		result = b
 	}
 	if in.ID == "" {
+		c.killAllHeadless() // a child still running would outlive its run
 		return c.emit(in, JournalRunEnded, Accepted, RunEndedData{Terminal: n.name, Outcome: outcome, Result: result})
 	}
 	// A child that delivers (a Success terminal, Partial or not) settled
@@ -91,5 +92,6 @@ func (c *cycle) endStoppedRun() error {
 	if c.st.ended || root == nil || root.Phase != phaseBudgetStoped {
 		return nil
 	}
+	c.killAllHeadless()
 	return c.emit(root, JournalRunEnded, 0, RunEndedData{Outcome: Stopped})
 }

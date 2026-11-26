@@ -118,6 +118,35 @@
   ...`). The check uses the new `Def.UnheldGuards(options...)`, which
   evaluates guards with the engine's own rule. A config without `Variants`
   behaves as before.
+- **A unit can run on another harness than the coordinator's (sw-drx1).**
+  `a.Dispatch(wf.OnFamily(wf.FamilyNamed("codex")), wf.ModelTier(wf.TierTop))`
+  runs that state's units as headless codex children at codex's top model;
+  `wf.FamilyOther` means the run's other family (codex for a claude
+  coordinator, claude for a codex one; `run --family coord=harness` changes
+  it). The offer is one command, `spawn <run> --claim <token>`, which starts
+  the child's CLI (`codex exec`, `claude -p`, through the new
+  `harness.Headless`) with the brief on stdin in its own process session,
+  and returns at once.
+  - **Confinement:** the child is confined by its own CLI only: Codex's
+    workspace-write sandbox with approvals never, or Claude's `dontAsk` with
+    an allow list.
+  - **Environment:** every harness's session identity is scrubbed, and
+    `SUPER_WF_PARENT` tells the child's CLI it is the coordinator's child.
+  - **Run flags:** `--headless-cmd`, `--family-home` and `--child-env-drop`
+    configure the launch.
+  - **Tiers:** they resolve on the child's harness. `--model-map` keys
+    qualified with a harness (`codex.top=...`) set its table, which is
+    journaled per segment.
+  - **Preflight:** each segment checks the child's CLI, its login and, for a
+    Codex coordinator, the Codex rule (`setup-codex-rules` prints it, and
+    `--write` writes it). An unavailable harness fails its units with class
+    `unavailable` and never falls back to the coordinator's.
+  - **Liveness:** a child that exits without `done` or `failed` gets a
+    recovery offer at once, quoting its stderr, with no resume. A child that
+    never fetches is stopped after 120 s, and its unit is offered again.
+    Lost attempts and a run's end stop their children's process groups.
+  - **Status:** it shows each unit's harness, its pid and why it did not
+    start, and each child harness's preflight.
 
 ### Upgrading
 
@@ -165,6 +194,20 @@
   each guard in `CheckConfig.Variants` and drop the `.Unreachable` marks
   that stood in for the untested side: once a variant reaches such an edge,
   the mark is a violation.
+- **New journal kinds `harness_checked` and `headless_started`.** An older
+  engine does not know them. Do not drive a run that has cross-harness
+  units with an older binary. Runs with no family hints write neither.
+- **`--model-map` keys that begin with a harness name and a dot**
+  (`codex.top`, `claude.all.effort`) now set that harness's child table and
+  no longer the coordinator's. A model key spelled that way was never
+  valid, so no working map changes.
+- **The coordinator rules sentence now reads** "except through the engine's
+  child dispatch (the call or the spawn command next prints)". A check that
+  matches the bootstrap text verbatim needs updating.
+- **`wf.Instruction` and `wf.DispatchHints` gain `spawn` and `family`
+  (JSON).** `wf.RunStatus` gains `Children`, and `wf.UnitStatus` gains
+  `Harness`, `Pid` and `StartErr`. All are omitted when unused, so existing
+  readers see no change.
 
 ## v0.3.0
 

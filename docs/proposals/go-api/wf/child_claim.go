@@ -88,10 +88,22 @@ func handedToHarness(u *unit) bool {
 // validate) nothing is written.
 func (c *cycle) noteChildCaller(in *instance, u *unit, token string, who harness.Caller) error {
 	cause := ""
+	// A unit dispatched to another harness (a headless child) is expected
+	// to be called from that harness, under the coordinator's session.
+	want := u.HandHarness
+	if u.ChildHarness != "" {
+		want = u.ChildHarness
+	}
 	switch owner := boundChildCaller(u); {
-	case u.HandSession != "" && identifyingHarness(u.HandHarness) && normalizeHarness(who.Harness) != normalizeHarness(u.HandHarness):
-		cause = fmt.Sprintf("the caller's harness %s is not the one its unit was handed out in (%s)", who.Harness, u.HandHarness)
-	case u.HandSession != "" && u.HandRoot != "" && who.Is == harness.IsChild && (u.HandHarness == "codex" || u.HandHarness == "pi" || u.HandHarness == "opencode") && who.Session != handParent(u, token):
+	case u.HandSession != "" && identifyingHarness(want) && normalizeHarness(who.Harness) != normalizeHarness(want):
+		if u.ChildHarness != "" {
+			cause = fmt.Sprintf("the caller's harness %s is not the one its unit was dispatched to (%s)", who.Harness, want)
+		} else {
+			cause = fmt.Sprintf("the caller's harness %s is not the one its unit was handed out in (%s)", who.Harness, want)
+		}
+	case u.ChildHarness != "" && u.HandSession != "" && who.Is == harness.IsChild && who.Session != handParent(u, token):
+		cause = fmt.Sprintf("the caller is a headless child of coordinator session %s, the unit was handed out by %s", who.Session, handParent(u, token))
+	case u.ChildHarness == "" && u.HandSession != "" && u.HandRoot != "" && who.Is == harness.IsChild && (u.HandHarness == "codex" || u.HandHarness == "pi" || u.HandHarness == "opencode") && who.Session != handParent(u, token):
 		cause = fmt.Sprintf("the caller is a child of coordinator session %s, the unit was handed out by %s", who.Session, handParent(u, token))
 	case !sameChild(owner, who):
 		cause = fmt.Sprintf("owner %s/%s, caller %s/%s", owner.Session, owner.Agent, who.Session, who.Agent)

@@ -58,6 +58,7 @@ docs/proposals/go-api/harness/agytest/agytest.go
 docs/proposals/go-api/harness/exec_claim.go
 docs/proposals/go-api/harness/fanout.go
 docs/proposals/go-api/harness/harness.go
+docs/proposals/go-api/harness/headless.go
 docs/proposals/go-api/harness/opencode.go
 docs/proposals/go-api/harness/pi.go
 docs/proposals/go-api/harness/prompt_envelope.go
@@ -144,6 +145,7 @@ docs/proposals/go-api/wf/enum_validation.go
 docs/proposals/go-api/wf/event.go
 docs/proposals/go-api/wf/executor.go
 docs/proposals/go-api/wf/failure_class.go
+docs/proposals/go-api/wf/family.go
 docs/proposals/go-api/wf/fanout_plan.go
 docs/proposals/go-api/wf/fanout_run.go
 docs/proposals/go-api/wf/fork_rebase.go
@@ -153,6 +155,9 @@ docs/proposals/go-api/wf/harness_defaults.go
 docs/proposals/go-api/wf/harness_git.go
 docs/proposals/go-api/wf/harvest.go
 docs/proposals/go-api/wf/hash.go
+docs/proposals/go-api/wf/headless_live.go
+docs/proposals/go-api/wf/headless_proc_linux.go
+docs/proposals/go-api/wf/headless_proc_other.go
 docs/proposals/go-api/wf/inspect.go
 docs/proposals/go-api/wf/inspect_effects.go
 docs/proposals/go-api/wf/journal.go
@@ -174,6 +179,7 @@ docs/proposals/go-api/wf/main_check.go
 docs/proposals/go-api/wf/main_child_dev.go
 docs/proposals/go-api/wf/main_fanout.go
 docs/proposals/go-api/wf/main_harvest.go
+docs/proposals/go-api/wf/main_headless.go
 docs/proposals/go-api/wf/main_manufacture.go
 docs/proposals/go-api/wf/main_params.go
 docs/proposals/go-api/wf/main_run.go
@@ -217,6 +223,7 @@ docs/proposals/go-api/wf/snapshot_openat_other.go
 docs/proposals/go-api/wf/snapshot_paths.go
 docs/proposals/go-api/wf/snapshot_store.go
 docs/proposals/go-api/wf/snapshot_trust.go
+docs/proposals/go-api/wf/spawn.go
 docs/proposals/go-api/wf/states.go
 docs/proposals/go-api/wf/stats.go
 docs/proposals/go-api/wf/status_snapshot.go
