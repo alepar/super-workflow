@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -27,6 +28,7 @@ func TestMain(m *testing.M) {
 		stageHooks(os.Args[2:])
 		os.Exit(RunDetached(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	testgit.Isolate()
 	os.Exit(m.Run())
 }
 

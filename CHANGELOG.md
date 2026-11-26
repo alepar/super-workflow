@@ -167,6 +167,15 @@
   git now clear every `GIT_*` variable and turn off system and global git
   config before any test starts, so a suite started under those variables
   never writes to the repository they name.
+- **Shell commands ignore an inherited repository selector (sw-itkk).**
+  `shell.Run` commands, inline and detached, passed `GIT_DIR` and its kin
+  through, so a workflow's `git diff` under an engine started from a git
+  hook read the hook's repository. They now run without `GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_COMMON_DIR`, `GIT_NAMESPACE` and `GIT_PREFIX`: the workspace defines
+  the repository. Identity, credential, transport and config variables
+  (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_SSH*`, `GIT_ASKPASS`,
+  `GIT_TERMINAL_PROMPT`, `GIT_CONFIG_*`) still pass through.
 
 ### Upgrading
 
@@ -174,6 +183,11 @@
   adapter at a repository other than the workspace's now gets the
   workspace's. Name the worktree in the effect or observation instead.
   `GIT_CONFIG_GLOBAL`, author and committer variables still pass through.
+- **A shell command that relied on an inherited `GIT_DIR`** (or
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_COMMON_DIR`, `GIT_NAMESPACE`, `GIT_PREFIX`) now acts on its
+  workspace's repository. Name the other repository in its argv, for
+  example `git -C <dir>` or `git --git-dir=<dir>`.
 - **`{records}` ignores document fields.** A definition that bound
   `{records}` from an input or output field gets the run's records
   directory instead. Pass a different root under another name.

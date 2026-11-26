@@ -141,9 +141,7 @@ func (r runtime) run(workspace string, args map[string]any, sandboxBin string) (
 	defer cancel()
 	cmd := exec.CommandContext(ctx, a.Argv[0], a.Argv[1:]...)
 	cmd.Dir = dir
-	if sandboxBin != "" {
-		cmd.Env = wf.SandboxEnv(sandboxBin)
-	}
+	cmd.Env = commandEnv(sandboxBin)
 	cmd.SysProcAttr = procAttr()
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
@@ -173,6 +171,34 @@ func (r runtime) run(workspace string, args map[string]any, sandboxBin string) (
 		return json.Marshal(res)
 	}
 	return nil, fmt.Errorf("shell.run %s: %w", a.Argv[0], runErr)
+}
+
+// repoSelectors are the inherited variables that would point a command's git
+// at a repository other than its workspace's: an engine started from a git
+// hook, or with GIT_DIR exported for a worktree, inherits them. The workspace
+// defines the repository; a command that wants another names it in its own
+// argv (git -C). Identity, credential, transport and config variables
+// (GIT_AUTHOR_*, GIT_COMMITTER_*, GIT_SSH*, GIT_ASKPASS, GIT_TERMINAL_PROMPT,
+// GIT_CONFIG_*) pass through.
+var repoSelectors = map[string]bool{
+	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true, "GIT_OBJECT_DIRECTORY": true,
+	"GIT_COMMON_DIR": true, "GIT_NAMESPACE": true, "GIT_PREFIX": true,
+}
+
+// commandEnv is the environment a workflow command runs with: this process's,
+// with the bd shim first on PATH for a sandboxed run, less repoSelectors.
+func commandEnv(sandboxBin string) []string {
+	env := os.Environ()
+	if sandboxBin != "" {
+		env = wf.SandboxEnv(sandboxBin)
+	}
+	kept := env[:0:0]
+	for _, kv := range env {
+		if name, _, _ := strings.Cut(kv, "="); !repoSelectors[name] {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
 }
 
 // procAttr gives an inline command its own process group, so a timeout kills

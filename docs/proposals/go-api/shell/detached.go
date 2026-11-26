@@ -315,9 +315,7 @@ func runArgv(argv []string, dir, fullPath, sandboxBin string) wf.RunResult {
 	}
 	cmd := exec.Command(argv0, argv[1:]...)
 	cmd.Dir = dir
-	if sandboxBin != "" {
-		cmd.Env = wf.SandboxEnv(sandboxBin)
-	}
+	cmd.Env = commandEnv(sandboxBin)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	// A descendant holding the pipes past the command's exit does not hold the
 	// result back.
