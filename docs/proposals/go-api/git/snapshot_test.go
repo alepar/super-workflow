@@ -274,6 +274,32 @@ func TestSnapshotRejectsSymlinksOutsideCapturedWorld(t *testing.T) {
 	}
 }
 
+// What git ignores is never captured, so an escaping link or a nested
+// repository inside an ignored build tree does not refuse the capture; the
+// same link outside it still does.
+func TestSnapshotPreflightSkipsIgnoredTrees(t *testing.T) {
+	repo := newRepo(t)
+	writeFile(t, repo, ".gitignore", "target/\n")
+	sh(t, repo, "add", ".gitignore")
+	sh(t, repo, "commit", "-q", "-m", "ignore")
+	if err := os.MkdirAll(filepath.Join(repo, "target", "dep", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/", filepath.Join(repo, "target", "root")); err != nil {
+		t.Fatal(err)
+	}
+	s := rt().(wf.WorldSnapshotter)
+	if _, err := s.Snapshot(wf.SnapshotRequest{Workspace: repo, Directory: filepath.Join(t.TempDir(), "cp")}); err != nil {
+		t.Fatalf("an ignored tree refused the capture: %v", err)
+	}
+	if err := os.Symlink("/", filepath.Join(repo, "root")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Snapshot(wf.SnapshotRequest{Workspace: repo, Directory: filepath.Join(t.TempDir(), "cp")}); err == nil {
+		t.Fatal("accepted an escaping symlink outside the ignored tree")
+	}
+}
+
 func TestSnapshotIgnoresInheritedGitEnvironment(t *testing.T) {
 	for _, extra := range []bool{false, true} {
 		t.Run(map[bool]string{false: "source-redirect", true: "all-overrides"}[extra], func(t *testing.T) {
@@ -771,5 +797,42 @@ func TestSnapshotPreflightRefusesUnsafeInclusions(t *testing.T) {
 		if err := s.SnapshotPreflight(wf.SnapshotRequest{Workspace: repo, Directory: t.TempDir(), Include: []string{rel}}); err != nil {
 			t.Errorf("inclusion %q refused: %v", rel, err)
 		}
+	}
+}
+
+// racingStore is a SnapshotStore whose PutDir runs race first, as a repack
+// or prune racing the capture would, and then takes nothing.
+type racingStore struct{ race func() }
+
+func (s racingStore) PutDir(rel, src string, skip func(string) bool) error {
+	s.race()
+	return nil
+}
+
+// A repack that replaces object files the capture listed refuses the
+// capture instead of recording a checkpoint short of objects; one with no
+// race takes the object files and leaves no snapshot refs behind.
+func TestSnapshotObjectsRefuseARacingRepack(t *testing.T) {
+	repo := newRepo(t)
+	writeFile(t, repo, "b.txt", "b\n")
+	sh(t, repo, "add", "b.txt")
+	sh(t, repo, "commit", "-q", "-m", "second") // loose objects a repack packs and prunes
+	s := rt().(wf.WorldSnapshotter)
+	raw, err := s.Snapshot(wf.SnapshotRequest{Workspace: repo, Directory: t.TempDir(), Store: racingStore{func() {}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"Version":3`) {
+		t.Fatalf("metadata %s", raw)
+	}
+	if refs := sh(t, repo, "for-each-ref", "refs/workflow/snapshots/"); refs != "" {
+		t.Fatalf("snapshot refs left in the source: %s", refs)
+	}
+	_, err = s.Snapshot(wf.SnapshotRequest{Workspace: repo, Directory: t.TempDir(), Store: racingStore{func() {
+		sh(t, repo, "repack", "-a", "-d", "-q")
+		sh(t, repo, "prune-packed")
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "objects changed during capture") {
+		t.Fatalf("a racing repack = %v", err)
 	}
 }

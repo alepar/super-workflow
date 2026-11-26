@@ -29,6 +29,20 @@ type rootedJournal struct {
 	// the last one is let go, not by one call while another holds the run
 	//.
 	locks map[RunID]int
+	// mapped memoizes rooted's conversion of each record's Data, by run and
+	// seq, for the life of the journal value: a verb reads its run under the
+	// lock several times, and the conversion is a function of the bytes,
+	// the kind and the two sets of roots alone. Entries share Data slices
+	// with what Records returns: record Data is never written in place.
+	mapped map[RunID]map[int64]rootedEntry
+}
+
+// rootedEntry is one record's conversion: in under origin to out under to.
+type rootedEntry struct {
+	kind       JournalKind
+	relative   bool
+	origin, to PathRoots
+	in, out    json.RawMessage
 }
 
 func (j *rootedJournal) Lock(run RunID) (func(), error) {
@@ -142,12 +156,37 @@ func (j *rootedJournal) rooted(recs []JournalRecord) (_ []JournalRecord, roots P
 			// Older journals can also move when both original roots are known.
 			return relocateString(s, origin, roots)
 		}
-		out[i].Data, err = mapJournalPaths(out[i].Kind, out[i].Data, convert)
+		if e, ok := j.memo(out[i].Run, out[i].Seq); ok && e.kind == out[i].Kind && e.relative == out[i].RelativePaths && e.origin == origin && e.to == roots && bytes.Equal(e.in, out[i].Data) {
+			out[i].Data = e.out
+			continue
+		}
+		in := out[i].Data
+		out[i].Data, err = mapJournalPaths(out[i].Kind, in, convert)
 		if err != nil {
 			return nil, roots, err
 		}
+		j.remember(out[i].Run, out[i].Seq, rootedEntry{out[i].Kind, out[i].RelativePaths, origin, roots, in, out[i].Data})
 	}
 	return out, roots, nil
+}
+
+func (j *rootedJournal) memo(run RunID, seq int64) (rootedEntry, bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	e, ok := j.mapped[run][seq]
+	return e, ok
+}
+
+func (j *rootedJournal) remember(run RunID, seq int64, e rootedEntry) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.mapped == nil {
+		j.mapped = map[RunID]map[int64]rootedEntry{}
+	}
+	if j.mapped[run] == nil {
+		j.mapped[run] = map[int64]rootedEntry{}
+	}
+	j.mapped[run][seq] = e
 }
 
 func (j *rootedJournal) Append(rec JournalRecord) error {

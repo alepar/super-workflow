@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **World checkpoints cost what changed, not the world's size.** The git
+  adapter hands the repository's object files to the run's snapshot store
+  instead of writing a bundle of its whole history each time; the store keeps
+  a hash cache of files it has read and trusts packs it has read back whole
+  while they are unchanged. On a 310 MB repository a checkpoint fell from
+  about 10 s to under 0.5 s, and the store no longer grows by the repository
+  at every checkpoint. Forward-incompatible: a checkpoint taken by this
+  engine (git metadata version 3) cannot be forked by an older engine, which
+  refuses it; checkpoints taken by older engines fork as before.
+
 - **`maxlen` bounds only what an agent submits.** It is checked on validate
   and done (and the calibration and recorded-output probes), no longer on
   compute outputs, Sub inputs, Map items or yield results. Those are built by

@@ -207,10 +207,15 @@ docs/proposals/go-api/wf/schema_view.go
 docs/proposals/go-api/wf/scratch.go
 docs/proposals/go-api/wf/segment_models.go
 docs/proposals/go-api/wf/snapshot_adapter.go
+docs/proposals/go-api/wf/snapshot_hashcache.go
+docs/proposals/go-api/wf/snapshot_hashcache_darwin.go
+docs/proposals/go-api/wf/snapshot_hashcache_linux.go
+docs/proposals/go-api/wf/snapshot_hashcache_other.go
 docs/proposals/go-api/wf/snapshot_openat_linux.go
 docs/proposals/go-api/wf/snapshot_openat_other.go
 docs/proposals/go-api/wf/snapshot_paths.go
 docs/proposals/go-api/wf/snapshot_store.go
+docs/proposals/go-api/wf/snapshot_trust.go
 docs/proposals/go-api/wf/states.go
 docs/proposals/go-api/wf/stats.go
 docs/proposals/go-api/wf/status_snapshot.go

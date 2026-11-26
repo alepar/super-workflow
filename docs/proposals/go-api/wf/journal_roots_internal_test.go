@@ -134,3 +134,48 @@ func TestRootedReadSkipsRecordsWithoutTokens(t *testing.T) {
 		t.Fatalf("tokened record not converted: %s", got[2].Data)
 	}
 }
+
+// A second read of the same records answers from the memo, byte for byte as
+// the first; a record whose stored bytes differ at the same seq is mapped
+// again, as are records read under other roots.
+func TestRootedMemoMatchesAFreshConversion(t *testing.T) {
+	raw := MemJournal()
+	writer := &rootedJournal{Journal: raw, workspace: "/old/work", state: "/old/state", active: map[RunID]PathRoots{}}
+	unlock, err := writer.Lock("r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []JournalRecord{
+		{Kind: JournalRunStarted, Run: "r", Data: json.RawMessage(`{"Workspace":"/old/work"}`)},
+		{Kind: JournalInstructionIssued, Run: "r", Data: json.RawMessage(`{"Workspace":"/old/work/sub"}`)},
+	} {
+		if err := writer.Append(rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stored, err := raw.Records("r")
+	unlock()
+	if err != nil || len(stored) != 2 {
+		t.Fatalf("stored %d records: %v", len(stored), err)
+	}
+	reader := &rootedJournal{Journal: raw, workspace: "/new/work", state: "/new/state", active: map[RunID]PathRoots{}}
+	first, _, err := reader.rooted(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _, err := reader.rooted(stored)
+	if err != nil || !bytes.Equal(first[1].Data, again[1].Data) || !bytes.Contains(again[1].Data, []byte(`"/new/work/sub"`)) {
+		t.Fatalf("memo read %s, first %s (%v)", again[1].Data, first[1].Data, err)
+	}
+	changed := append([]JournalRecord(nil), stored...)
+	changed[1].Data = bytes.Replace(stored[1].Data, []byte("sub"), []byte("other"), 1)
+	got, _, err := reader.rooted(changed)
+	if err != nil || !bytes.Contains(got[1].Data, []byte(`"/new/work/other"`)) {
+		t.Fatalf("changed bytes answered from the memo: %s (%v)", got[1].Data, err)
+	}
+	moved := &rootedJournal{Journal: raw, workspace: "/third/work", state: "/third/state", active: map[RunID]PathRoots{}, mapped: reader.mapped}
+	got, _, err = moved.rooted(stored)
+	if err != nil || !bytes.Contains(got[1].Data, []byte(`"/third/work/sub"`)) {
+		t.Fatalf("other roots answered from the memo: %s (%v)", got[1].Data, err)
+	}
+}

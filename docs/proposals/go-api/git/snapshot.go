@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -28,7 +29,19 @@ type snapshotMetadata struct {
 	Version     int
 	Trees       []snapshotTree
 	LocalConfig map[string]string `json:",omitempty"`
+	// Refs (version 3) are the refs a version-2 bundle would carry, by name:
+	// the branches, the tags and each tree's snapshot commit. Their objects
+	// are the repository's own object files, handed to the run's snapshot
+	// store under snapshotObjectsDir in place of a bundle, so history the
+	// store already holds costs a checkpoint nothing.
+	Refs map[string]string `json:",omitempty"`
+	// ObjectFormat (version 3) is the repository's hash, sha1 or sha256.
+	ObjectFormat string `json:",omitempty"`
 }
+
+// snapshotObjectsDir is where a version-3 checkpoint keeps the repository's
+// object files, under the adapter's checkpoint directory.
+const snapshotObjectsDir = "objects"
 
 // Carry only the local identity a resumed run needs to create commits.
 // Config files and includes can contain credentials or source-specific paths.
@@ -206,6 +219,20 @@ func (r runtime) SnapshotPreflight(req wf.SnapshotRequest) error {
 		if stateOwned {
 			linkRoot = walkRoot
 		}
+		// What git ignores is never captured, so its links and repositories
+		// are not checked: a build tree (target/, a CARGO_HOME) can hold
+		// hundreds of thousands of files. Whole ignored directories are
+		// listed once, not descended.
+		listed, _, e := r.git(walkRoot, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+		if e != nil {
+			return e
+		}
+		ignored := map[string]bool{}
+		for _, rel := range strings.Split(listed, "\x00") {
+			if rel = strings.TrimSuffix(rel, "/"); rel != "" {
+				ignored[filepath.Join(walkRoot, filepath.FromSlash(rel))] = true
+			}
+		}
 		if err := filepath.WalkDir(walkRoot, func(p string, d os.DirEntry, e error) error {
 			if e != nil {
 				return e
@@ -214,6 +241,12 @@ func (r runtime) SnapshotPreflight(req wf.SnapshotRequest) error {
 			// below an excluded state root.
 			if p != walkRoot && allowed[p] && d.IsDir() {
 				return filepath.SkipDir
+			}
+			if ignored[p] {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			// A linked checkout's .beads is ordinary content (bd restores only
 			// the primary's tracker), so its links are checked like any other.
@@ -314,6 +347,33 @@ func (r runtime) Snapshot(req wf.SnapshotRequest) (json.RawMessage, error) {
 	}
 	meta := snapshotMetadata{Version: 2, LocalConfig: config}
 	bundleArgs := []string{"bundle", "create", filepath.Join(req.Directory, "repository.bundle"), "--branches", "--tags"}
+	objects, err := r.snapshotObjects(req)
+	if err != nil {
+		return nil, err
+	}
+	var held []string
+	defer func() {
+		for _, ref := range held {
+			_, _ = r.must(req.Workspace, "update-ref", "-d", ref)
+		}
+	}()
+	if objects != "" {
+		// The refs are read before the objects are handed over: objects
+		// only accrue meanwhile, so every ref's closure is in what is read.
+		meta.Version, meta.Refs = 3, map[string]string{}
+		if meta.ObjectFormat, err = r.must(req.Workspace, "rev-parse", "--show-object-format"); err != nil {
+			return nil, err
+		}
+		refs, err := r.must(req.Workspace, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags")
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(refs, "\n") {
+			if name, id, ok := strings.Cut(line, " "); ok {
+				meta.Refs[name] = id
+			}
+		}
+	}
 	trees, _ := snapshotRequestTrees(req) // preflight validated every root and path
 	for i, location := range trees {
 		dir, _ := snapshotTreePath(req.Workspace, req.StateRoot, location)
@@ -390,14 +450,17 @@ func (r runtime) Snapshot(req wf.SnapshotRequest) (json.RawMessage, error) {
 			paths = kept
 		}
 		if len(paths) > 0 {
-			for start := 0; start < len(paths); start += 100 {
-				end := start + 100
-				if end > len(paths) {
-					end = len(paths)
-				}
-				if _, err = call(append([]string{"--literal-pathspecs", "add", "-A", "--"}, paths[start:end]...)...); err != nil {
-					return nil, err
-				}
+			// One add for every path, named in a file: an add per batch of
+			// paths reads the whole index each time.
+			spec := filepath.Join(req.Directory, "pathspec")
+			if err = os.WriteFile(spec, []byte(strings.Join(paths, "\x00")+"\x00"), 0600); err != nil {
+				return nil, err
+			}
+			if _, err = call("--literal-pathspecs", "add", "-A", "--pathspec-from-file="+spec, "--pathspec-file-nul"); err != nil {
+				return nil, err
+			}
+			if err = os.Remove(spec); err != nil {
+				return nil, err
 			}
 		}
 
@@ -439,7 +502,14 @@ func (r runtime) Snapshot(req wf.SnapshotRequest) (json.RawMessage, error) {
 			return nil, err
 		}
 		snapshotRef := fmt.Sprintf("%s/%d", prefix, i)
-		bundleArgs = append(bundleArgs, snapshotRef)
+		if objects != "" {
+			meta.Refs[snapshotRef] = wip
+			held = append(held, snapshotRef)
+		} else {
+			bundleArgs = append(bundleArgs, snapshotRef)
+		}
+		// The ref keeps the snapshot's objects reachable while they are read
+		// (a version-3 capture deletes it after: the store holds them).
 		if _, err = call("update-ref", snapshotRef, wip); err != nil {
 			return nil, err
 		}
@@ -455,10 +525,123 @@ func (r runtime) Snapshot(req wf.SnapshotRequest) (json.RawMessage, error) {
 		}
 		meta.Trees = append(meta.Trees, entry)
 	}
+	if objects != "" {
+		// Git writes a new pack before it deletes what it replaces, so a
+		// repack or prune racing the hand-over loses nothing reachable unless
+		// a file listed here goes before it is read: then the objects moved
+		// under the capture, which is refused rather than recorded short.
+		before, err := snapshotObjectFiles(objects)
+		if err != nil {
+			return nil, err
+		}
+		if err := req.Store.PutDir(snapshotObjectsDir, objects, snapshotObjectSkip); err != nil {
+			return nil, fmt.Errorf("git snapshot: objects changed during capture: %w", err)
+		}
+		after, err := snapshotObjectFiles(objects)
+		if err != nil {
+			return nil, err
+		}
+		for rel, id := range before {
+			if after[rel] != id {
+				return nil, fmt.Errorf("git snapshot: objects changed during capture: %s", rel)
+			}
+		}
+		return json.Marshal(meta)
+	}
 	if _, err := r.must(req.Workspace, bundleArgs...); err != nil {
 		return nil, err
 	}
 	return json.Marshal(meta)
+}
+
+// snapshotObjects is the repository's object directory when a capture can
+// hand its files to the request's store (version 3), or "" for a bundle
+// (version 2): with no store, or a repository whose objects are not all its
+// own files (alternates, a shallow or partial clone).
+func (r runtime) snapshotObjects(req wf.SnapshotRequest) (string, error) {
+	if req.Store == nil {
+		return "", nil
+	}
+	dir, err := r.must(req.Workspace, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "info", "alternates")); err == nil {
+		return "", nil
+	}
+	shallow, err := r.must(req.Workspace, "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return "", err
+	}
+	if shallow != "false" {
+		return "", nil
+	}
+	if partial, _, _ := r.git(req.Workspace, "config", "--get", "extensions.partialclone"); strings.TrimSpace(partial) != "" {
+		return "", nil
+	}
+	if promisor, _ := filepath.Glob(filepath.Join(dir, "pack", "*.promisor")); len(promisor) > 0 {
+		return "", nil
+	}
+	return dir, nil
+}
+
+// snapshotObjectFiles names each object file a capture hands over (by
+// snapshotObjectSkip), relative to dir, with its device and inode.
+func snapshotObjectFiles(dir string) (map[string]string, error) {
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != dir && snapshotObjectSkip(d.Name()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		id := fmt.Sprint(fi.Size())
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			id = fmt.Sprint(st.Dev, ":", st.Ino, ":", fi.Size())
+		}
+		out[rel] = id
+		return nil
+	})
+	return out, err
+}
+
+// snapshotObjectSkip keeps, of an object directory, the loose objects and
+// the packs with their indexes: everything else there (info, commit graphs,
+// bitmaps, reverse indexes, keep files, temporary and quarantine files) is
+// derived, local or in flight.
+func snapshotObjectSkip(name string) bool {
+	switch {
+	case name == "pack":
+		return false
+	case len(name) == 2 && isHex(name):
+		return false
+	case (len(name) == 38 || len(name) == 62) && isHex(name):
+		return false
+	case strings.HasPrefix(name, "pack-") && (strings.HasSuffix(name, ".pack") || strings.HasSuffix(name, ".idx")):
+		return false
+	}
+	return true
+}
+
+func isHex(s string) bool {
+	for _, c := range s {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
@@ -467,7 +650,10 @@ func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		return err
 	}
-	if (meta.Version != 1 && meta.Version != 2) || len(meta.Trees) == 0 || meta.Trees[0].Path != "." {
+	if meta.Version > 3 {
+		return fmt.Errorf("git restore: checkpoint metadata version %d is newer than this engine supports (3); fork it with the engine that took it", meta.Version)
+	}
+	if meta.Version < 1 || len(meta.Trees) == 0 || meta.Trees[0].Path != "." {
 		return fmt.Errorf("git restore: invalid metadata")
 	}
 	if !filepath.IsAbs(req.Workspace) || !filepath.IsAbs(req.Directory) {
@@ -529,8 +715,35 @@ func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
 	if _, err := r.must(req.Workspace, "init", "-q", "--template="); err != nil {
 		return err
 	}
-	if _, err := r.must(req.Workspace, "fetch", "--no-tags", filepath.Join(req.Directory, "repository.bundle"), "+refs/*:refs/*"); err != nil {
+	source := filepath.Join(req.Directory, "repository.bundle")
+	if meta.Version == 3 {
+		repo, cleanup, err := r.restoreObjects(req, meta)
+		if err != nil {
+			return fmt.Errorf("git restore: %w", err)
+		}
+		defer cleanup()
+		source = repo
+	}
+	if _, err := r.must(req.Workspace, "fetch", "--no-tags", source, "+refs/*:refs/*"); err != nil {
 		return err
+	}
+	if meta.Version == 3 {
+		// Every recorded ref came over, at its recorded object.
+		got, err := r.must(req.Workspace, "for-each-ref", "--format=%(refname) %(objectname)")
+		if err != nil {
+			return err
+		}
+		have := map[string]string{}
+		for _, line := range strings.Split(got, "\n") {
+			if name, id, ok := strings.Cut(line, " "); ok {
+				have[name] = id
+			}
+		}
+		for name, id := range meta.Refs {
+			if have[name] != id {
+				return fmt.Errorf("git restore: ref %s did not restore", name)
+			}
+		}
 	}
 	for _, key := range snapshotConfigKeys {
 		if value, ok := meta.LocalConfig[key]; ok {
@@ -580,6 +793,81 @@ func (r runtime) Restore(req wf.RestoreRequest, raw json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// restoreObjects is a version-3 checkpoint as a repository to fetch from, as
+// a version-2 restore fetches from the bundle: a scratch bare repository that
+// borrows the checkpoint's object files (alternates, no copy) and holds its
+// refs. The fetch copies and checks what the refs reach.
+func (r runtime) restoreObjects(req wf.RestoreRequest, meta snapshotMetadata) (string, func(), error) {
+	if meta.ObjectFormat != "sha1" && meta.ObjectFormat != "sha256" {
+		return "", nil, fmt.Errorf("invalid object format %q", meta.ObjectFormat)
+	}
+	objects := filepath.Join(req.Directory, snapshotObjectsDir)
+	if fi, err := os.Lstat(objects); err != nil || !fi.IsDir() {
+		return "", nil, fmt.Errorf("checkpoint has no objects")
+	}
+	repo, err := os.MkdirTemp("", "wf-git-restore-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { os.RemoveAll(repo) }
+	fail := func(err error) (string, func(), error) {
+		cleanup()
+		return "", nil, err
+	}
+	// The refs are written as a packed-refs file, which only the files ref
+	// backend reads: a host defaulting to reftable must not apply. A git
+	// without --ref-format has no other backend.
+	if _, err := r.must(repo, "init", "-q", "--bare", "--template=", "--ref-format=files", "--object-format="+meta.ObjectFormat); err != nil {
+		if _, err := r.must(repo, "init", "-q", "--bare", "--template=", "--object-format="+meta.ObjectFormat); err != nil {
+			return fail(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "objects", "info", "alternates"), []byte(objects+"\n"), 0600); err != nil {
+		return fail(err)
+	}
+	// The refs go in as a packed-refs file, one line each in name order:
+	// the fetch reads them, and its connectivity check refuses a ref whose
+	// objects the checkpoint lacks.
+	names := make([]string, 0, len(meta.Refs))
+	for name, id := range meta.Refs {
+		if !isFullSHA(id) || !snapshotRefName(name) {
+			return fail(fmt.Errorf("invalid ref %q", name))
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var packed strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&packed, "%s %s\n", meta.Refs[name], name)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "packed-refs"), []byte(packed.String()), 0600); err != nil {
+		return fail(err)
+	}
+	return repo, cleanup, nil
+}
+
+// snapshotRefName reports whether name is a branch, tag or snapshot ref a
+// capture records, in a form git accepts (git check-ref-format, strictly).
+func snapshotRefName(name string) bool {
+	if !(strings.HasPrefix(name, "refs/heads/") || strings.HasPrefix(name, "refs/tags/") || strings.HasPrefix(name, "refs/workflow/snapshots/")) {
+		return false
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "//") || strings.Contains(name, "@{") || strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".") {
+		return false
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	for _, c := range name {
+		if c < 0x20 || c == 0x7f || strings.ContainsRune(" ~^:?*[\\", c) {
+			return false
+		}
+	}
+	return true
 }
 
 func snapshotExclusions(req wf.SnapshotRequest) []string {
@@ -779,14 +1067,23 @@ func snapshotNewTarget(path string) error {
 // directories. A linked tree's tracked .beads files are its own content (bd
 // restores only the primary's tracker); its untracked ones stay out. The
 // stamp digests the same set.
-func (r runtime) wipFiles(dir string, i int, req wf.SnapshotRequest) ([]string, error) {
+// wipSpecs are the pathspecs of a tree's working files: all of it, less the
+// tracker and, in the primary tree, the linked checkouts and exclusions.
+func wipSpecs(i int, req wf.SnapshotRequest) []string {
 	specs := []string{".", ":(top,exclude,literal).beads"}
 	if i == 0 {
 		for _, w := range append(append([]string{}, req.Worktrees...), snapshotExclusions(req)...) {
 			specs = append(specs, ":(top,exclude,literal)"+filepath.ToSlash(w))
 		}
 	}
-	files, _, err := r.git(dir, append([]string{"ls-files", "-z", "--cached", "--others", "--exclude-standard", "--"}, specs...)...)
+	return specs
+}
+
+func (r runtime) wipFiles(dir string, i int, req wf.SnapshotRequest) ([]string, error) {
+	specs := wipSpecs(i, req)
+	// Only what differs from the index needs staging: tracked files whose
+	// contents changed or are gone, and untracked files git does not ignore.
+	files, _, err := r.git(dir, append([]string{"ls-files", "-z", "--modified", "--others", "--exclude-standard", "--"}, specs...)...)
 	if err != nil {
 		return nil, err
 	}

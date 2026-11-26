@@ -267,6 +267,7 @@ func (c *cycle) capture(instance, state string, attempt int, before JournalKind,
 	if data.Tree, err = capture.commit(data.Adapters); err != nil {
 		return err
 	}
+	capture.cache.save()
 	data.Omitted = capture.omittedPaths()
 	if h := snapshotRunDataHook; h != nil {
 		h("after-copy")
@@ -336,6 +337,7 @@ func (c *cycle) runDataStamp() string {
 // equal to the digest of what a capture stored, lets a checkpoint name that
 // capture again.
 func runDataDigest(root string) (string, error) {
+	cache := hashCacheFor(filepath.Join(root, "snapshots", storeDirName))
 	var lines []string
 	buf := make([]byte, storeBlock)
 	for _, sub := range []string{"records", "out", "prompt"} {
@@ -365,7 +367,7 @@ func runDataDigest(root string) (string, error) {
 			switch {
 			case mode.IsRegular():
 				var err error
-				if ids, err = fileIDs(parent, name, buf); err != nil {
+				if ids, err = fileIDs(parent, name, buf, cache); err != nil {
 					return false, err
 				}
 			case mode&fs.ModeSymlink != 0:

@@ -956,3 +956,40 @@ func TestRunDataDigestSeesGitAddedOrRemoved(t *testing.T) {
 		t.Fatal("a change inside .git changed the digest")
 	}
 }
+
+// A capture's packs are read back whole once and trusted while unchanged, so
+// a later capture of the same world reads none of its objects back; any write
+// to a trusted pack voids its trust, and its objects are read again.
+func TestStoreTrustsUnchangedPacksOnly(t *testing.T) {
+	src := t.TempDir()
+	_ = os.WriteFile(filepath.Join(src, "a"), []byte("alpha"), 0o600)
+	store := newStore(t)
+	captureOnce(t, store, src)
+	id := gitObjectID("blob", []byte("alpha"))
+	if !store.trustedObjects()[id] {
+		t.Fatalf("the capture's pack is not trusted: %v", store.trustedPacks(false))
+	}
+	// A fresh process (store value) trusts it too, from the record.
+	if !openSnapshotStore(store.dir).trustedObjects()[id] {
+		t.Fatal("trust did not persist")
+	}
+	packs, _ := filepath.Glob(filepath.Join(store.dir, "objects", "pack", "*.pack"))
+	for _, p := range packs {
+		body, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chmod(p, 0o600)
+		if err := os.WriteFile(p, body, 0o444); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if openSnapshotStore(store.dir).trustedObjects()[id] {
+		t.Fatal("a rewritten pack kept its trust")
+	}
+	// The next capture reads the object back, then trusts the pack again.
+	captureOnce(t, openSnapshotStore(store.dir), src)
+	if !openSnapshotStore(store.dir).trustedObjects()[id] {
+		t.Fatal("a re-read pack was not trusted again")
+	}
+}

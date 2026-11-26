@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -77,6 +78,20 @@ func (s *snapshotStore) verify(ids map[string]string, done map[string]bool) erro
 	if len(todo) == 0 {
 		return nil
 	}
+	// Objects of a pack read back whole and unchanged since are not read
+	// again (trustedObjects).
+	trusted := s.trustedObjects()
+	kept := todo[:0]
+	for _, id := range todo {
+		if trusted[id] {
+			done[id] = true
+		} else {
+			kept = append(kept, id)
+		}
+	}
+	if todo = kept; len(todo) == 0 {
+		return nil
+	}
 	sort.Strings(todo)
 	r, err := s.reader()
 	if err != nil {
@@ -104,6 +119,9 @@ type snapshotStore struct {
 	// views are the checkpoints this value validated, by tree: only what
 	// passed is kept.
 	views map[string]*checkpointView
+	// trustSig and trustIDs memo trustedObjects for one trusted set.
+	trustSig string
+	trustIDs map[string]bool
 }
 
 // createSnapshotStore opens the store at dir, creating it when it does not
@@ -229,10 +247,12 @@ type storeCapture struct {
 	verified map[string]bool
 	// omitted lists run-data entries the capture left out, with reasons where needed.
 	omitted []string
+	// cache is the store's file-hash cache (hashCache).
+	cache *hashCache
 }
 
 func (s *snapshotStore) capture() *storeCapture {
-	return &storeCapture{s: s, entries: map[string]*storeEntry{"": {mode: fs.ModeDir | 0o700}}, verified: map[string]bool{}}
+	return &storeCapture{s: s, entries: map[string]*storeEntry{"": {mode: fs.ModeDir | 0o700}}, verified: map[string]bool{}, cache: hashCacheFor(s.dir)}
 }
 
 // add reads src, a directory, into the checkpoint at rel. Every file's bytes
@@ -320,7 +340,7 @@ func (c *storeCapture) addTree(rel, src string, skip func(name string) bool, lin
 			c.entries[key] = &storeEntry{mode: fs.ModeSymlink | 0o777, ids: []string{gitObjectID("blob", []byte(target))}, link: target}
 			read = append(read, readFile{key: key})
 		case mode.IsRegular():
-			ids, err := fileIDs(dir, name, buf)
+			ids, err := fileIDs(dir, name, buf, c.cache)
 			if err != nil {
 				return false, err
 			}
@@ -572,12 +592,26 @@ func openSnapshotFileAt(root *os.File, rel string) (*os.File, fs.FileInfo, error
 // fileIDs is the blob ids the file at p is stored as: one blob, or one per
 // storeBlock when it is larger than storeBlockMin. It reads the file once, a
 // block at a time, into buf.
-func fileIDs(dir *os.File, name string, buf []byte) ([]string, error) {
+func fileIDs(dir *os.File, name string, buf []byte, cache *hashCache) ([]string, error) {
 	f, fi, err := openSnapshotFileAt(dir, name)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	path := filepath.Join(dir.Name(), name)
+	if ids, ok := cache.get(path, fi); ok {
+		return ids, nil
+	}
+	start := time.Now()
+	ids, err := hashFile(f, fi, buf)
+	if err == nil {
+		cache.put(path, fi, start, ids)
+	}
+	return ids, err
+}
+
+// hashFile is fileIDs of the open file f, read whole.
+func hashFile(f *os.File, fi fs.FileInfo, buf []byte) ([]string, error) {
 	if fi.Size() <= storeBlockMin {
 		body, err := io.ReadAll(io.LimitReader(f, storeBlockMin+1))
 		if err != nil {
@@ -779,6 +813,7 @@ func (c *storeCapture) commit(adapters map[string]json.RawMessage) (string, erro
 		return "", err
 	}
 	c.s.consolidate()
+	c.s.trustPacks()
 	return pl.tree, nil
 }
 
@@ -1014,7 +1049,7 @@ func (r *objectReader) close() {
 	_ = r.cmd.Wait()
 }
 
-// get is object id, which must be of kind.
+// get is object id, which must be of kind ("" for any).
 func (r *objectReader) get(id, kind string) ([]byte, error) {
 	if _, err := fmt.Fprintln(r.in, id); err != nil {
 		return nil, err
@@ -1042,11 +1077,11 @@ func (r *objectReader) get(id, kind string) ([]byte, error) {
 	if gitObjectID(f[1], body) != id {
 		return nil, fmt.Errorf("%w: snapshot store object %s is damaged", ErrUnavailable, id)
 	}
-	if f[1] != kind {
+	if kind != "" && f[1] != kind {
 		return nil, fmt.Errorf("%w: snapshot store object %s is a %s, not a %s", ErrUnavailable, id, f[1], kind)
 	}
 	r.s.mu.Lock()
-	r.s.verified[id] = kind
+	r.s.verified[id] = f[1]
 	r.s.mu.Unlock()
 	return body, nil
 }
