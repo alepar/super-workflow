@@ -480,8 +480,13 @@ Such a unit's offer is one command, alone on its line:
 
 ```
 start a codex child for <name> by running this command, as printed; it starts the child as a headless codex process and returns at once (do not wait for the child, keep running next):
-cd <workspace> && workflow spawn <run> --claim <token> --state-dir <abs>
+workflow spawn <run> --claim <token> --state-dir <abs>
 ```
+
+Run it exactly as printed and alone: not after a `cd`, in a pipe or with
+other arguments. A harness rule that lets it run outside your sandbox
+matches that one command. Spawn needs no `cd`: it starts the child in the
+run's recorded workspace from any directory.
 
 `workflow spawn` starts the child harness's CLI (`codex exec`, `claude -p`)
 with the unit's brief on stdin, in its own process session, and prints
@@ -508,7 +513,10 @@ never fall back to your harness; each attempt fails with class `unavailable`,
 naming why and the fix. `workflow setup-codex-rules` prints the one rule;
 `workflow setup-codex-rules --write` writes it to
 `$CODEX_HOME/rules/super-workflow.rules` (a person's confirmation: it lets Codex
-run that command outside its sandbox). `spawn` itself refuses to start a child
+run that command outside its sandbox). The check asks Codex about the spawn
+command exactly as next prints it. A spawn that still finds itself sandboxed
+after the check passed was most likely run chained or altered, and its refusal
+says so. `spawn` itself refuses to start a child
 from inside a per-command sandbox.
 
 A headless child's process is watched: when it exits without `done` or

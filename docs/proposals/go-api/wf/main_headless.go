@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
-	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // defineHeadlessFlags are run's flags for its cross-harness children,
@@ -103,8 +102,9 @@ func runCheck(argv, env []string) ([]byte, int) {
 // coordinator of harness coord (EngineOptions.HeadlessCheck), through each
 // CLI's public surface only: its binary on PATH, its --version, its login
 // status, and, for a Codex coordinator, `codex execpolicy check` that the
-// spawn verb's command runs outside Codex's sandbox.
-func (c *cli) headlessCheck(child, coord string, cfg *HeadlessConfig) HarnessCheckedData {
+// spawn verb's command, spawn as next prints it, runs outside Codex's
+// sandbox.
+func (c *cli) headlessCheck(child, coord string, cfg *HeadlessConfig, spawn string) HarnessCheckedData {
 	d := HarnessCheckedData{Harness: child, Coordinator: coord}
 	hl := harness.HeadlessFor(child)
 	if hl == nil {
@@ -125,7 +125,7 @@ func (c *cli) headlessCheck(child, coord string, cfg *HeadlessConfig) HarnessChe
 	if custom {
 		// A launch of the user's own (a wrapper, a container) takes no
 		// --version or login check of the harness's: its program exists.
-		if why, fix := c.codexRuleIfCoordinator(coord); why != "" {
+		if why, fix := c.codexRuleIfCoordinator(coord, spawn); why != "" {
 			d.Why, d.Fix = why, fix
 			return d
 		}
@@ -141,7 +141,7 @@ func (c *cli) headlessCheck(child, coord string, cfg *HeadlessConfig) HarnessChe
 		d.Why, d.Fix = fmt.Sprintf("%s is not logged in (%s exited %d)", child, strings.Join(login, " "), code), fmt.Sprintf("log in to %s yourself (its own login command), or pass run --family-home %s=<its login home>", child, child)
 		return d
 	}
-	if why, fix := c.codexRuleIfCoordinator(coord); why != "" {
+	if why, fix := c.codexRuleIfCoordinator(coord, spawn); why != "" {
 		d.Why, d.Fix = why, fix
 		return d
 	}
@@ -151,11 +151,11 @@ func (c *cli) headlessCheck(child, coord string, cfg *HeadlessConfig) HarnessChe
 
 // codexRuleIfCoordinator is codexRuleCheck for a Codex coordinator, whose
 // sandbox would confine the launch; "" for any other.
-func (c *cli) codexRuleIfCoordinator(coord string) (why, fix string) {
+func (c *cli) codexRuleIfCoordinator(coord, spawn string) (why, fix string) {
 	if normalizeHarness(coord) != "codex" {
 		return "", ""
 	}
-	return c.codexRuleCheck()
+	return c.codexRuleCheck(spawn)
 }
 
 // spawnPrefix is the spawn verb's command as next prints it, up to and
@@ -169,17 +169,9 @@ func (c *cli) spawnPrefix() []string {
 	if c.cfg.named() {
 		line = wfLine(bin, "S", "R", "spawn")
 	}
-	var words []string
-	for line != "" {
-		w := firstShellWord(line)
-		if w == "" {
-			break
-		}
-		words = append(words, w)
-		if w == "spawn" {
-			return words
-		}
-		line = strings.TrimLeft(line[len(sink.Quote(w)):], " ")
+	words := shellWords(line)
+	if i := slices.Index(words, "spawn"); i >= 0 {
+		return words[:i+1]
 	}
 	return nil
 }
@@ -223,10 +215,13 @@ func codexRule(prefix []string) string {
 		"prefix_rule(pattern = " + string(b) + ", decision = \"allow\", justification = \"workflow engine child dispatch\")\n"
 }
 
-// codexRuleCheck asks Codex whether the spawn verb's command is allowed
-// outside its sandbox by the rules in its home and the workspace; why and
-// fix are empty when it is.
-func (c *cli) codexRuleCheck() (why, fix string) {
+// codexRuleCheck asks Codex whether spawn, the spawn verb's command as next
+// prints it, is allowed outside its sandbox by the rules in its home and the
+// workspace: Codex matches its rules against the argv of each command a
+// shell line runs, so the check takes the printed line's words as they are,
+// and a line that ran another command first would fail it. why and fix are
+// empty when it is allowed.
+func (c *cli) codexRuleCheck(spawn string) (why, fix string) {
 	prefix := c.spawnPrefix()
 	if len(prefix) == 0 {
 		return "", ""
@@ -254,8 +249,7 @@ func (c *cli) codexRuleCheck() (why, fix string) {
 	for _, f := range files {
 		argv = append(argv, "--rules", f)
 	}
-	argv = append(argv, prefix...)
-	argv = append(argv, "R", "--claim", "C")
+	argv = append(argv, shellWords(spawn)...)
 	out, code := runCheck(argv, os.Environ())
 	var res struct {
 		Decision string `json:"decision"`

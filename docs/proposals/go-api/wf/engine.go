@@ -92,7 +92,9 @@ type EngineOptions struct {
 	// HeadlessCheck is the preflight of a child harness for a coordinator
 	// harness, run once per segment at its binding (harness_checked); nil
 	// checks nothing. The CLI's checks its PATH, login and launch route.
-	HeadlessCheck func(child, coordinator string, cfg *HeadlessConfig) HarnessCheckedData
+	// spawn is the spawn verb's command exactly as next prints it, its claim
+	// the slot <claim>.
+	HeadlessCheck func(child, coordinator string, cfg *HeadlessConfig, spawn string) HarnessCheckedData
 	// HeadlessProcess starts and checks headless children; nil is the host's.
 	HeadlessProcess HeadlessProcess
 	// BoundaryModelMap is the --model-map a resume, rewind or fork journals

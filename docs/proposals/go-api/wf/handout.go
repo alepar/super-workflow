@@ -694,7 +694,16 @@ func (c *cycle) spawnCommand(claim string, d DispatchHints) string {
 	if d.Family == "" {
 		return ""
 	}
-	return c.verbLine("spawn", "--claim", claim)
+	return c.spawnLine(claim)
+}
+
+// spawnLine is the spawn verb's command for claim, one bare command: a
+// harness rule that lets it run outside the coordinator's sandbox matches a
+// single command's argv, which a `cd <ws> &&` chain would break. Spawn
+// needs no directory of the caller's: the run records its workspace, and the
+// child starts there. The preflight checks this same form.
+func (c *cycle) spawnLine(claim string) string {
+	return c.e.opts.VerbLine(c.run, "spawn", "--claim", claim)
 }
 
 // childDiesWithCoordinator: u's child runs inside its coordinator's process

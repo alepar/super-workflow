@@ -38,7 +38,7 @@ func headlessRun(t *testing.T, crash bool) *drv {
 	return newDrv(t, crash, crHeadlessDef(), nil, func(o *wf.EngineOptions) {
 		o.StateRoot = state
 		o.HeadlessProcess = liveProc{&starts}
-		o.HeadlessCheck = func(child, coord string, _ *wf.HeadlessConfig) wf.HarnessCheckedData {
+		o.HeadlessCheck = func(child, coord string, _ *wf.HeadlessConfig, _ string) wf.HarnessCheckedData {
 			return wf.HarnessCheckedData{Available: true, Version: child + " 1.0"}
 		}
 	})

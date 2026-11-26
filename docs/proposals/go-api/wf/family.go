@@ -270,7 +270,7 @@ func (c *cycle) checkChildHarnesses(coord string) error {
 	targets := childTargets(c.st.def, coord, c.headless())
 	names := slices.Sorted(maps.Keys(targets))
 	for _, t := range names {
-		d := check(t, coord, c.headless())
+		d := check(t, coord, c.headless(), c.spawnLine("<claim>"))
 		d.Harness, d.Coordinator = t, coord
 		if err := c.emitAs("", "", 0, JournalHarnessChecked, 0, d); err != nil {
 			return err

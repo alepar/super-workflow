@@ -139,8 +139,13 @@ func (e *Engine) headlessProcess() HeadlessProcess {
 }
 
 // spawnSandboxFix is what a coordinator inside a per-command sandbox does
-// for the spawn verb to start a child outside it.
-func spawnSandboxFix(coord string) string {
+// for the spawn verb to start a child outside it. ruled: this segment's
+// preflight found a rule that lets the printed command run outside the
+// sandbox, so the command was most likely not run as printed.
+func spawnSandboxFix(coord string, ruled bool) string {
+	if normalizeHarness(coord) == "codex" && ruled {
+		return "a Codex rule lets the spawn command run outside the sandbox only as next printed it (the run's preflight checked that form), so this one was most likely run chained or altered (a cd or another command before it, a pipe, changed arguments): run the printed spawn command again exactly as printed, alone"
+	}
 	if normalizeHarness(coord) == "codex" {
 		return "install the Codex rule that lets the spawn verb run outside the sandbox (run the setup-codex-rules verb and follow it), then run the printed spawn command again as printed"
 	}
@@ -183,7 +188,7 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 		}
 		coord := c.segmentHarness(len(c.st.segments) - 1)
 		if sb := p.Sandboxed(); sb != "" {
-			return fmt.Errorf("%w: spawn: this command runs inside a per-command sandbox (pid 1 %s), where a %s child would be confined and hang; %s", ErrRejected, sb, u.ChildHarness, spawnSandboxFix(coord))
+			return fmt.Errorf("%w: spawn: this command runs inside a per-command sandbox (pid 1 %s), where a %s child would be confined and hang; %s", ErrRejected, sb, u.ChildHarness, spawnSandboxFix(coord, c.st.harnessChecks[u.ChildHarness].Available))
 		}
 		target := u.ChildHarness
 		hl := harness.HeadlessFor(target)
@@ -299,32 +304,53 @@ func briefBinary(brief string) string {
 }
 
 // firstShellWord is the first word of a POSIX shell line in the forms
-// sink.Quote writes: bare characters, single-quoted runs and backslash
-// escapes, up to the first unquoted blank.
+// sink.Quote writes, "" when it has none.
 func firstShellWord(line string) string {
+	if w := shellWords(line); len(w) > 0 {
+		return w[0]
+	}
+	return ""
+}
+
+// shellWords splits a POSIX shell line in the forms sink.Quote writes: bare
+// characters, single-quoted runs and backslash escapes, separated by
+// unquoted blanks. An operator (&&, |, ;) stays a word of its own when
+// blanks surround it, as the engine prints them. An unterminated quote ends
+// the words before it.
+func shellWords(line string) []string {
+	var words []string
 	var b strings.Builder
-	line = strings.TrimLeft(line, " \t")
+	in := false
 	for i := 0; i < len(line); i++ {
 		switch ch := line[i]; ch {
 		case ' ', '\t':
-			return b.String()
+			if in {
+				words, in = append(words, b.String()), false
+				b.Reset()
+			}
 		case '\'':
 			j := strings.IndexByte(line[i+1:], '\'')
 			if j < 0 {
-				return ""
+				return words
 			}
 			b.WriteString(line[i+1 : i+1+j])
 			i += j + 1
+			in = true
 		case '\\':
 			if i+1 < len(line) {
 				i++
 				b.WriteByte(line[i])
 			}
+			in = true
 		default:
 			b.WriteByte(ch)
+			in = true
 		}
 	}
-	return b.String()
+	if in {
+		words = append(words, b.String())
+	}
+	return words
 }
 
 // envValue is the value of name in environ, "" when unset.

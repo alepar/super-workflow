@@ -74,12 +74,7 @@ func fakeHeadlessMain() int {
 		return 0
 	}
 	if len(args) > 2 && args[0] == "execpolicy" && args[1] == "check" {
-		if os.Getenv("WF_TEST_FAKE_RULE") == "allow" {
-			fmt.Println(`{"decision":"allow"}`)
-		} else {
-			fmt.Println(`{"matchedRules":[]}`)
-		}
-		return 0
+		return fakeExecpolicyCheck(args[2:], dir)
 	}
 	rec, _ := json.Marshal(map[string]any{"argv": args, "env": os.Environ(), "cwd": must2(os.Getwd())})
 	_ = os.WriteFile(filepath.Join(dir, name+".json"), rec, 0o600)
@@ -152,6 +147,34 @@ func fakeHeadlessMain() int {
 
 func must2(s string, _ error) string { return s }
 
+// fakeExecpolicyCheck is `codex execpolicy check --rules F... CMD...` as
+// Codex decides it for one command: allow when a prefix_rule pattern of
+// plain words in one of the files is a prefix of CMD. It records CMD, the
+// argv the check was asked about, in execpolicy.json.
+func fakeExecpolicyCheck(args []string, dir string) int {
+	var patterns [][]string
+	for len(args) > 1 && args[0] == "--rules" {
+		b, _ := os.ReadFile(args[1])
+		for _, m := range regexp.MustCompile(`prefix_rule\(pattern = (\[[^\]]*\])`).FindAllStringSubmatch(string(b), -1) {
+			var p []string
+			if json.Unmarshal([]byte(m[1]), &p) == nil {
+				patterns = append(patterns, p)
+			}
+		}
+		args = args[2:]
+	}
+	rec, _ := json.Marshal(args)
+	_ = os.WriteFile(filepath.Join(dir, "execpolicy.json"), rec, 0o600)
+	for _, p := range patterns {
+		if len(p) <= len(args) && slices.Equal(p, args[:len(p)]) {
+			fmt.Println(`{"decision":"allow"}`)
+			return 0
+		}
+	}
+	fmt.Println(`{"matchedRules":[]}`)
+	return 0
+}
+
 // headlessE2E drives the CLI as a coordinator of one harness whose unit runs
 // on the other, through fake codex and claude CLIs on PATH.
 type headlessE2E struct {
@@ -204,6 +227,25 @@ func (e *headlessE2E) call(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
 	code := wf.CLIWithEnv(e.cfg, append(args, "--state-dir", e.state), &out, &errb, func(k string) string { return e.coord[k] })
 	return code, out.String(), errb.String()
+}
+
+// mustRaw runs the CLI with args exactly as given, adding no --state-dir.
+func (e *headlessE2E) mustRaw(args ...string) string {
+	e.t.Helper()
+	var out, errb bytes.Buffer
+	if code := wf.CLIWithEnv(e.cfg, args, &out, &errb, func(k string) string { return e.coord[k] }); code != 0 {
+		e.t.Fatalf("%v exited %d:\n%s%s", args, code, out.String(), errb.String())
+	}
+	return out.String()
+}
+
+// setupCodexRule writes the Codex rule into the coordinator's Codex home
+// with the product's own setup-codex-rules --write.
+func (e *headlessE2E) setupCodexRule() {
+	e.t.Helper()
+	if out := e.mustRaw("setup-codex-rules", "--write"); !strings.Contains(out, "wrote the rule to "+filepath.Join(e.coord["CODEX_HOME"], "rules", "super-workflow.rules")) {
+		e.t.Fatalf("setup-codex-rules: %s", out)
+	}
 }
 
 func (e *headlessE2E) must(args ...string) string {
@@ -266,7 +308,23 @@ func (e *headlessE2E) fake(name string) (argv, env []string) {
 	return rec.Argv, rec.Env
 }
 
-var headlessSpawnLine = regexp.MustCompile(`(?m)^cd \S+ && \S+ spawn r1 --claim ([0-9a-f]+) --state-dir \S+$`)
+// fakeCwd is the directory the fake CLI named name started in as a child.
+func (e *headlessE2E) fakeCwd(name string) string {
+	e.t.Helper()
+	b, err := os.ReadFile(filepath.Join(e.fakes, name+".json"))
+	if err != nil {
+		e.t.Fatalf("the fake %s was never started as a child: %v", name, err)
+	}
+	var rec struct{ Cwd string }
+	if err := json.Unmarshal(b, &rec); err != nil {
+		e.t.Fatal(err)
+	}
+	return rec.Cwd
+}
+
+// headlessSpawnLine is the spawn offer: one bare command, with no
+// `cd <ws> &&` before it.
+var headlessSpawnLine = regexp.MustCompile(`(?m)^(\S+ spawn r1 --claim ([0-9a-f]+) --state-dir \S+)$`)
 
 // offer runs next and returns the spawn command's claim.
 func (e *headlessE2E) offer(child string) (string, string) {
@@ -282,7 +340,7 @@ func (e *headlessE2E) offer(child string) (string, string) {
 	if m == nil {
 		e.t.Fatalf("no spawn command alone on its line:\n%s", out)
 	}
-	return m[1], out
+	return m[2], m[1]
 }
 
 // killStarted kills the process group of every headless child a journal
@@ -351,21 +409,32 @@ func TestHeadlessPrimitiveClaudeToCodex(t *testing.T) {
 // whose launch needs the Codex rule (the fake execpolicy allows it here).
 func TestHeadlessPrimitiveCodexToClaude(t *testing.T) {
 	e := newHeadlessE2E(t, "codex")
-	t.Setenv("WF_TEST_FAKE_RULE", "allow")
-	if err := os.MkdirAll(filepath.Join(e.coord["CODEX_HOME"], "rules"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(e.coord["CODEX_HOME"], "rules", "super-workflow.rules"), []byte("# fake\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	e.setupCodexRule()
 	e.must("run", "family-claude", "--run-id", "r1", "--workspace", e.ws)
-	claim, _ := e.offer("claude")
-	e.must("spawn", "r1", "--claim", claim)
+	claim, line := e.offer("claude")
+	// The preflight asked Codex about the command exactly as next printed
+	// it, with the claim still a slot: a form the rule does not match
+	// would have failed it.
+	var checked []string
+	if b, err := os.ReadFile(filepath.Join(e.fakes, "execpolicy.json")); err != nil || json.Unmarshal(b, &checked) != nil {
+		t.Fatalf("the preflight never ran codex execpolicy check: %v", err)
+	}
+	if want := strings.Fields(strings.Replace(line, claim, "<claim>", 1)); !slices.Equal(checked, want) {
+		t.Errorf("the preflight checked %q, not the printed command %q", checked, want)
+	}
+	// Run as printed from another directory: the child still starts in the
+	// run's recorded workspace.
+	words := strings.Fields(line)
+	t.Chdir(t.TempDir())
+	e.mustRaw(words[1:]...)
 	j := e.waitJournal(`"run_ended"`)
 	if !strings.Contains(j, `"Outcome":"success"`) {
 		t.Fatalf("the run did not end in success:\n%s", j)
 	}
 	argv, env := e.fake("claude")
+	if cwd := e.fakeCwd("claude"); cwd != e.ws {
+		t.Errorf("the child started in %s, not the run's workspace %s", cwd, e.ws)
+	}
 	got := strings.Join(argv, " ")
 	for _, want := range []string{"-p", "--model fable", "--effort high", "--session-id ", "--permission-mode dontAsk", "--add-dir " + e.state, "Write(/" + e.state + "/**)"} {
 		if !strings.Contains(got, want) {
@@ -635,8 +704,9 @@ func TestFamilyNamingTheCoordinatorKeepsItsTier(t *testing.T) {
 // fakeProc is a HeadlessProcess whose child runs until the test says it
 // exited, and which records kills.
 type fakeProc struct {
-	live  bool
-	kills int
+	live    bool
+	kills   int
+	sandbox string // Sandboxed's answer: pid 1's name inside a per-command sandbox
 }
 
 func (p *fakeProc) Start(_, _ []string, _, _, _, _ string) (int, uint64, error) {
@@ -648,7 +718,48 @@ func (p *fakeProc) Kill(int, uint64) error {
 	p.kills++
 	return nil
 }
-func (p *fakeProc) Sandboxed() string { return "" }
+func (p *fakeProc) Sandboxed() string { return p.sandbox }
+
+// A spawn that finds itself inside Codex's sandbox: when the segment's
+// preflight found a rule for the printed command, the refusal says the
+// command was most likely run chained or altered, not to install the rule
+// again; with no rule checked (no preflight) it says to install it.
+func TestHeadlessSpawnSandboxedRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		ruled      bool
+		want, lack string
+	}{
+		{false, "install the Codex rule", "chained"},
+		{true, "most likely run chained or altered", "install the Codex rule"},
+	} {
+		p := &fakeProc{sandbox: "codex"}
+		d := clFamilyDef("family-claude", wf.FamilyNamed("claude"), wf.TierTop)
+		opts := wf.EngineOptions{Defs: []*wf.Def{d}, RunID: "r1", StateRoot: t.TempDir(), HeadlessProcess: p, Harness: "codex"}
+		if tc.ruled {
+			opts.HeadlessCheck = func(_, _ string, _ *wf.HeadlessConfig, _ string) wf.HarnessCheckedData {
+				return wf.HarnessCheckedData{Available: true}
+			}
+		}
+		e := wf.NewEngine(wf.MemJournal(), wf.NewAdapters(), opts).(*wf.Engine)
+		id, err := e.Run(d, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		co := wf.Coordinator{Harness: "codex", Session: "s1"}
+		ins, err := e.HandOutAs(id, 1, co)
+		if err != nil || len(ins) != 1 || ins[0].Spawn == "" {
+			t.Fatalf("ruled=%v: hand-out: %v %+v", tc.ruled, err, ins)
+		}
+		claim := strings.Fields(ins[0].Spawn[strings.Index(ins[0].Spawn, "--claim ")+8:])[0]
+		_, err = e.Spawn(id, claim, co, nil)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.lack) {
+			t.Errorf("ruled=%v: refusal %v, want %q and not %q", tc.ruled, err, tc.want, tc.lack)
+		}
+		if p.live {
+			t.Errorf("ruled=%v: a sandboxed spawn started a child", tc.ruled)
+		}
+	}
+}
 
 // A headless child that is still starting is not passed over, however long
 // the unstarted grace; one that runs past the fetch bound without fetching
@@ -660,7 +771,10 @@ func TestHeadlessFetchBoundAndNoReofferWhileStarting(t *testing.T) {
 	e := wf.NewEngine(wf.MemJournal(), wf.NewAdapters(), wf.EngineOptions{
 		Defs: []*wf.Def{d}, RunID: "r1", Clock: func() time.Time { return now }, StateRoot: t.TempDir(),
 		HeadlessProcess: p, Harness: "claude",
-		HeadlessCheck: func(string, string, *wf.HeadlessConfig) wf.HarnessCheckedData {
+		HeadlessCheck: func(_, _ string, _ *wf.HeadlessConfig, spawn string) wf.HarnessCheckedData {
+			if !strings.Contains(spawn, " spawn ") || !strings.Contains(spawn, "--claim <claim>") || strings.Contains(spawn, "&&") {
+				t.Errorf("the preflight was not given the spawn command as next prints it: %q", spawn)
+			}
 			return wf.HarnessCheckedData{Available: true}
 		},
 	}).(*wf.Engine)

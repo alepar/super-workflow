@@ -4,6 +4,20 @@
 
 ### What changed
 
+- **A Codex coordinator's spawn offer matches its rule (sw-7mam).** `next`
+  printed a cross-harness unit's offer as `cd <ws> && <wf> spawn ...`. Codex
+  splits that chain into two commands, and no rule matches `cd`, so the
+  spawn verb ran sandboxed even with the rule installed and refused to
+  start the child. The offer is now one bare command,
+  `<wf> spawn <run> --claim <token> --state-dir <dir>`, for every
+  coordinator harness. Spawn needs no `cd`: it starts the child in the run's
+  recorded workspace from any directory. The preflight's `codex execpolicy check`
+  asks about that exact printed form (`EngineOptions.HeadlessCheck` takes
+  it as a new `spawn` argument), so it cannot pass while the real command
+  is refused. A spawn that finds itself sandboxed after the check passed
+  now says the command was most likely run chained or altered, and no
+  longer tells the person to install the rule again. Other Codex commands
+  keep their `cd` prefix.
 - **Every run records its build (sw-wxp8).** `run_started` gains a `Build`
   stamp: the engine and workflow modules (path, version, any replacement,
   revision, modified flag), the Go toolchain, GOOS/GOARCH and
