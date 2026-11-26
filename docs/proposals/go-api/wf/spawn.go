@@ -198,7 +198,7 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 			return fmt.Errorf("%w: spawn: claim %s is not unit %s's latest offer: run next and use the command it prints", ErrRejected, claim, u.Name)
 		}
 		p := e.headlessProcess()
-		if hs := u.Headless; hs != nil && hs.Claim == claim && p.State(*hs) != HeadlessExited {
+		if hs := u.Headless; hs != nil && hs.Claim == claim && c.headlessLive(u) {
 			return fmt.Errorf("%w: spawn: unit %s's child is already running (pid %d): keep running next", ErrRejected, u.Name, hs.Pid)
 		}
 		coord := c.segmentHarness(len(c.st.segments) - 1)

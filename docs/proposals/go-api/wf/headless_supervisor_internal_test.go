@@ -142,7 +142,7 @@ func TestHeadlessSupervisorExitAndStartFailure(t *testing.T) {
 	base := filepath.Join(dir, "wf-dead")
 	_ = os.WriteFile(base+".brief", nil, 0o600)
 	_, _, err := (osProcess{}).Start([]string{filepath.Join(dir, "no-such-cli")}, os.Environ(), dir, base+".brief", base+".stdout", base+".stderr", base+".status")
-	if err == nil || !strings.Contains(err.Error(), "start "+filepath.Join(dir, "no-such-cli")) {
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(dir, "no-such-cli")) {
 		t.Errorf("want the start failure named, got %v", err)
 	}
 }

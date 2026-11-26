@@ -90,7 +90,7 @@ func startSupervised(argv, env []string, dir, stdin, stdout, stderr, status stri
 		if st, err := readHeadlessStatus(status); err == nil {
 			switch {
 			case st.Err != "":
-				return 0, 0, fmt.Errorf("start %s: %s", argv[0], st.Err)
+				return 0, 0, errors.New(st.Err) // the caller names what it started
 			case st.Pid > 0:
 				return st.Pid, st.Start, nil
 			}

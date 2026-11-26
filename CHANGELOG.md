@@ -25,6 +25,15 @@
   `GIT_REPLACE_REF_BASE` and `GIT_IMPLICIT_WORK_TREE`, as the git adapter
   already does. `GIT_CONFIG_*`, identity, credential and transport
   variables still pass through.
+- **The first-fetch bound holds when a supervisor dies (sw-3rdo).** A
+  handed unit has no lease before its claim. So a child whose supervisor
+  was killed before the child fetched its prompt stayed unknown, and its
+  unit was never offered again. Past the first-fetch bound with no fetch
+  and no fresh heartbeat, that launch is now dead: the unit is offered
+  again under a fresh claim, and its spawn starts a new child. If the
+  orphaned process still runs and fetches first, it claims the unit under
+  its old claim, as any earlier offer's child may. The new child's fetch is
+  then refused, so the unit never has two children working on it.
 
 ### Upgrading
 

@@ -530,7 +530,9 @@ the child exits without `done` or `failed`, its unit's recovery offer
 (you cannot message a separate process): restart or give up. A stale
 heartbeat with no exit recorded (a suspended host, a killed supervisor) is
 not taken for an exit: the unit's lease decides. A child that never fetched
-its prompt is offered again, quoting the same stderr. A lost attempt's child,
+its prompt is offered again, quoting the same stderr. So is a child with no
+fetch past the first-fetch bound and no fresh heartbeat, whatever its
+supervisor's state: a unit has no lease before its claim. A lost attempt's child,
 and every child still running when the run ends, is stopped: the verb writes
 a stop request, and the supervisor sends the child's process group SIGTERM,
 then SIGKILL.

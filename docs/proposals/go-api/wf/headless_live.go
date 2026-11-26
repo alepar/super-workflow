@@ -25,12 +25,30 @@ func headlessOf(u *unit) *HeadlessStartedData {
 // headlessLive reports whether u's headless child for its latest offer may
 // still be running: running, or unknown (a stale supervisor heartbeat with
 // no exit), which is left to the unit's lease rather than taken for dead.
+// A handed unit has no lease before its claim, so for it the first-fetch
+// bound decides: past it with no fetch, an unknown launch is dead (its
+// supervisor was killed, the host went down) and its unit is offered again.
 func (c *cycle) headlessLive(u *unit) bool {
 	if c.headlessInert() {
 		return false
 	}
 	hs := headlessOf(u)
-	return hs != nil && c.e.headlessProcess().State(*hs) != HeadlessExited
+	if hs == nil {
+		return false
+	}
+	switch c.e.headlessProcess().State(*hs) {
+	case HeadlessExited:
+		return false
+	case HeadlessUnknown:
+		return !c.pastFetchBound(u)
+	}
+	return true
+}
+
+// pastFetchBound: u is handed, its headless child started, and the
+// first-fetch bound since that start has passed with no prompt fetch.
+func (c *cycle) pastFetchBound(u *unit) bool {
+	return u.State == UnitHanded && !u.HeadlessAt.IsZero() && !c.now().Before(u.HeadlessAt.Add(headlessFetchBound))
 }
 
 // errTailText is the last lines of a child's stderr as one quoted line, ""
@@ -60,7 +78,7 @@ func (c *cycle) loseGoneHeadless() error {
 		}
 		u := in.Unit
 		hs := headlessOf(u)
-		if hs != nil && u.State == UnitHanded && !u.HeadlessAt.IsZero() && !c.now().Before(u.HeadlessAt.Add(headlessFetchBound)) {
+		if hs != nil && c.pastFetchBound(u) {
 			// Running and never fetched within the bound: a hung launch.
 			// Stopped, its unit is re-offered (unstartedCause) quoting its
 			// stderr.
