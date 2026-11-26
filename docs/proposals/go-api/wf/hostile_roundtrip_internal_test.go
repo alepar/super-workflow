@@ -339,18 +339,28 @@ func TestHostileArtifactDir(t *testing.T) {
 }
 
 // Map child ids are "<parent>/<State>[<key>]": the key (model or compute
-// output) stays inside its brackets.
+// output) stays inside its brackets, escaped (idKey) so that no delimiter of
+// an id stands in it, and it reads back as the key. Distinct keys keep
+// distinct ids (sw-ivuk).
 func TestHostileMapChildID(t *testing.T) {
 	n := &node{name: "Fan"}
 	visit1 := &instance{ID: "", Visits: map[string]int{"Fan": 1}}
-	for _, in := range hostile.Corpus() {
+	seen := map[string]string{}
+	for _, in := range append(hostile.Corpus(), hostile.Input{Name: "spelled-id", Value: "c1]/Panel[s1"}, hostile.Input{Name: "escaped-spelling", Value: "c1%5D%2FPanel%5Bs1"}) {
 		t.Run(in.Name, func(t *testing.T) {
 			id := mapChildID(visit1, n, in.Value, 1)
-			key, ok := strings.CutPrefix(id, "Fan[")
-			key, ok2 := strings.CutSuffix(key, "]")
-			if !ok || !ok2 || key != in.Value {
-				t.Errorf("id %q does not carry key %q", id, in.Value)
+			esc, ok := strings.CutPrefix(id, "Fan[")
+			esc, ok2 := strings.CutSuffix(esc, "]")
+			if !ok || !ok2 || strings.ContainsAny(esc, "/[]") {
+				t.Fatalf("id %q does not hold its key inside one bracket pair", id)
 			}
+			if key, err := url.PathUnescape(esc); err != nil || key != in.Value {
+				t.Errorf("id %q reads back as %q (%v), want %q", id, key, err, in.Value)
+			}
+			if other, ok := seen[id]; ok {
+				t.Errorf("id %q also belongs to key %q", id, other)
+			}
+			seen[id] = in.Value
 		})
 	}
 }

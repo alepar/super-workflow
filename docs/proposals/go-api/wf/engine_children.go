@@ -60,8 +60,12 @@ func subChildID(parent *instance, n *node) string {
 //
 // gen is the key's generation within the arrival: 1 for its first child, 2
 // and on for a key a Requery Map re-admitted (readmits), named "[key]~gen".
+//
+// It is the only place a Map key enters an instance id, and the key enters
+// escaped (idKey), so two keys never share an id and no key spells a deeper
+// instance's id (sw-ivuk).
 func mapChildID(parent *instance, n *node, key string, gen int) string {
-	id := childPrefix(parent) + n.name + "[" + key + "]"
+	id := childPrefix(parent) + n.name + "[" + idKey(key) + "]"
 	if gen > 1 {
 		id += fmt.Sprintf("~%d", gen)
 	}
@@ -69,6 +73,28 @@ func mapChildID(parent *instance, n *node, key string, gen int) string {
 		id += fmt.Sprintf("#%d", v)
 	}
 	return id
+}
+
+// idKey is a Map item key as it stands between the brackets of an instance id:
+// each byte that delimits an id ('/' between instances, '[' and ']' around a
+// key) and the escape byte '%' itself is written %XX. Every other byte is
+// kept, so a key without those four bytes keeps the id it had before the
+// escape, and ids journaled the old way still resume, replay and fork. The
+// escape is injective, so distinct keys keep distinct ids.
+func idKey(key string) string {
+	if !strings.ContainsAny(key, "%/[]") {
+		return key
+	}
+	var b strings.Builder
+	for i := 0; i < len(key); i++ {
+		switch ch := key[i]; ch {
+		case '%', '/', '[', ']':
+			fmt.Fprintf(&b, "%%%02X", ch)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	return b.String()
 }
 
 func sourceKey(state string, entry int) string { return fmt.Sprintf("%s#%d", state, entry) }

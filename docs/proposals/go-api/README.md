@@ -154,6 +154,10 @@ entry, the first occurrence supplies that key's child input. Locks, dependencies
 and capacity affect when children start, and parallel completion order is not
 guaranteed. Joined results follow child spawn order. Use explicit unique IDs
 and look up results by `item.Key`; sort a report explicitly when order matters.
+A child's instance id is its parent's id, `/`, the state and the key in
+brackets (`Fan[a.go]`). In the id, each `/`, `[`, `]` and `%` of the key is
+written `%XX` (`Fan[src%2Fa.go]`), so any string is a safe key and two keys
+never share an id. `item.Key` and the joined result keep the key as given.
 The tour names its fourth type argument `TaskResult` to distinguish it from
 the third, `string` key. A compiler complaint about `comparable` often means
 the key and result types were swapped.

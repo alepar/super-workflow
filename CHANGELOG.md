@@ -47,6 +47,16 @@
   form with literal args. `LintExec` takes the names of the params a served
   entry supplies (its `Registration` `ParamSpecs`), since a definition may read
   params it never declares with `Param`.
+- **A Map key no longer collides with another instance's id (sw-ivuk).** A
+  Map child's id held its key as given, so the outer keys `c1` and
+  `c1]/Panel[s1` gave the second outer child and the first child's inner
+  `Panel` child the same id. `Engine.Next` then never returned and the
+  journal grew without bound. The key now enters the id escaped: each `/`,
+  `[`, `]` and `%` is written `%XX`, and every other byte is kept. The id
+  also feeds unit names and artifact directories, which change the same way
+  for those keys. Replay now refuses a second `child_spawned` for an id that
+  is already spawned, with `ErrCorruptJournal`, so a collision is an error,
+  not a hang.
 
 ### Upgrading
 
@@ -59,6 +69,12 @@
   (`d.LintExec(names...)`). Without them, a read of a param that only the
   entry supplies is reported as `exec-unbound`. The call without arguments
   still compiles.
+- **Map keys holding `/`, `[`, `]` or `%`** give their children new ids,
+  unit names and artifact directories. Any other key keeps the id it had.
+  A live run keeps the ids its journal recorded: children are matched to
+  their items by key, never by recomposing the id. A child the resumed run
+  spawns after the upgrade takes the escaped id. Code that parsed a key out of
+  an instance id or unit name should read `item.Key`, or unescape `%XX`.
 
 ## v0.3.0
 

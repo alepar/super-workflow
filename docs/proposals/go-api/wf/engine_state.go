@@ -711,6 +711,11 @@ func (st *runState) apply(r JournalRecord) error {
 		if child == nil {
 			return corrupt(r, "unknown child definition %q", d.Def)
 		}
+		if st.insts[d.ID] != nil {
+			// Two instances never share an id: a second spawn would replace
+			// the first in place (sw-ivuk).
+			return corrupt(r, "child %q is already spawned", d.ID)
+		}
 		ci := newInstance(d.ID, r.Instance, child)
 		ci.Spawner, ci.Entry, ci.Key = d.State, parent.Visits[d.State], d.Key
 		ci.Input = d.Input
