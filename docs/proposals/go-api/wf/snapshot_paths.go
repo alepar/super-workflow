@@ -67,12 +67,20 @@ func CheckJournalRelocation(records []JournalRecord, roots PathRoots) error {
 	// never applies it again; only an open intent is applied from its
 	// recorded args.
 	done := doneIntents(records)
+	// A chosen edge's Plan is bound only while its instance is in that
+	// transition: a later transition of the instance consumed it, so the
+	// fork never binds it again and its literal args are history, like a
+	// done intent's.
+	consumed := consumedPlans(records)
 	for _, rec := range records {
 		var data map[string]any
 		if err := json.Unmarshal(rec.Data, &data); err != nil {
 			return fmt.Errorf("journal %d %s: %w", rec.Seq, rec.Kind, err)
 		}
 		values := map[string]any{"Plan": data["Plan"]}
+		if consumed[rec.Seq] {
+			values["Plan"] = typedPaths(data["Plan"])
+		}
 		switch rec.Kind {
 		case JournalRunStarted:
 			params, _ := data["Params"].(map[string]any)
@@ -366,6 +374,29 @@ func doneIntents(records []JournalRecord) map[int64]bool {
 			if json.Unmarshal(r.Data, &d) == nil && d.Intent != 0 {
 				out[d.Intent] = true
 			}
+		}
+	}
+	return out
+}
+
+// consumedPlans are the seqs of records whose Plan a later transition of
+// the same instance consumed: the fold holds a chosen plan as the
+// instance's pending edge until its transition, and binds its effects only
+// from that pending edge.
+func consumedPlans(records []JournalRecord) map[int64]bool {
+	open := map[string][]int64{}
+	out := map[int64]bool{}
+	for _, r := range records {
+		if r.Kind == JournalTransition {
+			for _, seq := range open[r.Instance] {
+				out[seq] = true
+			}
+			delete(open, r.Instance)
+			continue
+		}
+		var d struct{ Plan *EdgePlan }
+		if json.Unmarshal(r.Data, &d) == nil && d.Plan != nil {
+			open[r.Instance] = append(open[r.Instance], r.Seq)
 		}
 	}
 	return out

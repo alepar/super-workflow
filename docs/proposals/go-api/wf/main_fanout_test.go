@@ -160,22 +160,23 @@ func fanoutWithAnUnrelocatableEvent(t *testing.T, states string, outIn ...func(w
 	}
 	d := wf.New("per-fork")
 	a := wf.NewAgent[pxA, string](d)
-	// An untyped absolute source path in an effect's args: a fork whose
-	// prefix holds it cannot be relocated.
-	setup := wf.NewCompute[pxSetup, string](d, func(wf.Ctx) (string, error) { return "prepared", nil })
+	// A command whose result names an untyped absolute source path as its
+	// full output: a fork whose prefix holds it cannot be relocated.
+	setup := wf.NewCommand[pxSetup](d, "true")
 	b := wf.NewAgent[pxB, string](d)
 	done := wf.NewTerminal[pxDone](d, wf.Success)
 	a.Spec(wf.PromptText("a"), wf.Retry[pxA](wf.Const(1), a.To(done, "stop")))
 	toSetup := a.To(setup, "a done")
 	a.Route(func(string, wf.Ctx) wf.Edge[pxA] { return toSetup }, toSetup)
-	toB := setup.To(b, "prepared").With(legacyEffect(filepath.Join(state, "worktrees", "legacy")))
-	setup.Route(func(string, wf.Ctx) wf.Edge[pxSetup] { return toB }, toB)
+	setup.RouteExit(setup.To(b, "prepared"), setup.To(done, "red"))
 	b.Spec(wf.PromptText("b"), wf.Retry[pxB](wf.Const(1), b.To(done, "stop")))
 	finish := b.To(done, "b done")
 	b.Route(func(string, wf.Ctx) wf.Edge[pxB] { return finish }, finish)
 	reg := wf.NewAdapters()
-	if err := reg.Register(&snapshotRuntime{}); err != nil {
-		t.Fatal(err)
+	for _, rt := range []wf.AdapterRuntime{&snapshotRuntime{}, &unrelocatableOutput{filepath.Join(state, "worktrees", "legacy")}} {
+		if err := reg.Register(rt); err != nil {
+			t.Fatal(err)
+		}
 	}
 	e := wf.NewEngine(wf.FileJournal(state), reg, wf.EngineOptions{Defs: []*wf.Def{d}, Workspace: ws, StateRoot: state, Snapshots: true, RunID: "perfork", RunDir: func(r wf.RunID) string { return filepath.Join(state, "runs", string(r)) }})
 	run, err := e.Run(d, nil, nil)
@@ -501,14 +502,13 @@ func revisitRun(t *testing.T, straddle bool) (*wf.Engine, wf.MainConfig, wf.RunI
 	}
 	// The first state declared starts the run.
 	d := wf.New("revisit")
-	path := func(wf.Ctx) (string, error) { return "prepared", nil }
-	var setup *wf.Compute[revSetup, string]
+	var setup *wf.Command[revSetup]
 	var a *wf.Agent[revA, string]
 	if straddle {
 		a = wf.NewAgent[revA, string](d)
-		setup = wf.NewCompute[revSetup, string](d, path)
+		setup = wf.NewCommand[revSetup](d, "true")
 	} else {
-		setup = wf.NewCompute[revSetup, string](d, path)
+		setup = wf.NewCommand[revSetup](d, "true")
 		a = wf.NewAgent[revA, string](d)
 	}
 	done := wf.NewTerminal[revDone](d, wf.Success)
@@ -520,11 +520,12 @@ func revisitRun(t *testing.T, straddle bool) (*wf.Engine, wf.MainConfig, wf.RunI
 		}
 		return fin
 	}, toSetup, fin)
-	back := setup.To(a, "prepared").With(legacyEffect(filepath.Join(state, "worktrees", "legacy")))
-	setup.Route(func(string, wf.Ctx) wf.Edge[revSetup] { return back }, back)
+	setup.RouteExit(setup.To(a, "prepared"), setup.To(done, "red"))
 	reg := wf.NewAdapters()
-	if err := reg.Register(&snapshotRuntime{}); err != nil {
-		t.Fatal(err)
+	for _, rt := range []wf.AdapterRuntime{&snapshotRuntime{}, &unrelocatableOutput{filepath.Join(state, "worktrees", "legacy")}} {
+		if err := reg.Register(rt); err != nil {
+			t.Fatal(err)
+		}
 	}
 	e := wf.NewEngine(wf.FileJournal(state), reg, wf.EngineOptions{Defs: []*wf.Def{d}, Workspace: ws, StateRoot: state, Snapshots: true, RunID: "revisit",
 		RunDir: func(r wf.RunID) string { return filepath.Join(state, "runs", string(r)) }}).(*wf.Engine)

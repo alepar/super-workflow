@@ -26,17 +26,19 @@ var (
 	promptPattern = regexp.MustCompile(`\{\{\s*([A-Za-z][A-Za-z0-9_.-]*)\s*\}\}`)
 )
 
-// scope resolves a placeholder name for one instance: run params, then the
-// top-level fields of the instance's input and its ancestors' inputs, then the
+// scope resolves a placeholder name for one instance. The engine's own names
+// come first and nothing shadows them: "assets", {artifact.<name>} and
+// "scratch" (see scratchDir). Then run params, then "records" (see
+// recordsDir), which no document field shadows, then the top-level fields of the instance's input and its ancestors' inputs, then the
 // scalar fields of accepted outputs, computed outputs and child results in
 // this instance and its ancestors (latest first), then the builtins "run",
 // "workspace" (the absolute workspace root), "harness" (the run's resolved
 // harness, unbound on a journal that recorded none), "resolvedModels" (the
 // journaled tier -> model map as JSON, empty when it resolves no model),
-// "records" (see recordsDir), "scratch" (see scratchDir), "blockedCause"
-// (see blockedCause) and "predecessor" (see predecessorName). The name "workdir" is reserved for the directory a
-// run's steps resolve against once a state has bound it: agents, commands and
-// workdir-relative reads use it, and unbound it is the workspace root.
+// "blockedCause" (see blockedCause) and "predecessor" (see predecessorName).
+// The name "workdir" is reserved for the directory a run's steps resolve
+// against once a state has bound it: agents, commands and workdir-relative
+// reads use it, and unbound it is the workspace root.
 type scope struct {
 	c  *cycle
 	in *instance
@@ -143,6 +145,14 @@ func (s scope) lookup(name string) (string, bool) {
 		v, err := s.c.paramValue(name)
 		return v, err == nil
 	}
+	if name == recordsName {
+		// {records} is never a document field's: a field that copied the
+		// root holds the root of the run that recorded it, which in a fork
+		// is its source's. A run param still binds it (the caller chose it,
+		// and a fork relocates params).
+		p, err := s.c.recordsDir()
+		return p, err == nil
+	}
 	if v, ok := s.lookupDocument(name); ok {
 		if resolved, err := s.c.resolvePathValues(v); err == nil {
 			return scalarDocValue(resolved)
@@ -167,9 +177,6 @@ func (s scope) lookup(name string) (string, bool) {
 		}
 		b, err := json.Marshal(m)
 		return string(b), err == nil
-	case recordsName:
-		p, err := s.c.recordsDir()
-		return p, err == nil
 	case blockedCauseName:
 		return s.in.blockedCause(), true
 	case predecessorName:

@@ -107,3 +107,33 @@ func TestCheckJournalRelocationReadsADoneIntentAsHistory(t *testing.T) {
 		t.Fatalf("settled intent refused: %v", err)
 	}
 }
+
+// A chosen edge's Plan whose instance has since transitioned is history: the
+// fork never binds it again, so a literal path its effect args spell under
+// the source state root (a records file the definition joined into a
+// PathText argument) does not refuse the fork. A Plan still pending is bound
+// from its record, so it still refuses.
+func TestCheckJournalRelocationReadsAConsumedPlanAsHistory(t *testing.T) {
+	roots := wf.PathRoots{Workspace: "/source/work", State: "/source/state"}
+	plan := `{"Plan":{"Steps":[{"From":"collect","To":"stop","Effects":[{"Kind":"external","Adapter":"shell","Op":"run",` +
+		`"Args":{"argv":["bash","-c","write","/source/state/runs/r/records/receipt.json"]},"BindingVersion":1,"Literal":true,` +
+		`"ArgTemplates":[{"Path":["argv","3"],"Spans":[{"Text":"/source/state/runs/r/records/receipt.json","Path":true}]}]}]}]}}`
+	accepted := wf.JournalRecord{Seq: 5, Kind: wf.JournalAccepted, Instance: "Gate#1", State: "collect", Data: json.RawMessage(plan)}
+	if err := wf.CheckJournalRelocation([]wf.JournalRecord{accepted}, roots); err == nil || !strings.Contains(err.Error(), "Plan.Steps[0].Effects[0]") {
+		t.Fatalf("pending plan naming the source root: %v, want a refusal", err)
+	}
+	other := wf.JournalRecord{Seq: 6, Kind: wf.JournalTransition, Instance: "Other#1", Data: json.RawMessage(`{"To":"next"}`)}
+	if err := wf.CheckJournalRelocation([]wf.JournalRecord{accepted, other}, roots); err == nil {
+		t.Fatal("another instance's transition consumed this plan")
+	}
+	moved := wf.JournalRecord{Seq: 7, Kind: wf.JournalTransition, Instance: "Gate#1", State: "collect", Data: json.RawMessage(`{"To":"stop"}`)}
+	if err := wf.CheckJournalRelocation([]wf.JournalRecord{accepted, other, moved}, roots); err != nil {
+		t.Fatalf("consumed plan refused: %v", err)
+	}
+	// A typed path in a consumed plan is still checked.
+	typed := wf.JournalRecord{Seq: 5, Kind: wf.JournalAccepted, Instance: "Gate#1", State: "collect",
+		Data: json.RawMessage(`{"Plan":{"Steps":[{"Effects":[{"Args":{"p":{"$wf.path":{"base":"external","path":"/source/state/x"}}}}]}]}}`)}
+	if err := wf.CheckJournalRelocation([]wf.JournalRecord{typed, moved}, roots); err == nil {
+		t.Fatal("mislabeled external path in a consumed plan passed")
+	}
+}

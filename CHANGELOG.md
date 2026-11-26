@@ -57,9 +57,21 @@
   for those keys. Replay now refuses a second `child_spawned` for an id that
   is already spawned, with `ErrCorruptJournal`, so a collision is an error,
   not a hang.
+- **A fork of a fork binds its own records root (sw-3b1q, sw-3nim).** No
+  input or output field shadows `{records}` any more; a run param still
+  binds it. A child input field named `records` that copied the root held
+  the recording run's path, so a fork cut inside that child bound its
+  source's records directory and the step was refused. The fork-time
+  relocation check also reads a chosen edge's plan as history once a later
+  transition of its instance consumed it, as it already did for a done
+  effect intent's args: a literal path in that plan's effect args no longer
+  refuses the fork.
 
 ### Upgrading
 
+- **`{records}` ignores document fields.** A definition that bound
+  `{records}` from an input or output field gets the run's records
+  directory instead. Pass a different root under another name.
 - **Older engines read stamped journals.** They decode `run_started`
   leniently and ignore `Build`: a v0.3.0 binary's `status` reads a journal
   this engine wrote.

@@ -1,6 +1,7 @@
 package wf_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,8 +9,6 @@ import (
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
-
-type legacySnapshotSetup struct{}
 
 func TestSnapshotForkRefusesUntypedSourcePathsBeforeWriting(t *testing.T) {
 	for _, root := range []string{"state", "workspace", "state-embedded", "workspace-embedded", "state-dot", "workspace-dot", "state-parent", "workspace-parent", "state-double", "workspace-double", "state-dot-embedded", "state-root", "workspace-root"} {
@@ -42,11 +41,8 @@ func TestSnapshotForkRefusesUntypedSourcePathsBeforeWriting(t *testing.T) {
 				path = "cat \"" + path + "\" | head"
 			}
 			d := wf.New("legacy-snapshot")
-			setup := wf.NewCompute[legacySnapshotSetup, string](d, func(wf.Ctx) (string, error) { return "prepared", nil })
 			a := wf.NewAgent[snapshotStart, string](d)
 			done := wf.NewTerminal[snapshotDone](d, wf.Success)
-			begin := setup.To(a, "prepared").With(legacyEffect(path))
-			setup.Route(func(string, wf.Ctx) wf.Edge[legacySnapshotSetup] { return begin }, begin)
 			a.Spec(wf.PromptText("work"), wf.Retry[snapshotStart](wf.Const(1), a.To(done, "stop")))
 			finish := a.To(done, "finished")
 			a.Route(func(string, wf.Ctx) wf.Edge[snapshotStart] { return finish }, finish)
@@ -56,7 +52,9 @@ func TestSnapshotForkRefusesUntypedSourcePathsBeforeWriting(t *testing.T) {
 				Defs: []*wf.Def{d}, Workspace: workspace, StateRoot: state, Snapshots: true,
 				RunDir: func(run wf.RunID) string { return filepath.Join(state, "runs", string(run)) },
 			}).(*wf.Engine)
-			run, err := e.Run(d, nil, nil)
+			// The run's options are engine-owned operational state a fork
+			// carries as recorded: an untyped source path there refuses it.
+			run, err := e.Run(d, nil, map[string]string{"tool": path})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,9 +86,19 @@ func TestSnapshotForkRefusesUntypedSourcePathsBeforeWriting(t *testing.T) {
 	}
 }
 
-// legacyEffect is an edge effect whose args name path untyped: an
-// engine-owned record the fork-time check still reads (a Compute's value is
-// history, an earlier revision).
-func legacyEffect(path string) wf.ExternalEffect {
-	return wf.ExternalEffect{Adapter: "world", Op: "read", Args: map[string]any{"path": path}, Key: wf.KeyOf("legacy")}
+// unrelocatableOutput is a command runtime whose result names path as its
+// full output: an engine-owned path the fork would read, outside the
+// engine's own effects directory, so the fork-time check refuses it (a
+// plan's effect args stop being read once the transition consumed it).
+type unrelocatableOutput struct{ path string }
+
+func (*unrelocatableOutput) Ops() []string { return []string{"shell.run"} }
+func (*unrelocatableOutput) Read(string, wf.ObservationDesc) (json.RawMessage, error) {
+	return nil, nil
+}
+func (u *unrelocatableOutput) Apply(string, wf.ExternalEffect) (json.RawMessage, error) {
+	return json.Marshal(wf.RunResult{Output: u.path})
+}
+func (*unrelocatableOutput) Check(string, wf.ExternalEffect) (wf.EffectStatus, error) {
+	return wf.EffectNotDone, nil
 }
