@@ -25,7 +25,7 @@ func (c *FuzzCoverage) edgeProblems() (missing, violations []string) {
 		label := fmt.Sprintf("%s (%q -> %s)", key, e.Label, e.To)
 		if reason, na := c.EdgeNotApplicable[key]; na {
 			if c.EdgesReached[key] > 0 {
-				violations = append(violations, fmt.Sprintf("%s: n/a by class (%s) but %d seeds traversed it", label, reason, c.EdgesReached[key]))
+				violations = append(violations, fmt.Sprintf("%s: n/a by class (%s) but %d seeds traversed it%s", label, reason, c.EdgesReached[key], c.byVariants(key)))
 			}
 			continue
 		}
@@ -33,7 +33,7 @@ func (c *FuzzCoverage) edgeProblems() (missing, violations []string) {
 		case exempt && strings.TrimSpace(reason) == "":
 			violations = append(violations, label+": unreachable by design needs a nonempty reason")
 		case exempt && c.EdgesReached[key] > 0:
-			violations = append(violations, fmt.Sprintf("%s: marked unreachable (%s) but %d seeds traversed it", label, reason, c.EdgesReached[key]))
+			violations = append(violations, fmt.Sprintf("%s: marked unreachable (%s) but %d seeds traversed it%s", label, reason, c.EdgesReached[key], c.byVariants(key)))
 		case !exempt && c.EdgesReached[key] == 0:
 			hint := `: no seed traversed this edge; add a scenario that reaches it or annotate the edge with .Unreachable("reason") explaining why it cannot occur`
 			if e.Class != "" {
@@ -88,6 +88,7 @@ func (c *FuzzCoverage) addEdges(r *FuzzResult) {
 				if known && edge.Label == step.Label && edge.To == step.To && !once[key] {
 					once[key] = true
 					c.EdgesReached[key]++
+					c.noteVariant(key)
 				}
 			}
 		}

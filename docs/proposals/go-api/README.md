@@ -271,6 +271,15 @@ compute or command. An absent observation declaration alone does not prove a
 Compute cannot fail: its closure may return an error or attempt an undeclared
 read. Keep reachable failure edges covered.
 
+An edge guarded by a run option (`Edge.When`) is taken under some options
+values only. Do not mark its untaken side unreachable. List the values in
+`CheckConfig.Variants` instead, for example
+`map[string]any{"audited": Opts{}, "skipped": Opts{Skip: true}}`. Check
+simulates each variant and judges coverage on their union. Each guard must
+hold under at least one variant, and a problem seen under one variant names
+it. Combinations you do not list, and options read in closures through
+`wf.OptionsOf`, are not covered.
+
 
 Go module `github.com/alepar/super-workflow/docs/proposals/go-api` (standard library only). It is the
 generic workflow engine: packages `wf`, `wftest`, `bd`, `fsx`, `gh`, `git`, `shell`, `examples` and the root

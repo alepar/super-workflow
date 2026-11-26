@@ -1,6 +1,7 @@
 package wf
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -185,4 +186,54 @@ func Policy(rules ...PolicyRule) AutonomyPolicy { return AutonomyPolicy{rules: r
 func (d *Def) SetPolicy(p AutonomyPolicy) *Def {
 	d.policy = p
 	return d
+}
+
+// UnheldGuards lists each edge guard in d's tree (Edge.When) that holds under
+// none of options, as "path -> to when pred" in declaration order. Each value
+// is a run options value for d, decoded as Run journals it, and evaluated with
+// the engine's own rule: every guard in the tree reads the root run's options.
+// A checker uses it to require that each guarded path is open under some
+// options value it simulates.
+func (d *Def) UnheldGuards(options ...any) ([]string, error) {
+	values := make([]any, len(options))
+	for i, o := range options {
+		if d.options == nil {
+			continue
+		}
+		raw, err := json.Marshal(o)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling options: %w", err)
+		}
+		v := reflect.New(d.options.typ)
+		if err := json.Unmarshal(raw, v.Interface()); err != nil {
+			return nil, fmt.Errorf("decoding options as %s: %w", d.options.typ, err)
+		}
+		values[i] = v.Elem().Interface()
+	}
+	var out []string
+	var walk func(DefView)
+	walk = func(v DefView) {
+		for _, s := range v.States {
+			for i, e := range s.node.edges {
+				if e.when == nil {
+					continue
+				}
+				held := false
+				for _, o := range values {
+					if predMatch(*e.when, o) {
+						held = true
+						break
+					}
+				}
+				if !held {
+					out = append(out, fmt.Sprintf("%s -> %s when %s", s.Path, s.Edges[i].To, e.when))
+				}
+			}
+		}
+		for _, c := range v.Children {
+			walk(c)
+		}
+	}
+	walk(Inspect(d))
+	return out, nil
 }

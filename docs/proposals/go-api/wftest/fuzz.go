@@ -137,6 +137,9 @@ type FuzzRefusal struct {
 // FuzzResult retains the actual journal and concrete actions, not just a seed
 // whose choices might change when a schema changes.
 type FuzzResult struct {
+	// Variant names the CheckConfig.Variants entry the run simulated; empty
+	// outside Check or without variants.
+	Variant string
 	// BudgetReason marks incomplete mixed exploration, never a successful end.
 	BudgetReason         string
 	Advisories           []string
@@ -173,6 +176,9 @@ type FuzzResult struct {
 
 func (r *FuzzResult) String() string {
 	var b strings.Builder
+	if r.Variant != "" {
+		fmt.Fprintln(&b, "variant: "+r.Variant)
+	}
 	if r.BudgetReason != "" {
 		fmt.Fprintln(&b, "not explored (budget): "+r.BudgetReason)
 	}

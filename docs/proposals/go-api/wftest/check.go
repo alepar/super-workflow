@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
@@ -31,6 +33,14 @@ type CheckConfig struct {
 	// and coordinated repair paths. Missing fixtures inherit the suite's progress
 	// corpus and artifacts; ordinary random failures and schema draws are disabled.
 	Scenarios map[string]FuzzConfig
+	// Variants names run options values, each a value of the definition's
+	// options struct. Check then calibrates and simulates once per variant,
+	// overriding the factory's options, and judges coverage once on the
+	// union: a state or edge any variant reaches is covered, and one marked
+	// unreachable that any variant reaches is a violation. Before simulating,
+	// every Edge.When guard must hold under at least one variant. Problems
+	// observed under a variant name it. Empty keeps the factory's options.
+	Variants map[string]any
 }
 
 // CheckReport retains every layer's diagnostics and reduced simulation
@@ -63,6 +73,9 @@ type CheckReport struct {
 	RepeatedFaultSeeds                   int
 	ScenarioSeeds                        int
 	UnreachedFaults                      []string
+	// Variants lists CheckConfig.Variants by name, in the order simulated.
+	Variants     []string
+	findingSites map[string]bool
 }
 
 func (r *CheckReport) String() string {
@@ -75,6 +88,9 @@ func (r *CheckReport) String() string {
 	}
 	if r.Coverage != nil {
 		fmt.Fprint(&b, r.Coverage)
+	}
+	if len(r.Variants) > 0 {
+		fmt.Fprintf(&b, "variants: %s\n", strings.Join(r.Variants, ", "))
 	}
 	fmt.Fprintf(&b, "advisories: %d\n", len(r.Advisories))
 	for _, advisory := range r.Advisories {
@@ -167,12 +183,110 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 		return r
 	}
 	calibration.Seeds, calibration.MaxSteps = cfg.Seeds, cfg.MaxSteps
-	r.Calibration = calibrate(factory, calibration)
-	r.addReal(r.Calibration.RealProblems...)
-	r.addCoverage(r.Calibration.CoverageProblems...)
-	r.Advisories = append(r.Advisories, r.Calibration.ContextUnknown...)
+	variants := []checkVariant{{factory: factory}}
+	if len(cfg.Variants) > 0 {
+		variants = variants[:0]
+		values := make([]any, 0, len(cfg.Variants))
+		for _, name := range slices.Sorted(maps.Keys(cfg.Variants)) {
+			value := cfg.Variants[name]
+			values = append(values, value)
+			variants = append(variants, checkVariant{name: name, factory: func() *Sim {
+				s := factory()
+				s.options = value
+				return s
+			}})
+			r.Variants = append(r.Variants, name)
+		}
+		unheld, err := d.UnheldGuards(values...)
+		if err != nil {
+			r.addReal("variants: " + err.Error())
+			return r
+		}
+		for _, guard := range unheld {
+			r.addReal("variants: guard holds under no variant: " + guard)
+		}
+		if len(unheld) != 0 {
+			return r
+		}
+	}
 	r.Coverage = NewFuzzCoverage(factory, cfg.Unreachable)
-	seen := map[string]bool{}
+	// One variant judges as it goes. Several defer calibration coverage and
+	// fault reach to the union: a gap is one no variant closed.
+	single := len(variants) == 1
+	var calibrations []*CalibrationReport
+	var unreached [][]string
+	for _, v := range variants {
+		r.Coverage.variant = v.name
+		report := calibrate(v.factory, calibration)
+		calibrations = append(calibrations, report)
+		if single {
+			for _, problem := range report.RealProblems {
+				r.addReal(v.tag(problem))
+			}
+			r.addCoverage(report.CoverageProblems...)
+			r.Advisories = append(r.Advisories, report.ContextUnknown...)
+		} else {
+			for _, problem := range report.RealProblems {
+				r.addRealOnce(v.tag(problem))
+			}
+			for _, advisory := range report.ContextUnknown {
+				if !slices.Contains(r.Advisories, advisory) {
+					r.Advisories = append(r.Advisories, advisory)
+				}
+			}
+		}
+		var missed []string
+		r.simulate(v, cfg, budget, d, func(description string) {
+			if single {
+				r.UnreachedFaults = append(r.UnreachedFaults, description)
+				r.addCoverage("fixture gap: fault not reached: " + description)
+			} else {
+				missed = append(missed, description)
+			}
+		})
+		unreached = append(unreached, missed)
+	}
+	r.Calibration = mergeCalibration(calibrations)
+	if !single {
+		r.addCoverage(r.Calibration.CoverageProblems...)
+		for _, description := range unreached[0] {
+			if all(unreached[1:], func(other []string) bool { return slices.Contains(other, description) }) {
+				r.UnreachedFaults = append(r.UnreachedFaults, description)
+				r.addCoverage("fixture gap: fault not reached: " + description)
+			}
+		}
+	}
+	missing, violations := r.Coverage.stateProblems()
+	r.addCoverage(missing...)
+	r.addReal(violations...)
+	missing, violations = r.Coverage.edgeProblems()
+	r.addCoverage(missing...)
+	r.addReal(violations...)
+	return r
+}
+
+// checkVariant is one named options value; the unnamed variant is a config
+// without Variants, whose factory supplies the options.
+type checkVariant struct {
+	name    string
+	factory func() *Sim
+}
+
+// tag names the variant on a problem; the unnamed variant adds nothing.
+func (v checkVariant) tag(problem string) string {
+	if v.name == "" {
+		return problem
+	}
+	return "variant " + v.name + ": " + problem
+}
+
+// simulate runs every simulation phase under one variant, folding results into
+// the shared coverage, and reports each fault this variant did not reach.
+func (r *CheckReport) simulate(v checkVariant, cfg CheckConfig, budget *checkRunBudget, d *wf.Def, unreached func(string)) {
+	factory := v.factory
+	if r.findingSites == nil {
+		r.findingSites = map[string]bool{}
+	}
 	record := func(result *FuzzResult) {
 		for _, advisory := range result.Advisories {
 			found := false
@@ -186,11 +300,14 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 				r.Advisories = append(r.Advisories, advisory)
 			}
 		}
+		result.Variant = v.name
 		r.Coverage.Add(result)
-		if result.Finding != nil && !seen[result.Finding.Site()] {
-			seen[result.Finding.Site()] = true
-			r.addReal(result.Finding.String())
-			r.Findings = append(r.Findings, result.minimize(factory, func() bool { return budget.take("minimize " + result.Finding.Site()) }))
+		if result.Finding != nil && !r.findingSites[result.Finding.Site()] {
+			r.findingSites[result.Finding.Site()] = true
+			r.addReal(v.tag(result.Finding.String()))
+			minimized := result.minimize(factory, func() bool { return budget.take("minimize " + result.Finding.Site()) })
+			minimized.Variant = v.name
+			r.Findings = append(r.Findings, minimized)
 		}
 	}
 	for seed := 0; seed < cfg.Seeds; seed++ {
@@ -304,17 +421,9 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 			}
 		}
 		if !reached && !budget.seen[label] {
-			r.UnreachedFaults = append(r.UnreachedFaults, description)
-			r.addCoverage("fixture gap: fault not reached: " + description)
+			unreached(description)
 		}
 	}
-	missing, violations := r.Coverage.stateProblems()
-	r.addCoverage(missing...)
-	r.addReal(violations...)
-	missing, violations = r.Coverage.edgeProblems()
-	r.addCoverage(missing...)
-	r.addReal(violations...)
-	return r
 }
 
 // CheckCommand adapts calibration and simulation to wf.Registration.Check.
@@ -370,4 +479,73 @@ func (r *CheckReport) addReal(problems ...string) {
 func (r *CheckReport) addCoverage(problems ...string) {
 	r.CoverageProblems = append(r.CoverageProblems, problems...)
 	r.Problems = append(r.Problems, problems...)
+}
+
+// addRealOnce adds a problem not already reported, as when several variants
+// observe the same one.
+func (r *CheckReport) addRealOnce(problem string) {
+	if !slices.Contains(r.RealProblems, problem) {
+		r.addReal(problem)
+	}
+}
+
+func all[T any](items []T, ok func(T) bool) bool {
+	for _, item := range items {
+		if !ok(item) {
+			return false
+		}
+	}
+	return true
+}
+
+// mergeCalibration folds the per-variant calibration reports. Observed
+// problems, contexts and overrides are the union; coverage gaps and unchecked
+// fields are those no variant closed. One report is returned as is.
+func mergeCalibration(reports []*CalibrationReport) *CalibrationReport {
+	if len(reports) == 1 {
+		return reports[0]
+	}
+	union := func(pick func(*CalibrationReport) []string) []string {
+		var out []string
+		for _, report := range reports {
+			for _, item := range pick(report) {
+				if !slices.Contains(out, item) {
+					out = append(out, item)
+				}
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	common := func(pick func(*CalibrationReport) []string) []string {
+		var out []string
+		for _, item := range pick(reports[0]) {
+			if all(reports[1:], func(other *CalibrationReport) bool { return slices.Contains(pick(other), item) }) {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
+	m := &CalibrationReport{
+		RealProblems:     union(func(c *CalibrationReport) []string { return c.RealProblems }),
+		CoverageProblems: common(func(c *CalibrationReport) []string { return c.CoverageProblems }),
+		ContextUnknown:   union(func(c *CalibrationReport) []string { return c.ContextUnknown }),
+		NotChecked:       common(func(c *CalibrationReport) []string { return c.NotChecked }),
+		TypeRejected:     common(func(c *CalibrationReport) []string { return c.TypeRejected }),
+		Overrides:        union(func(c *CalibrationReport) []string { return c.Overrides }),
+	}
+	m.Problems = append(append([]string(nil), m.RealProblems...), m.CoverageProblems...)
+	sort.Strings(m.Problems)
+	stale := map[string]bool{}
+	for _, report := range reports {
+		m.States, m.Samples = max(m.States, report.States), m.Samples+report.Samples
+		for _, entry := range report.Stale {
+			key := fmt.Sprintf("%s\x00%s\x00%d", entry.State, entry.Run, entry.Seq)
+			if !stale[key] {
+				stale[key] = true
+				m.Stale = append(m.Stale, entry)
+			}
+		}
+	}
+	return m
 }

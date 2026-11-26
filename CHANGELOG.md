@@ -106,6 +106,18 @@
   fault apply the real effect first and then kill the engine, so the
   adapter's check must find it. The fuzz `effect-timeout` fault on an
   adapter op now models a real timeout (`wf.ErrTimedOut`).
+- **`wftest.Check` simulates named option variants (sw-145v).**
+  `CheckConfig.Variants` maps a name to a value of the definition's options
+  struct. Check then calibrates and runs every simulation phase once per
+  variant and judges coverage once on the union, so an `Edge.When` path that
+  one options value never opens no longer needs a false `.Unreachable`. An
+  edge or state marked unreachable that any variant reaches is a violation
+  naming that variant. Findings carry `FuzzResult.Variant` and their problems
+  read `variant <name>: ...`. Before simulating, every `Edge.When` guard must
+  hold under at least one variant (`variants: guard holds under no variant:
+  ...`). The check uses the new `Def.UnheldGuards(options...)`, which
+  evaluates guards with the engine's own rule. A config without `Variants`
+  behaves as before.
 
 ### Upgrading
 
@@ -149,6 +161,10 @@
   their items by key, never by recomposing the id. A child the resumed run
   spawns after the upgrade takes the escaped id. Code that parsed a key out of
   an instance id or unit name should read `item.Key`, or unescape `%XX`.
+- **Checkers with option-guarded edges** can list one variant per side of
+  each guard in `CheckConfig.Variants` and drop the `.Unreachable` marks
+  that stood in for the untested side: once a variant reaches such an edge,
+  the mark is a violation.
 
 ## v0.3.0
 

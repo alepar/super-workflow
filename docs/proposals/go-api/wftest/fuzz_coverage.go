@@ -2,6 +2,7 @@ package wftest
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -27,6 +28,12 @@ type FuzzCoverage struct {
 	Ends        map[string]int    // FuzzResult.End to seed count
 	Mix         map[string]int    // summed FuzzResult.Mix
 	Unreachable map[string]string // agent state path to why no seed can reach it
+
+	// variant names the CheckConfig variant whose results Add folds next;
+	// reachedBy records, per state path and edge key, the variants that
+	// reached it, so a violated exemption can name them.
+	variant   string
+	reachedBy map[string][]string
 }
 
 // NewFuzzCoverage lists the agent states of the factory's definition,
@@ -81,6 +88,7 @@ func (c *FuzzCoverage) Add(r *FuzzResult) {
 		if !once[state] {
 			once[state] = true
 			c.Reached[state]++
+			c.noteVariant(state)
 		}
 	}
 }
@@ -105,7 +113,7 @@ func (c *FuzzCoverage) stateProblems() (missing, violations []string) {
 		case c.Reached[state] == 0 && !excused:
 			missing = append(missing, fmt.Sprintf("%s/%s: no seed reached this agent state; reach it or mark it unreachable by design with a reason", c.Def, state))
 		case c.Reached[state] > 0 && excused:
-			violations = append(violations, fmt.Sprintf("%s/%s: marked unreachable (%s) but %d seeds reached it", c.Def, state, c.Unreachable[state], c.Reached[state]))
+			violations = append(violations, fmt.Sprintf("%s/%s: marked unreachable (%s) but %d seeds reached it%s", c.Def, state, c.Unreachable[state], c.Reached[state], c.byVariants(state)))
 		}
 	}
 	for state := range c.Unreachable {
@@ -158,4 +166,23 @@ func counts(m map[string]int) string {
 		parts[i] = fmt.Sprintf("%s=%d", k, m[k])
 	}
 	return strings.Join(parts, " ")
+}
+
+// noteVariant records that the current variant reached key.
+func (c *FuzzCoverage) noteVariant(key string) {
+	if c.variant == "" || slices.Contains(c.reachedBy[key], c.variant) {
+		return
+	}
+	if c.reachedBy == nil {
+		c.reachedBy = map[string][]string{}
+	}
+	c.reachedBy[key] = append(c.reachedBy[key], c.variant)
+}
+
+// byVariants names the variants that reached key; empty without variants.
+func (c *FuzzCoverage) byVariants(key string) string {
+	if len(c.reachedBy[key]) == 0 {
+		return ""
+	}
+	return " (variant " + strings.Join(c.reachedBy[key], ", ") + ")"
 }
