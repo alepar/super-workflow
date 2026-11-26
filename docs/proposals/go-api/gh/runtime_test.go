@@ -3,6 +3,7 @@ package gh_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -91,6 +92,40 @@ func stubGh(t *testing.T, out string, code int) (log string) {
 	return log
 }
 
+// stubGhRoutes puts a gh script first on PATH that prints list for
+// "gh issue list" and create for anything else. Each call is logged as its
+// NUL-terminated args followed by a record separator (0x1e).
+func stubGhRoutes(t *testing.T, list, create string) (log string) {
+	t.Helper()
+	dir := t.TempDir()
+	log = filepath.Join(dir, "calls.log")
+	for name, out := range map[string]string{"list": list, "create": create} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := "#!/bin/sh\n{ for a in \"$@\"; do printf '%s\\0' \"$a\"; done; printf '\\036'; } >> '" + log + "'\n" +
+		"if [ \"$1 $2\" = 'issue list' ]; then cat '" + filepath.Join(dir, "list") + "'; else cat '" + filepath.Join(dir, "create") + "'; fi\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+// calls reads a stubGhRoutes log.
+func calls(t *testing.T, log string) (out [][]string) {
+	t.Helper()
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\x1e"), "\x1e") {
+		out = append(out, strings.Split(strings.TrimSuffix(line, "\x00"), "\x00"))
+	}
+	return out
+}
+
 func argv(t *testing.T, log string) (cwd string, args []string) {
 	t.Helper()
 	b, err := os.ReadFile(log)
@@ -123,12 +158,6 @@ func TestArgvAgainstStubGh(t *testing.T) {
 			},
 			[]string{"issue", "view", "7", "--repo", "o/r", "--json", "number,title,body,state"},
 			`"Number":7`},
-		{"issue_create", "https://github.com/o/r/issues/42\n",
-			func(a *wf.Adapters, ws string) (json.RawMessage, error) {
-				return a.Apply(ws, gh.IssueCreate(key, "o/r", "title", "body"))
-			},
-			[]string{"issue", "create", "--repo", "o/r", "--title", "title", "--body", "body\n\n" + marker},
-			`"Number":42`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			log := stubGh(t, c.out, 0)
@@ -171,10 +200,66 @@ func TestArgvAgainstStubGh(t *testing.T) {
 				t.Errorf("out %q code %d: Check = %v, %v; want %v, err=%v", k.out, k.code, st, err, k.want, k.err)
 			}
 			_, args := argv(t, log)
-			want := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--json", "number,body", "--state", "all"}
+			want := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--json", "number,title,body,state", "--state", "all"}
 			if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 				t.Errorf("argv = %q, want %q", args, want)
 			}
+		}
+	})
+
+	search := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--json", "number,title,body,state", "--state", "all"}
+	t.Run("issue_create searches for its marker, then creates", func(t *testing.T) {
+		log := stubGhRoutes(t, `[]`, "https://github.com/o/r/issues/42\n")
+		got, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
+		if err != nil || !strings.Contains(string(got), `"Number":42`) {
+			t.Fatalf("Apply = %s, %v; want issue 42", got, err)
+		}
+		want := [][]string{search, {"issue", "create", "--repo", "o/r", "--title", "title", "--body", "body\n\n" + marker}}
+		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint(want) {
+			t.Errorf("calls = %q, want %q", calls, want)
+		}
+	})
+	t.Run("issue_create returns the issue it finds and creates none", func(t *testing.T) {
+		log := stubGhRoutes(t, `[{"number":9,"title":"title","body":"body\n\n`+marker+`","state":"CLOSED"}]`, "https://github.com/o/r/issues/43\n")
+		got, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
+		if err != nil || !strings.Contains(string(got), `"Number":9`) || !strings.Contains(string(got), `"State":"CLOSED"`) {
+			t.Fatalf("Apply = %s, %v; want the found issue 9", got, err)
+		}
+		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint([][]string{search}) {
+			t.Errorf("calls = %q, want only the search", calls)
+		}
+	})
+	t.Run("an unkeyed issue_create does not search", func(t *testing.T) {
+		log := stubGhRoutes(t, `[]`, "https://github.com/o/r/issues/44\n")
+		if _, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(wf.NonIdempotent("synthetic"), "o/r", "t", "b")); err != nil {
+			t.Fatal(err)
+		}
+		if calls := calls(t, log); len(calls) != 1 || calls[0][1] != "create" {
+			t.Errorf("calls = %q, want one create", calls)
+		}
+	})
+	t.Run("a done check returns the issue it found", func(t *testing.T) {
+		stubGhRoutes(t, `[{"number":3,"title":"t","body":"b\n\n`+marker+`","state":"OPEN"}]`, "")
+		st, res, err := registry(t).CheckResultAt(t.TempDir(), wf.EffectContext{}, gh.IssueCreate(key, "o/r", "t", "b"))
+		if err != nil || st != wf.EffectDone || !strings.Contains(string(res), `"Number":3`) {
+			t.Errorf("CheckResultAt = %v, %s, %v; want done with issue 3", st, res, err)
+		}
+	})
+	t.Run("a sandboxed run's effect and check are refused, its reads are not", func(t *testing.T) {
+		log := stubGhRoutes(t, `[]`, "https://github.com/o/r/issues/45\n")
+		a, ws, at := registry(t), t.TempDir(), wf.EffectContext{Sandboxed: true}
+		e := gh.IssueCreate(key, "o/r", "t", "b")
+		if _, err := a.ApplyAt(ws, at, e); !errors.Is(err, wf.ErrSandboxRefused) || !strings.Contains(err.Error(), "gh.issue_create") {
+			t.Errorf("ApplyAt = %v, want a refusal naming gh.issue_create", err)
+		}
+		if st, err := a.CheckAt(ws, at, e); !errors.Is(err, wf.ErrSandboxRefused) || st != wf.EffectUnknown {
+			t.Errorf("CheckAt = %v, %v, want unknown + refused", st, err)
+		}
+		if _, err := os.Stat(log); !os.IsNotExist(err) {
+			t.Errorf("gh ran in a sandboxed run: %q", calls(t, log))
+		}
+		if _, err := a.ReadAt(ws, at, gh.IssueView("o/r", 1).Desc()); err != nil && errors.Is(err, wf.ErrSandboxRefused) {
+			t.Errorf("ReadAt refused: %v", err)
 		}
 	})
 

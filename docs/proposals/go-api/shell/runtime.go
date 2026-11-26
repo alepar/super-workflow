@@ -76,6 +76,12 @@ func sandboxBin(at wf.EffectContext) (string, error) {
 	return at.SandboxBin, nil
 }
 
+// CheckAt is Check: the answer depends only on the key, so a sandboxed run's
+// check is answered the same way (and is not refused for want of a context).
+func (r runtime) CheckAt(workspace string, _ wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	return r.Check(workspace, e)
+}
+
 // Check cannot tell whether a command ran. A keyed command is not done, so it
 // re-runs (the caller claimed it safe to), per the comment on Effect; a
 // NonIdempotent one is unknown and routes to manual verification.

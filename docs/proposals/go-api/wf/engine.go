@@ -1889,7 +1889,7 @@ func (c *cycle) transit(in *instance) error {
 		}
 	}
 	for _, e := range p.Results {
-		if e.Outcome == "failed" || e.Outcome == "unavailable" {
+		if effectFailed(e.Outcome) {
 			d := DegradedData{Unit: c.st.qualified(in), Kind: DegradedOptional,
 				Cause: fmt.Sprintf("%s.%s %s: %s", e.Adapter, e.Op, e.Outcome, e.Error), Action: action}
 			if err := c.emit(in, JournalDegraded, 0, d); err != nil {

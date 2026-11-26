@@ -639,6 +639,16 @@ func (w *replayWorld) Apply(_ string, e ExternalEffect) (json.RawMessage, error)
 
 func (w *replayWorld) Check(string, ExternalEffect) (EffectStatus, error) { return EffectNotDone, nil }
 
+// ApplyAt and CheckAt serve a replay of a sandboxed run's journal: the
+// replay world reaches nothing, so the fork's effects replay as recorded.
+func (w *replayWorld) ApplyAt(ws string, _ EffectContext, e ExternalEffect) (json.RawMessage, error) {
+	return w.Apply(ws, e)
+}
+
+func (w *replayWorld) CheckAt(ws string, _ EffectContext, e ExternalEffect) (EffectStatus, error) {
+	return w.Check(ws, e)
+}
+
 // summarize shortens a read or effect key for the report: each long string
 // argument (an inline script) is cut on its own, so the arguments after it,
 // which name the read (a script's $0, a path), stay visible; the whole is

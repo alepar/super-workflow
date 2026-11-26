@@ -347,8 +347,20 @@ type World struct {
 	failIf        []func(wf.ExternalEffect) string
 	onRead        func(wf.ObservationDesc) (json.RawMessage, bool)
 	onApply       func(wf.ExternalEffect)
-	missing       []string          // read keys the world had no value for, in order
-	unknown       map[string]string // adapter.op to the error a read with no value returns
+	missing       []string                     // read keys the world had no value for, in order
+	unknown       map[string]string            // adapter.op to the error a read with no value returns
+	real          map[string]wf.AdapterRuntime // adapter.op to the Real runtime that performs it
+	failed        map[int]bool                 // indexes into applied whose Apply a script failed
+}
+
+// failedApply marks the effect just applied as failed by a script (FailApply,
+// FailApplyIf): it stays in Applied, but Check does not count it as done.
+func (w *World) failedApply(msg string) error {
+	if w.failed == nil {
+		w.failed = map[int]bool{}
+	}
+	w.failed[len(w.applied)-1] = true
+	return errors.New(msg)
 }
 
 type exitRule struct {
@@ -508,8 +520,66 @@ func FailApplyIf(w *World, f func(e wf.ExternalEffect) string) {
 	w.failIf = append(w.failIf, f)
 }
 
+// Real makes rt perform the effects of the ops it serves: its own Apply and
+// Check run, against whatever the test pointed rt at (a stub binary on PATH,
+// a temporary directory), so an adapter's exactly-once logic is exercised
+// under the engine instead of being replaced by the fake world. The world's
+// fault targets still apply around it:
+//   - CrashAfterIntent and the fuzz effect-uncertain fault run rt's Apply
+//     first and then kill the engine: the effect landed and its result was
+//     lost, so rt's Check must find it on recovery;
+//   - FailApply and the other fuzz effect faults fail the call without
+//     reaching rt;
+//   - EffectDone and EffectUnknown script the check instead of rt.
+//
+// Observations of rt's ops stay scripted (Set, Unavailable). Making an op
+// real twice is a test bug and panics.
+func Real(w *World, rt wf.AdapterRuntime) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.real == nil {
+		w.real = map[string]wf.AdapterRuntime{}
+	}
+	for _, op := range rt.Ops() {
+		if _, dup := w.real[op]; dup || op == "*" {
+			panic("wftest.Real: op " + op + " is already real or is not adapter.op")
+		}
+		w.real[op] = rt
+	}
+}
+
+// landBeforeCrash runs a Real runtime's Apply before an injected crash; its
+// outcome is lost with the engine, as the crash models.
+func (w *World) landBeforeCrash(rt wf.AdapterRuntime, ws string, at wf.EffectContext, e wf.ExternalEffect) {
+	if rt == nil {
+		return
+	}
+	w.applied = append(w.applied, e)
+	_, _ = realApply(rt, ws, at, e)
+}
+
+func realApply(rt wf.AdapterRuntime, ws string, at wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
+	if c, ok := rt.(wf.ContextualEffectRuntime); ok {
+		return c.ApplyAt(ws, at, e)
+	}
+	return rt.Apply(ws, e)
+}
+
+func realCheck(rt wf.AdapterRuntime, ws string, at wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, json.RawMessage, error) {
+	switch c := rt.(type) {
+	case wf.CheckResultRuntime:
+		return c.CheckResultAt(ws, at, e)
+	case wf.ContextualCheckRuntime:
+		st, err := c.CheckAt(ws, at, e)
+		return st, nil, err
+	}
+	st, err := rt.Check(ws, e)
+	return st, nil, err
+}
+
 // Applied lists the effects the world has applied, in order. An effect that
-// crashed the engine before its result is not in it.
+// crashed the engine before its result is not in it, unless a Real runtime
+// performed it before the crash.
 func Applied(w *World) []wf.ExternalEffect {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -658,16 +728,19 @@ func (w *World) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, e
 
 // ApplyAt implements wf.ContextualEffectRuntime so fuzz switches follow the
 // effect's owning state, including when an older intent is resumed.
-func (w *World) ApplyAt(_ string, at wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
+func (w *World) ApplyAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	rt := w.real[e.Adapter+"."+e.Op]
 	if k := e.Adapter + "." + e.Op; w.crash[k] {
 		delete(w.crash, k)
+		w.landBeforeCrash(rt, ws, at, e)
 		panic(crashSignal{e.Adapter, e.Op})
 	}
 	fault := w.nextFuzzFault(at, e)
 	if fault == "effect-uncertain" {
 		w.fuzzUncertain = &fuzzUncertain{at: at, key: effectKey(e.Adapter, e.Op, e.KeyID()), prelude: w.fuzzPrelude}
+		w.landBeforeCrash(rt, ws, at, e)
 		panic(crashSignal{e.Adapter, e.Op})
 	}
 	var injected json.RawMessage
@@ -688,6 +761,12 @@ func (w *World) ApplyAt(_ string, at wf.EffectContext, e wf.ExternalEffect) (jso
 	if injected != nil {
 		return injected, nil
 	}
+	if rt != nil {
+		if msg, ok := w.failing[e.Adapter+"."+e.Op]; ok {
+			return nil, w.failedApply(msg)
+		}
+		return realApply(rt, ws, at, e)
+	}
 	if raw, ok := w.nextFuzzResult(at, e); ok {
 		return raw, nil
 	}
@@ -698,11 +777,11 @@ func (w *World) ApplyAt(_ string, at wf.EffectContext, e wf.ExternalEffect) (jso
 		return json.RawMessage(`{"ok":true}`), nil
 	}
 	if msg, ok := w.failing[e.Adapter+"."+e.Op]; ok {
-		return nil, errors.New(msg)
+		return nil, w.failedApply(msg)
 	}
 	for _, f := range w.failIf {
 		if msg := f(e); msg != "" {
-			return nil, errors.New(msg)
+			return nil, w.failedApply(msg)
 		}
 	}
 	if e.Adapter == "shell" && e.Op == "run" {
@@ -754,26 +833,49 @@ func (w *World) stdoutOf(argv []string) string {
 	return ""
 }
 
+// CheckAt is Check with the run's context, which a Real runtime receives;
+// the fake world itself reaches nothing, so a sandboxed run's check is
+// answered as any other.
+func (w *World) CheckAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	st, _, err := w.CheckResultAt(ws, at, e)
+	return st, err
+}
+
 // Check implements wf.AdapterRuntime: the scripted answer for the effect's
-// key, else done when the world already applied an effect with that op and key,
-// else not done.
-func (w *World) Check(_ string, e wf.ExternalEffect) (wf.EffectStatus, error) {
+// key (EffectDone, EffectUnknown), else a Real runtime's own check, else done
+// when the world already applied an effect with that op and key and no
+// script failed that apply, else not done.
+func (w *World) Check(ws string, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	return w.CheckAt(ws, wf.EffectContext{}, e)
+}
+
+// CheckResultAt implements wf.CheckResultRuntime, so a Real runtime's result
+// for a done effect reaches the journal as it would in production.
+func (w *World) CheckResultAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, json.RawMessage, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	id := e.KeyID()
+	rt := w.real[e.Adapter+"."+e.Op]
 	if pending := w.fuzzUncertain; pending != nil && pending.key == effectKey(e.Adapter, e.Op, id) {
 		w.finishUncertain()
-		return wf.EffectUnknown, nil
+		if rt == nil {
+			return wf.EffectUnknown, nil, nil
+		}
+		// A Real runtime's effect did land before the crash: its own check
+		// must find it.
 	}
 	if st, ok := w.effects[effectKey(e.Adapter, e.Op, id)]; ok {
-		return st, nil
+		return st, nil, nil
 	}
-	for _, a := range w.applied {
-		if a.Adapter == e.Adapter && a.Op == e.Op && a.KeyID() == id {
-			return wf.EffectDone, nil
+	if rt != nil {
+		return realCheck(rt, ws, at, e)
+	}
+	for i, a := range w.applied {
+		if a.Adapter == e.Adapter && a.Op == e.Op && a.KeyID() == id && !w.failed[i] {
+			return wf.EffectDone, nil, nil
 		}
 	}
-	return wf.EffectNotDone, nil
+	return wf.EffectNotDone, nil, nil
 }
 
 // Trace is what a run did: the states visited, the journal and the terminal

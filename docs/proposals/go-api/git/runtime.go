@@ -285,6 +285,17 @@ func (r runtime) addWorktree(workspace, path string, a args) error {
 	return err
 }
 
+// ApplyAt and CheckAt are Apply and Check: every git op here acts on the
+// local repository and worktrees only (none fetches or pushes), so a
+// sandboxed run (wf.EffectContext.Sandboxed) performs them as any run does.
+func (r runtime) ApplyAt(workspace string, _ wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
+	return r.Apply(workspace, e)
+}
+
+func (r runtime) CheckAt(workspace string, _ wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	return r.Check(workspace, e)
+}
+
 func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, error) {
 	a, err := decode(e.Args)
 	if err != nil {

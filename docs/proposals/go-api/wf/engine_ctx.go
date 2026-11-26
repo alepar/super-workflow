@@ -62,14 +62,15 @@ type EdgeResult struct {
 	Skipped int          `json:",omitempty"`
 }
 
-// Failed reports that an effect on the edge failed or was unavailable, or that
+// Failed reports that an effect on the edge did not succeed (failed,
+// unavailable, uncertain or refused), or that
 // one was skipped because an earlier one failed.
 func (r EdgeResult) Failed() bool {
 	if r.Skipped > 0 {
 		return true
 	}
 	for _, e := range r.Effects {
-		if e.Outcome == "failed" || e.Outcome == "unavailable" {
+		if effectFailed(e.Outcome) {
 			return true
 		}
 	}
@@ -79,7 +80,7 @@ func (r EdgeResult) Failed() bool {
 // firstError is the first failed effect's error, for messages.
 func (r EdgeResult) firstError() string {
 	for _, e := range r.Effects {
-		if e.Outcome == "failed" || e.Outcome == "unavailable" {
+		if effectFailed(e.Outcome) {
 			return fmt.Sprintf("%s.%s %s: %s", e.Adapter, e.Op, e.Outcome, e.Error)
 		}
 	}

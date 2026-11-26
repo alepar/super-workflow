@@ -1182,6 +1182,14 @@ and each effect whose applied result was dropped (not undone). The fork's run
 dir starts with the source's records, detached effects' results, outputs and
 prompt bodies. A run that holds a `rewound` record (every rewind, snapshot
 fork, fanout target and manufactured fork, and their forks) runs sandboxed. A fork's tracker has no remote.
+A sandboxed run can never perform a remote effect. An effect whose adapter
+cannot be told the run is sandboxed (it has no `ApplyAt`), and every `gh`
+effect, is refused rather than applied. The fork then stops Blocked at that
+edge, with outcome `refused` and a reason that names the adapter and op.
+The source run is unaffected. A rewind made to carry a fix into a running
+run therefore stops at its first remote effect. Shell commands are not
+refused: a command that itself calls `gh`, `git push` or the network
+reaches it from a fork too.
 A snapshot restore drops each Dolt database's remotes, backups and branch
 upstreams from the restored `.beads`, and blanks every remote setting
 (`sync.remote`, any remote URL) in its `config.yaml`. The fork's `rewound`

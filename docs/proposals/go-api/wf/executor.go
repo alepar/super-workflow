@@ -1063,9 +1063,13 @@ type EffectRerun struct {
 // external effects.
 //
 // Outcome says how: "applied" (the adapter ran it), "failed" (it ran and
-// errored), "unavailable" (no runtime or the tool is missing), "done" (a
-// resume found the effect already complete by its Key and did not re-apply it)
-// or "settled" (a human settled a Command as applied).
+// errored), "unavailable" (no runtime or the tool is missing: it never ran),
+// "uncertain" (its tool call timed out: it may have reached the world),
+// "refused" (a sandboxed run refused it: ErrSandboxRefused), "done" (a check
+// by its Key found the effect already complete and it was not applied; Result
+// is what the check reported, if anything) or "settled" (a human settled a
+// Command as applied). Before a keyed effect is applied again after a
+// "failed" or "uncertain" result for the same Key in the run, it is checked.
 type EffectResultData struct {
 	Intent  int64
 	Index   int

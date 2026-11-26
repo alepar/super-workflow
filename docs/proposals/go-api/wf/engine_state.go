@@ -279,8 +279,9 @@ func (p *pendingEdge) externals() int {
 }
 
 // stopped reports whether the edge's effects stop the transition: the first
-// failed or unavailable effect, when the step that carries it is not
-// Optional. class is Unavailable for an unavailable effect, else Blocked; why
+// effect that did not succeed (effectFailed), when the step that carries it is
+// not Optional. class is Unavailable for an unavailable or uncertain effect,
+// else Blocked; why
 // names the effect and its error.
 func (p *pendingEdge) stopped() (class OutcomeClass, why string, failed bool) {
 	var optional []bool // per external effect, in apply order
@@ -292,7 +293,7 @@ func (p *pendingEdge) stopped() (class OutcomeClass, why string, failed bool) {
 		}
 	}
 	for i, e := range p.Results {
-		if e.Outcome != "failed" && e.Outcome != "unavailable" {
+		if !effectFailed(e.Outcome) {
 			continue
 		}
 		if i < len(optional) && optional[i] {
@@ -305,8 +306,12 @@ func (p *pendingEdge) stopped() (class OutcomeClass, why string, failed bool) {
 			}
 			return 0, "", false
 		}
+		// An unavailable effect never ran, and an uncertain one (its call timed
+		// out) is retried on the Unavailable schedule too: the retry checks it
+		// by its Key before applying again. A refused one (a sandboxed run)
+		// would be refused again, so it is Blocked like a failed one.
 		class = Blocked
-		if e.Outcome == "unavailable" {
+		if e.Outcome == "unavailable" || e.Outcome == "uncertain" {
 			class = Unavailable
 		}
 		return class, fmt.Sprintf("%s.%s %s: %s", e.Adapter, e.Op, e.Outcome, e.Error), true

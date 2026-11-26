@@ -1,6 +1,7 @@
 package wf
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,10 +50,22 @@ func (c *cycle) applyExternals(in *instance, ex []EffectData) (waiting bool, err
 			}
 			continue
 		}
+		prior := c.lastKeyedOutcome(in, bound)
 		if err := c.emit(in, JournalEffectIntent, 0, EffectIntentData{Index: idx, Effect: bound}); err != nil {
 			return true, err
 		}
-		if err := c.applyEdgeEffect(in, c.recs[len(c.recs)-1].Seq, idx, bound); err != nil {
+		intent := c.recs[len(c.recs)-1].Seq
+		if mayHaveLanded(prior) {
+			// The same effect ran before in this run and may have
+			// reached the world although it reported no success (it failed,
+			// or its call timed out): check by its Key before applying again,
+			// exactly as for an intent a crash left without a result.
+			if resolved, err := c.checkThenApply(in, intent, idx, bound, "its last attempt in this run was "+prior); err != nil || !resolved {
+				return true, err
+			}
+			continue
+		}
+		if err := c.applyEdgeEffect(in, intent, idx, bound); err != nil {
 			return true, err
 		}
 	}
@@ -109,6 +122,11 @@ func (c *cycle) applyAs(in *instance, intent int64, idx int, e EffectData, edge 
 	res, aerr := c.e.reg.ApplyAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args.(map[string]any), Key: keyOfData(e)})
 	rd := EffectResultData{Intent: intent, Index: idx, OK: aerr == nil, Outcome: "applied"}
 	switch {
+	case errors.Is(aerr, ErrSandboxRefused):
+		rd.Outcome, rd.Error = "refused", aerr.Error()
+	case errors.Is(aerr, ErrTimedOut):
+		// The request may have reached the remote before the kill.
+		rd.Outcome, rd.Error = "uncertain", aerr.Error()
 	case errors.Is(aerr, ErrUnavailable):
 		rd.Outcome, rd.Error = "unavailable", aerr.Error()
 	case aerr != nil:
@@ -168,22 +186,34 @@ func postDoneMutationOf(res json.RawMessage) *PostDoneMutationData {
 // again by the next drive). resolved is false when the effect is Uncertain (held, or the state
 // took its OnClass(Uncertain) route).
 func (c *cycle) recoverEdgeIntent(in *instance, intent int64, idx int, e EffectData) (resolved bool, err error) {
+	return c.checkThenApply(in, intent, idx, e, "it has an intent with no result")
+}
+
+// checkThenApply settles the open intent of a keyed effect whose earlier
+// application is in doubt (why says how) by its Check, as recoverEdgeIntent
+// documents. A done check journals the result the runtime found, if it
+// reports one (CheckResultRuntime). A sandboxed run's refused check is
+// unknown, never transient: it would be refused again.
+func (c *cycle) checkThenApply(in *instance, intent int64, idx int, e EffectData, why string) (resolved bool, err error) {
 	if e.NonIdempotent {
-		return false, c.uncertain(in, fmt.Sprintf("effect %d (%s.%s) is not idempotent and has an intent with no result", intent, e.Adapter, e.Op))
+		return false, c.uncertain(in, fmt.Sprintf("effect %d (%s.%s) is not idempotent and %s", intent, e.Adapter, e.Op, why))
 	}
 	args, resolveErr := c.resolvePathValues(e.Args)
 	if resolveErr != nil {
 		return false, resolveErr
 	}
-	st, cerr := c.e.reg.CheckAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args.(map[string]any), Key: keyOfData(e)})
+	st, res, cerr := c.e.reg.CheckResultAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args.(map[string]any), Key: keyOfData(e)})
+	if errors.Is(cerr, ErrSandboxRefused) {
+		return false, c.uncertain(in, fmt.Sprintf("effect %d (%s.%s): %s, and its check was refused: %v", intent, e.Adapter, e.Op, why, cerr))
+	}
 	if cerr != nil {
 		c.markTransient(in, cerr)
 		return false, nil
 	}
 	switch {
-	case cerr == nil && st == EffectDone:
-		return true, c.emit(in, JournalEffectResult, 0, EffectResultData{Intent: intent, Index: idx, OK: true, Outcome: "done"})
-	case cerr == nil && st == EffectNotDone:
+	case st == EffectDone:
+		return true, c.emit(in, JournalEffectResult, 0, EffectResultData{Intent: intent, Index: idx, OK: true, Outcome: "done", Result: res})
+	case st == EffectNotDone:
 		blocked, err := c.worktreeRemovalBlocked(e)
 		if err != nil {
 			return false, err
@@ -193,8 +223,61 @@ func (c *cycle) recoverEdgeIntent(in *instance, intent int64, idx int, e EffectD
 		}
 		return true, c.applyEdgeEffect(in, intent, idx, e)
 	}
-	why := fmt.Sprintf("effect %d (%s.%s) has an intent with no result and its check answered %s", intent, e.Adapter, e.Op, EffectUnknown)
-	return false, c.uncertain(in, why)
+	return false, c.uncertain(in, fmt.Sprintf("effect %d (%s.%s): %s, and its check answered %s", intent, e.Adapter, e.Op, why, EffectUnknown))
+}
+
+// mayHaveLanded reports whether an effect_result outcome leaves open whether
+// the effect reached the world: it ran and failed, or its call timed out.
+// "unavailable" and "refused" never ran.
+func mayHaveLanded(outcome string) bool { return outcome == "failed" || outcome == "uncertain" }
+
+// effectFailed reports whether an effect_result outcome stops its edge.
+func effectFailed(outcome string) bool {
+	switch outcome {
+	case "failed", "unavailable", "uncertain", "refused":
+		return true
+	}
+	return false
+}
+
+// lastKeyedOutcome is the outcome of the latest effect_result in this run
+// for the same effect as e; "" when none ran. A keyed effect is the same
+// when adapter, op and Key match: keys name the effect in the world, so the
+// match is run-wide, across states and instances. A NonIdempotent effect has
+// no key: it is the same when it is NonIdempotent too, of the same instance,
+// with the same adapter, op and args (a retry of the same edge).
+func (c *cycle) lastKeyedOutcome(in *instance, e EffectData) string {
+	if e.Key == "" && !e.NonIdempotent {
+		return ""
+	}
+	var args []byte
+	if e.NonIdempotent {
+		args, _ = json.Marshal(e.Args)
+	}
+	for i := len(c.recs) - 1; i >= 0; i-- {
+		if c.recs[i].Kind != JournalEffectResult {
+			continue
+		}
+		var rd EffectResultData
+		if json.Unmarshal(c.recs[i].Data, &rd) != nil || rd.Intent < 1 || rd.Intent > int64(len(c.recs)) {
+			continue
+		}
+		ir := c.recs[rd.Intent-1]
+		var id EffectIntentData
+		if ir.Kind != JournalEffectIntent || json.Unmarshal(ir.Data, &id) != nil {
+			continue
+		}
+		if id.Effect.Adapter != e.Adapter || id.Effect.Op != e.Op || id.Effect.Key != e.Key || id.Effect.NonIdempotent != e.NonIdempotent {
+			continue
+		}
+		if e.NonIdempotent {
+			if b, _ := json.Marshal(id.Effect.Args); ir.Instance != in.ID || !bytes.Equal(b, args) {
+				continue
+			}
+		}
+		return rd.Outcome
+	}
+	return ""
 }
 
 // uncertain classes the open effect Uncertain. It is never re-applied: the

@@ -66,12 +66,74 @@
   transition of its instance consumed it, as it already did for a done
   effect intent's args: a literal path in that plan's effect args no longer
   refuses the fork.
+- **Keyed effects are checked before any re-apply that may double them
+  (sw-luwj).** Previously only an intent a crash left without a result was
+  checked. A keyed effect whose last result in the run is `failed` (it ran
+  and errored) or `uncertain` (see below) is now checked by its key before it
+  is applied again, on a backoff retry, a retry or a loop back to the same
+  edge. Done is journaled `done` and not applied. Not done is applied. An
+  unknown answer is Uncertain. A NonIdempotent effect in that position is
+  Uncertain (manual verification), never applied blind. `unavailable` never
+  ran and is retried without a check.
+- **An adapter call that timed out is `uncertain`, not `unavailable`.**
+  `wf.RunTool` wraps a timeout in the new `wf.ErrTimedOut` as well as
+  `wf.ErrUnavailable`, so reads behave as before. An effect whose call timed
+  out is journaled with the new outcome `uncertain`. It is retried on the
+  Unavailable schedule, and each retry checks first. Shell commands keep
+  their own timeout (exit 124).
+- **A check can return the effect's result.** The new optional
+  `wf.CheckResultRuntime` (`CheckResultAt`) returns what a done check found.
+  The engine journals it as the `done` result's `Result`, on crash recovery
+  and before a re-apply alike. `wf.Adapters.CheckResultAt` exposes it.
+- **Sandboxed runs fail closed.** A run made by a rewind or a snapshot
+  restore could reach real GitHub: the in-tree `gh` runtime took no context,
+  so the sandbox flag was dropped and a rewound run created its issue again.
+  Now, in a sandboxed run, an effect whose runtime has no `ApplyAt` is
+  refused with `wf.ErrSandboxRefused` and journaled with the new outcome
+  `refused`. The edge stops Blocked with no retry, and the reason names the
+  adapter, the op and why (`wf.SandboxRefusal`). A check through a runtime
+  without `CheckAt` is refused too and answers Unknown. Observations are not
+  refused. Shell commands that reach the network themselves are not covered.
+- **In-tree adapters.** `gh`'s `IssueCreate` now searches for its key marker
+  before creating, and returns the issue it finds instead of creating a
+  second one. Its check returns that issue. `gh` refuses every effect and
+  check in a sandboxed run (its reads still run). `git` gains `ApplyAt` and
+  `CheckAt`: its ops are local, so forks run them as before. `shell` gains
+  `CheckAt`.
+- **`wftest.Real(world, runtime)`** runs a real adapter's own `Apply` and
+  `Check` under the simulator, against a stub the test sets up. The fault
+  targets still apply: `CrashAfterIntent` and the fuzz `effect-uncertain`
+  fault apply the real effect first and then kill the engine, so the
+  adapter's check must find it. The fuzz `effect-timeout` fault on an
+  adapter op now models a real timeout (`wf.ErrTimedOut`).
 
 ### Upgrading
 
 - **`{records}` ignores document fields.** A definition that bound
   `{records}` from an input or output field gets the run's records
   directory instead. Pass a different root under another name.
+- **Adapters that only implement `Apply` are refused in forks (sw-luwj).**
+  A workflow's own adapter runtime must implement `ApplyAt` (and `CheckAt`,
+  or `CheckResultAt`) and decide what `EffectContext.Sandboxed` means for it.
+  For local ops, pass through. For a remote it cannot sandbox, refuse with
+  `wf.SandboxRefusal`. Until it does, a rewound or restored run stops Blocked
+  at its effects. The in-tree `fsx`, `shell`, `git`, `gh` and `bd` need
+  nothing.
+- **New journal outcomes.** `effect_result` gains the outcomes `uncertain`
+  and `refused`. Code that reads journals or `EdgeResult` and compares
+  outcomes against `failed`/`unavailable` should treat both as failures. An
+  older engine does not know them and would not stop the edge on them. Do
+  not drive such a run with an older binary; the journal format range
+  (sw-u94w) will refuse it.
+- **A rewind no longer reaches remotes through `gh`.** A rewind used to carry
+  a fix into an in-flight run now stops at that run's first `gh` effect. A
+  live takeover is planned (sw-yl5d).
+- **Timeouts.** A `wf.RunTool` timeout still satisfies
+  `errors.Is(err, wf.ErrUnavailable)`. Test for `wf.ErrTimedOut` to tell it
+  apart.
+- **A NonIdempotent edge effect that failed is no longer re-applied** by a
+  later traversal of the same edge in the same instance. It is held for
+  manual verification.
 - **Older engines read stamped journals.** They decode `run_started`
   leniently and ignore `Build`: a v0.3.0 binary's `status` reads a journal
   this engine wrote.

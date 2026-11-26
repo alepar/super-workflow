@@ -18,6 +18,28 @@ import (
 // the op ran and failed. Callers tell them apart with errors.Is.
 var ErrUnavailable = errors.New("adapter unavailable")
 
+// ErrTimedOut marks an adapter tool call that RunTool killed at its timeout.
+// It always comes wrapped together with ErrUnavailable, so a read that timed
+// out stays unavailable; for an effect the request may have reached the
+// remote before the kill, and the Engine journals the effect "uncertain"
+// instead: it is checked by its Key before any re-apply.
+var ErrTimedOut = errors.New("adapter call timed out")
+
+// ErrSandboxRefused marks an effect, or the check of one, that a sandboxed
+// run (EffectContext.Sandboxed: a run made by a rewind or a snapshot
+// restore) refused rather than let reach a real remote: its runtime does not
+// take the run's context (ContextualEffectRuntime, ContextualCheckRuntime),
+// or the runtime itself refuses because it cannot sandbox its remote. The
+// Engine journals a refused effect "refused" and classes the edge Blocked;
+// it is never retried.
+var ErrSandboxRefused = errors.New("refused in a sandboxed run")
+
+// SandboxRefusal is the error a runtime returns from ApplyAt or CheckAt to
+// refuse a sandboxed run's call: it names the adapter, the op and why.
+func SandboxRefusal(e ExternalEffect, why string) error {
+	return fmt.Errorf("%w: %s.%s: %s", ErrSandboxRefused, e.Adapter, e.Op, why)
+}
+
 // RequireCLI reports a CLI missing from PATH as unavailable. Adapter packages
 // call it before invoking their tool.
 func RequireCLI(name string) error {
@@ -52,7 +74,7 @@ type ToolResult struct {
 //
 // Owns: the exec.CommandContext timeout, running the tool in its own process
 // group (a timeout kills the tool and its children), and reporting a missing
-// tool or a timeout as ErrUnavailable.
+// tool or a timeout as ErrUnavailable (a timeout also as ErrTimedOut).
 // Does not: decode output or treat a non-zero exit as a failure: Exit is data,
 // and each adapter decides what it means. It bounds only the calls adapters
 // make for the Engine; agents' own tool calls never pass through it, and
@@ -100,7 +122,7 @@ func RunTool(t Tool) (ToolResult, error) {
 		return res, nil
 	case ctx.Err() != nil:
 		// Checked before ExitError: a killed tool is an ExitError too.
-		return res, fmt.Errorf("%w: %s %s: timed out after %v", ErrUnavailable, t.Bin, strings.Join(t.Args, " "), timeout)
+		return res, fmt.Errorf("%w: %w: %s %s: timed out after %v", ErrUnavailable, ErrTimedOut, t.Bin, strings.Join(t.Args, " "), timeout)
 	case errors.As(runErr, &ee):
 		res.Exit = ee.ExitCode()
 		return res, nil
@@ -201,6 +223,17 @@ type ContextualEffectRuntime interface {
 // ContextualEffectRuntime does of its effect.
 type ContextualCheckRuntime interface {
 	CheckAt(workspace string, at EffectContext, e ExternalEffect) (EffectStatus, error)
+}
+
+// CheckResultRuntime optionally answers a check with the effect's result: a
+// runtime that finds the effect done (a created issue, by its key marker)
+// returns what Apply would have returned, and the Engine journals it as the
+// "done" effect_result's Result, so a later state reads it as it reads an
+// applied effect's. It takes the run's context, as ContextualCheckRuntime
+// does, and is preferred over CheckAt and Check when a runtime implements it.
+// The result is ignored unless the status is EffectDone.
+type CheckResultRuntime interface {
+	CheckResultAt(workspace string, at EffectContext, e ExternalEffect) (EffectStatus, json.RawMessage, error)
 }
 
 // Adapters is the registry mapping adapter.op to its runtime.
@@ -306,6 +339,10 @@ func (a *Adapters) ApplyAt(workspace string, at EffectContext, e ExternalEffect)
 	var v json.RawMessage
 	if contextual, ok := rt.(ContextualEffectRuntime); ok {
 		v, err = contextual.ApplyAt(workspace, at, e)
+	} else if at.Sandboxed {
+		// A runtime that never sees the context cannot honour Sandboxed:
+		// fail closed rather than let a fork reach a real remote.
+		return nil, SandboxRefusal(e, "its runtime does not implement ApplyAt, so it cannot be told the run is sandboxed")
 	} else {
 		v, err = rt.Apply(workspace, e)
 	}
@@ -328,20 +365,39 @@ func (a *Adapters) Check(workspace string, e ExternalEffect) (EffectStatus, erro
 
 // CheckAt is Check with the run's context, for a runtime that takes it.
 func (a *Adapters) CheckAt(workspace string, at EffectContext, e ExternalEffect) (EffectStatus, error) {
+	st, _, err := a.CheckResultAt(workspace, at, e)
+	return st, err
+}
+
+// CheckResultAt is CheckAt with the result a CheckResultRuntime reports for
+// a done effect; nil for any other runtime or status. In a sandboxed run a
+// runtime that takes no context is refused (ErrSandboxRefused) and answers
+// EffectUnknown.
+func (a *Adapters) CheckResultAt(workspace string, at EffectContext, e ExternalEffect) (EffectStatus, json.RawMessage, error) {
 	rt, err := a.lookup(e.Adapter, e.Op)
 	if err != nil {
-		return EffectUnknown, err
+		return EffectUnknown, nil, err
 	}
 	var st EffectStatus
-	if contextual, ok := rt.(ContextualCheckRuntime); ok {
-		st, err = contextual.CheckAt(workspace, at, e)
-	} else {
+	var res json.RawMessage
+	switch r := rt.(type) {
+	case CheckResultRuntime:
+		st, res, err = r.CheckResultAt(workspace, at, e)
+	case ContextualCheckRuntime:
+		st, err = r.CheckAt(workspace, at, e)
+	default:
+		if at.Sandboxed {
+			return EffectUnknown, nil, SandboxRefusal(e, "its runtime does not implement CheckAt, so it cannot be told the run is sandboxed")
+		}
 		st, err = rt.Check(workspace, e)
 	}
 	if err != nil || st == 0 {
-		return EffectUnknown, classifyAdapterErr(err)
+		return EffectUnknown, nil, classifyAdapterErr(err)
 	}
-	return st, nil
+	if st != EffectDone || len(res) == 0 {
+		res = nil
+	}
+	return st, res, nil
 }
 
 // WorkspaceRelocator optionally repairs an adapter's filesystem links when

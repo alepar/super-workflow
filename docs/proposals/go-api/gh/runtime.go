@@ -146,12 +146,22 @@ func markerKey(key string) string {
 	return b.String()
 }
 
+// Apply creates the issue. A keyed one is searched for first, by its marker,
+// and the issue found is returned instead of creating a second: an earlier
+// create may have reached GitHub although its result never came back.
 func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, error) {
 	if e.Op != "issue_create" {
 		return nil, fmt.Errorf("gh: unknown effect %q", e.Op)
 	}
 	body := str(e.Args, "body")
 	if e.KeyID() != "" {
+		found, err := r.find(workspace, e)
+		if err != nil {
+			return nil, err
+		}
+		if found != nil {
+			return json.Marshal(found)
+		}
 		body += "\n\n" + marker(e)
 	}
 	out, err := r.run(workspace, "issue", "create", "--repo", str(e.Args, "repo"),
@@ -167,34 +177,81 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 	return json.Marshal(Issue{Number: n, Title: str(e.Args, "title"), Body: body, State: "OPEN"})
 }
 
-// Check searches the repo's issues, open or closed, for the effect's marker.
-// GitHub's search matches terms, not the exact text, so a hit counts only when
-// its body holds the exact marker: another key whose terms overlap this one's
-// (run tag 2026-11-04-foo against 2026-11-04-foo-bar) is not done.
+// Check reports whether the effect's issue exists (CheckResultAt).
 func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	st, _, err := r.check(workspace, e)
+	return st, err
+}
+
+// ApplyAt, CheckAt and CheckResultAt refuse a sandboxed run's call: gh
+// reaches the real GitHub and has no sandbox, and a run made by a rewind or
+// a snapshot restore must never create an issue there. A sandboxed run's
+// observations (Read) are not refused: they change nothing.
+func (r runtime) ApplyAt(workspace string, at wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
+	if at.Sandboxed {
+		return nil, wf.SandboxRefusal(e, sandboxWhy)
+	}
+	return r.Apply(workspace, e)
+}
+
+func (r runtime) CheckAt(workspace string, at wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, error) {
+	st, _, err := r.CheckResultAt(workspace, at, e)
+	return st, err
+}
+
+// CheckResultAt searches for the effect's issue and, when it finds it,
+// returns it as Apply would have, so the Engine journals it on the "done"
+// result.
+func (r runtime) CheckResultAt(workspace string, at wf.EffectContext, e wf.ExternalEffect) (wf.EffectStatus, json.RawMessage, error) {
+	if at.Sandboxed {
+		return wf.EffectUnknown, nil, wf.SandboxRefusal(e, sandboxWhy)
+	}
+	return r.check(workspace, e)
+}
+
+const sandboxWhy = "gh reaches the real GitHub and cannot be sandboxed, so a rewound or restored run never performs or checks a gh effect"
+
+func (r runtime) check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, json.RawMessage, error) {
 	if e.Op != "issue_create" {
-		return wf.EffectUnknown, fmt.Errorf("gh: unknown effect %q", e.Op)
+		return wf.EffectUnknown, nil, fmt.Errorf("gh: unknown effect %q", e.Op)
 	}
 	if e.KeyID() == "" {
-		return wf.EffectUnknown, fmt.Errorf("gh issue_create: effect has no idempotency key to search for")
+		return wf.EffectUnknown, nil, fmt.Errorf("gh issue_create: effect has no idempotency key to search for")
 	}
+	found, err := r.find(workspace, e)
+	if err != nil {
+		return wf.EffectUnknown, nil, err
+	}
+	if found == nil {
+		return wf.EffectNotDone, nil, nil
+	}
+	res, err := json.Marshal(found)
+	if err != nil {
+		return wf.EffectUnknown, nil, err
+	}
+	return wf.EffectDone, res, nil
+}
+
+// find searches the repo's issues, open or closed, for the effect's marker.
+// GitHub's search matches terms, not the exact text, so a hit counts only when
+// its body holds the exact marker: another key whose terms overlap this one's
+// (run tag 2026-11-04-foo against 2026-11-04-foo-bar) is not a match. nil
+// means no issue holds it.
+func (r runtime) find(workspace string, e wf.ExternalEffect) (*Issue, error) {
 	m := marker(e)
 	out, err := r.run(workspace, "issue", "list", "--repo", str(e.Args, "repo"),
-		"--search", `"`+m+`" in:body`, "--json", "number,body", "--state", "all")
+		"--search", `"`+m+`" in:body`, "--json", "number,title,body,state", "--state", "all")
 	if err != nil {
-		return wf.EffectUnknown, err
+		return nil, err
 	}
-	var found []struct {
-		Number int
-		Body   string
-	}
+	var found []Issue
 	if err := json.Unmarshal(out, &found); err != nil {
-		return wf.EffectUnknown, fmt.Errorf("gh issue_create: decode search: %w", err)
+		return nil, fmt.Errorf("gh issue_create: decode search: %w", err)
 	}
 	for _, f := range found {
 		if strings.Contains(f.Body, m) {
-			return wf.EffectDone, nil
+			return &f, nil
 		}
 	}
-	return wf.EffectNotDone, nil
+	return nil, nil
 }

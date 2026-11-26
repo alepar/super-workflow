@@ -116,6 +116,12 @@ func (*recordingShell) Check(string, wf.ExternalEffect) (wf.EffectStatus, error)
 	return wf.EffectNotDone, nil
 }
 
+// ApplyAt stands in for the shell runtime's: it takes the run's context, so
+// a fork (a sandboxed run) runs it rather than refusing it.
+func (r *recordingShell) ApplyAt(ws string, _ wf.EffectContext, e wf.ExternalEffect) (json.RawMessage, error) {
+	return r.Apply(ws, e)
+}
+
 type (
 	ccFirst  struct{}
 	ccOffer  struct{}

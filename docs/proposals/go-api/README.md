@@ -84,6 +84,33 @@ Register each adapter your definition uses; `wf.Main(def)` alone does not
 register shell or Git runtimes. The tour uses inline commands. For detached
 commands, see the effect runner registration in [cmd/workflow](cmd/workflow/main.go).
 
+### Your own adapter and exactly-once effects
+
+An adapter runtime (`wf.AdapterRuntime`) performs its ops' effects with
+`Apply` and answers `Check`: whether the effect with this key already took
+effect in the world. The engine checks a keyed effect by its key before it
+applies it again whenever an earlier application is in doubt. That covers a
+crash between intent and result, a call that failed, and a tool call that
+timed out (journaled `uncertain`: the request may have landed). A check that
+answers done is not applied again. Implement `wf.CheckResultRuntime` to return
+what the check found, such as the created issue; it is journaled on the
+`done` result, so later states read it as they would an applied result. A
+NonIdempotent effect has no check, so an effect in doubt goes to manual
+verification instead.
+
+A run made by a rewind or a snapshot restore is sandboxed, and it never
+performs a remote effect. The engine tells a runtime through
+`EffectContext.Sandboxed`, which only `ApplyAt` and `CheckAt`
+(`wf.ContextualEffectRuntime`, `wf.ContextualCheckRuntime`) receive. In a
+sandboxed run, an effect whose runtime has no `ApplyAt` is refused, never
+applied: it is journaled `refused`, its error names the adapter, the op and
+the reason, and the edge stops Blocked. A runtime whose ops are local
+implements the `At` forms and ignores the flag. One that reaches a remote it
+cannot sandbox refuses with `wf.SandboxRefusal`, as `gh` does. To test such an
+adapter's own `Apply` and `Check` under the engine, against a stub, use
+`wftest.Real(world, runtime)`: crashes and failures from the world's fault
+targets still apply.
+
 ### Build stamps
 
 Every run records the source identity of the binary that created it: the

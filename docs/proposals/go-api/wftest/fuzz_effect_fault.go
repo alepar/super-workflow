@@ -35,7 +35,7 @@ func effectFaultResult(class string, effect wf.ExternalEffect) (json.RawMessage,
 			}
 			return nil, fmt.Errorf("fuzz shell command timed out: %w", context.DeadlineExceeded)
 		}
-		return nil, fmt.Errorf("%w: fuzz %s.%s timed out: %w", wf.ErrUnavailable, effect.Adapter, effect.Op, context.DeadlineExceeded)
+		return nil, fmt.Errorf("%w: %w: fuzz %s.%s timed out: %w", wf.ErrUnavailable, wf.ErrTimedOut, effect.Adapter, effect.Op, context.DeadlineExceeded)
 	case "effect-adverse":
 		if effect.Adapter == "shell" && effect.Op == "run" {
 			return json.Marshal(wf.RunResult{Exit: 1, Stderr: "fuzz command failed"})
