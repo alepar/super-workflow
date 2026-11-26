@@ -17,7 +17,8 @@ import (
 // must return a fresh Sim and World on every call, as for Fuzz and Calibrate.
 type CheckConfig struct {
 	// MaxRuns caps simulation runs, including calibration discovery and finding
-	// reduction. Zero is unlimited. Runs follow calibration, interleaved mixed/
+	// reduction, per variant: with Variants each one has its own MaxRuns, and
+	// CheckReport.Runs is their sum. Zero is unlimited. Runs follow calibration, interleaved mixed/
 	// liveness seeds, gate answers, corpus, agent outcomes, repeated faults,
 	// named scenarios, then fault recovery. Reduction runs immediately on a new
 	// finding. Lint, recorded calibration probes and ChildProtocol are separate.
@@ -146,11 +147,14 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 		}
 		return s
 	}
-	budget := &checkRunBudget{max: cfg.MaxRuns}
-	cfg.budget, calibration.budget = budget, budget
+	// Each variant spends its own MaxRuns, so a bounded check simulates every
+	// variant, not only the first.
+	var budgets []*checkRunBudget
 	defer func() {
-		r.Runs = budget.used
-		r.NotExplored = append([]string(nil), budget.skipped...)
+		for _, b := range budgets {
+			r.Runs += b.used
+			r.NotExplored = append(r.NotExplored, b.skipped...)
+		}
 		for _, target := range r.NotExplored {
 			r.addCoverage("not explored (budget): " + target)
 		}
@@ -217,6 +221,9 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 	var unreached [][]string
 	for _, v := range variants {
 		r.Coverage.variant = v.name
+		budget := &checkRunBudget{max: cfg.MaxRuns, tag: v.tag}
+		budgets = append(budgets, budget)
+		cfg.budget, calibration.budget = budget, budget
 		report := calibrate(v.factory, calibration)
 		calibrations = append(calibrations, report)
 		if single {

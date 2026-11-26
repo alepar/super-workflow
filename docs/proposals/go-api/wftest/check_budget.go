@@ -6,6 +6,8 @@ type checkRunBudget struct {
 	max, used int
 	skipped   []string
 	seen      map[string]bool
+	// tag names the variant on a refused target; nil leaves it as is.
+	tag func(string) string
 }
 
 func (b *checkRunBudget) take(target string) bool {
@@ -28,6 +30,9 @@ func (b *checkRunBudget) skip(target string) {
 		b.seen = map[string]bool{}
 	}
 	b.seen[target] = true
+	if b.tag != nil {
+		target = b.tag(target)
+	}
 	b.skipped = append(b.skipped, target)
 }
 

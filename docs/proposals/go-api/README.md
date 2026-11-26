@@ -293,7 +293,8 @@ An edge guarded by a run option (`Edge.When`) is taken under some options
 values only. Do not mark its untaken side unreachable. List the values in
 `CheckConfig.Variants` instead, for example
 `map[string]any{"audited": Opts{}, "skipped": Opts{Skip: true}}`. Check
-simulates each variant and judges coverage on their union. Each guard must
+simulates each variant, each under its own `MaxRuns`, and judges coverage on
+their union. Each guard must
 hold under at least one variant, and a problem seen under one variant names
 it. Combinations you do not list, and options read in closures through
 `wf.OptionsOf`, are not covered.

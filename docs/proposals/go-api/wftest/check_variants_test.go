@@ -128,3 +128,33 @@ func TestCheckVariantFindingsNameTheirVariant(t *testing.T) {
 		t.Fatalf("problem not tagged with its variant: %v", got.RealProblems)
 	}
 }
+
+// TestCheckVariantsEachSpendTheirOwnRuns bounds MaxRuns at about one
+// variant's need. A budget shared in name order lets "audited" spend it all
+// and leaves the later "skipped" variant's guarded edge untraversed; each
+// variant spending its own MaxRuns covers both sides.
+func TestCheckVariantsEachSpendTheirOwnRuns(t *testing.T) {
+	cfg := variantConfig(map[string]any{"audited": variantOpts{}, "skipped": variantOpts{Skip: true}})
+	cfg.MaxRuns = 30
+	got := wftest.Check(variantFactory(false), cfg)
+	if len(got.Problems) != 0 {
+		t.Fatalf("bounded check starved a variant: %v", got.Problems)
+	}
+	if got.Coverage.EdgesReached["review/variantAudit/edge[1]"] == 0 {
+		t.Fatalf("the later variant's guarded edge was not traversed: %v", got.Coverage.EdgesReached)
+	}
+	if got.Runs <= cfg.MaxRuns {
+		t.Fatalf("runs %d not summed across variants (MaxRuns %d each)", got.Runs, cfg.MaxRuns)
+	}
+	// A refusal names the variant whose budget refused it.
+	cfg.MaxRuns = 2
+	tight := wftest.Check(variantFactory(false), cfg)
+	tagged := map[string]bool{}
+	for _, target := range tight.NotExplored {
+		name, _, _ := strings.Cut(strings.TrimPrefix(target, "variant "), ":")
+		tagged[name] = strings.HasPrefix(target, "variant ")
+	}
+	if !tagged["audited"] || !tagged["skipped"] {
+		t.Fatalf("budget refusals not tagged per variant: %v", tight.NotExplored)
+	}
+}

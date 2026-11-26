@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Each `Check` variant spends its own `MaxRuns` (sw-ze6r).** Variants ran
+  in name order against one shared run budget, so in a bounded check the
+  first variant spent it and the later ones barely ran. The edges guarded
+  for them stayed uncovered, and the result depended on the variant names.
+  Now every variant calibrates and simulates under its own `MaxRuns`.
+  `CheckReport.Runs` is the sum over variants, and each `NotExplored` refusal
+  reads `variant <name>: <target>`. A config without `Variants` is
+  unchanged.
+
+### Upgrading
+
+- **A checker with `Variants` and a bounded `MaxRuns`** now spends up to
+  `MaxRuns` per variant, so it runs longer and covers more. One that
+  multiplied `MaxRuns` by its variant count to make room should drop the
+  factor. A gate on `CheckReport.Runs` sees the sum over variants.
+
 ## v0.4.1
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
