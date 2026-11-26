@@ -9,7 +9,7 @@
       },
       "source": {
         "path": "plugins/super-workflow",
-        "ref": "plugin-v0.2.1",
+        "ref": "plugin-v0.3.0",
         "source": "git-subdir",
         "url": "https://github.com/alepar/super-workflow.git"
       }

@@ -1,16 +1,63 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.3.0`. GitHub installs use the plugin tag
+`plugin-v0.3.0`. This release breaks compatibility: the `harness` API loses
+`Unsupported`, and most checkpoints it takes cannot be forked by older
+engines. Read Upgrading before you move a definition, a binary or a live run
+to it.
+
+### What changed
+
+- **Built-in opencode adapter.** The `harness` package now has an opencode
+  adapter that uses only opencode's public surface: it reads none of
+  opencode's storage, runs no program and adds no module requirements. A new
+  opencode plugin, `opencode/super-workflow.js` in the engine module and the
+  plugin payload, exports `OPENCODE_SESSION_ID` and
+  `OPENCODE_PARENT_SESSION_ID` into every command opencode's bash tool runs;
+  install it by copying or linking it into `~/.config/opencode/plugins/` or a
+  project's `.opencode/plugins/`. The plugin is required: without it an
+  opencode session cannot drive a run, and its driving verbs are refused,
+  naming `OPENCODE_SESSION_ID`. Units are spawned and resumed with opencode's
+  `task` tool, and liveness comes only from the engine's verbs, heartbeats and
+  the lease. The `task` tool takes no model, so no tier resolves and a
+  `--model-map` is not applied: children run on the coordinator's model. When
+  the definition uses tiers or a `--model-map` is given, one degraded `tiers`
+  record per run or segment says so. A bare `OPENCODE` variable counts only
+  when no other harness's markers are set; when it is set without
+  `OPENCODE_SESSION_ID` (a plugin-less opencode started from another harness's
+  tab, say), `run` prints a note and journals one degraded `harness hint`
+  record. [COORDINATOR.md](docs/proposals/go-api/COORDINATOR.md) documents the
+  adapter (written against opencode 1.18.x), the plugin and its limits. The
+  adapter is covered by synthetic tests only and is untested in a live
+  opencode run; a live run is a tracked follow-up.
+
+- **`wf.ShellBound` binds a prompt value as one shell word.** It binds like
+  `wf.Bound`, path templates included, but its value is the bound text as
+  exactly one POSIX shell word (`sink.Quote`), so `cd [WORKTREE]` in a prompt
+  stays one argument whatever the path holds, in prose, a code span, a list
+  item or a fenced block. `wf.ShellWords` quotes each element of a
+  whitespace-separated list as its own word, and text with no elements binds
+  empty. A shell value is never paged. Text no prompt line can carry as one
+  word blocks the state: a control character (a line break, a tab, NUL), a
+  backtick or invalid UTF-8. In a fork the whole bound text is checked like a
+  command argument. `wf.Reference` has no effect on a shell input. The view
+  and the definition hash show the mode; definitions that do not use it keep
+  their hash. `sink.Command` renders a command line in text the program writes
+  whole: an inline code span for one line, a fenced block otherwise.
 
 - **World checkpoints cost what changed, not the world's size.** The git
   adapter hands the repository's object files to the run's snapshot store
   instead of writing a bundle of its whole history each time; the store keeps
   a hash cache of files it has read and trusts packs it has read back whole
-  while they are unchanged. On a 310 MB repository a checkpoint fell from
-  about 10 s to under 0.5 s, and the store no longer grows by the repository
-  at every checkpoint. Forward-incompatible: a checkpoint taken by this
-  engine (git metadata version 3) cannot be forked by an older engine, which
-  refuses it; checkpoints taken by older engines fork as before.
+  while they are unchanged. On a 310 MB repository a checkpointing submit fell
+  from 11-17 s to about 0.5 s, and the store no longer grows by the repository
+  at every checkpoint. Forward-incompatible: a checkpoint this engine
+  takes of an ordinary clone (git metadata version 3) cannot be forked by an
+  older engine, which refuses it. Shallow, partial and alternates clones still
+  get version-2 bundles, and checkpoints taken by older engines fork as before.
 
 - **`maxlen` bounds only what an agent submits.** It is checked on validate
   and done (and the calibration and recorded-output probes), no longer on
@@ -19,6 +66,24 @@
   ordinary data into a refusal or a halt with no agent to fix it. `pattern`
   is still checked everywhere. A workflow that relied on `maxlen` to refuse a
   computed, read or yielded value must check that length itself.
+
+### Upgrading
+
+- **`harness.Unsupported` is removed.** opencode was its only entry, and it
+  now has a built-in adapter. Drop calls to it. A binary that registers its
+  own `"opencode"` adapter now fails with `already registered`: remove that
+  registration and use the built-in one. An adapter under another name that
+  declares `OPENCODE` or `OPENCODE_SESSION_ID` as a marker now fails to
+  register too, because those markers are opencode's.
+- **Checkpoints are forward-incompatible.** A checkpoint v0.3.0 takes of an
+  ordinary clone uses git metadata version 3, which older engines refuse with
+  `git restore: invalid metadata`. Do not fork a run started or checkpointed
+  under v0.3.0 with an older engine. Shallow, partial and alternates clones
+  still get version-2 bundles, and checkpoints taken by older engines fork
+  under v0.3.0 as before.
+- **`maxlen` no longer refuses computed values.** It is checked only on what
+  an agent submits. A workflow that relied on it to refuse a compute output, a
+  Sub input, a Map item or a yield result must check that length itself.
 
 ## v0.2.1
 
