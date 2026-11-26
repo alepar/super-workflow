@@ -147,9 +147,26 @@
     Lost attempts and a run's end stop their children's process groups.
   - **Status:** it shows each unit's harness, its pid and why it did not
     start, and each child harness's preflight.
+- **The git adapter ignores an inherited repository environment (sw-j721).**
+  An engine started from a git hook, or with `GIT_DIR` and `GIT_WORK_TREE`
+  exported for a worktree, sent the adapter's ordinary calls (commit, merge,
+  worktree, status and the reads) to the repository those variables named.
+  Those calls now drop the variables that select another repository
+  (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`,
+  `GIT_OBJECT_DIRECTORY`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT` with its
+  pairs and the rest of `git rev-parse --local-env-vars`), as snapshot calls
+  and the writable probe already did. `dev manufacture`'s own `git config`
+  calls run without any `GIT_*` variable. The engine's test packages that run
+  git now clear every `GIT_*` variable and turn off system and global git
+  config before any test starts, so a suite started under those variables
+  never writes to the repository they name.
 
 ### Upgrading
 
+- **A workflow that relied on an inherited `GIT_DIR`** to point the git
+  adapter at a repository other than the workspace's now gets the
+  workspace's. Name the worktree in the effect or observation instead.
+  `GIT_CONFIG_GLOBAL`, author and committer variables still pass through.
 - **`{records}` ignores document fields.** A definition that bound
   `{records}` from an input or output field gets the run's records
   directory instead. Pass a different root under another name.

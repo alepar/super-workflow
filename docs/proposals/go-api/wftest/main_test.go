@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 )
 
 // harnessEnvVars are the variables a harness's shell sets that the engine
@@ -34,6 +35,7 @@ func harnessEnvVars() []string {
 }
 
 func TestMain(m *testing.M) {
+	testgit.Isolate()
 	for _, k := range harnessEnvVars() {
 		os.Unsetenv(k)
 	}

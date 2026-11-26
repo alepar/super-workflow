@@ -907,3 +907,29 @@ func TestRelocatePlainWorkspaceWithGitRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An engine started from a git hook inherits GIT_DIR and GIT_WORK_TREE for
+// the hook's repository. The adapter's commit still lands in the workspace's
+// repository and writes nothing into the one those variables name (sw-j721).
+func TestAdapterIgnoresInheritedRepositoryEnvironment(t *testing.T) {
+	repo := newRepo(t)
+	other := newRepo(t)
+	otherHead := sh(t, other, "rev-parse", "HEAD")
+	otherRefs := sh(t, other, "for-each-ref")
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+	writeFile(t, repo, "a.txt", "changed\n")
+	if _, err := rt().Apply(repo, git.Commit(wf.KeyOf("c"), repo, "in the workspace")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
+		os.Unsetenv(k)
+	}
+	if msg := sh(t, repo, "log", "-1", "--format=%s"); msg != "in the workspace" {
+		t.Errorf("workspace head = %q", msg)
+	}
+	if head, refs := sh(t, other, "rev-parse", "HEAD"), sh(t, other, "for-each-ref"); head != otherHead || refs != otherRefs {
+		t.Errorf("the inherited GIT_DIR's repository changed: head %s refs %q", head, refs)
+	}
+}

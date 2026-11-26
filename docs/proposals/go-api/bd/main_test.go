@@ -1,6 +1,7 @@
 package bd_test
 
 import (
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 	"os"
 	"testing"
 )
@@ -10,6 +11,7 @@ import (
 // under HOME, a test TempDir, and can still be writing when the test returns
 // .
 func TestMain(m *testing.M) {
+	testgit.Isolate()
 	os.Setenv("BD_DISABLE_METRICS", "1")
 	code := m.Run()
 	if templateDir != "" {

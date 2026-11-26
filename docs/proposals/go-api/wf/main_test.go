@@ -19,6 +19,7 @@ import (
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/gatedchain"
 	hn "github.com/alepar/super-workflow/docs/proposals/go-api/harness"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness/agytest"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/shell"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
@@ -124,6 +125,7 @@ func clConfig() wf.MainConfig {
 // TestMain re-enters as the CLI when WF_TEST_CLI=1, so an instruction's Submit
 // line (which names this binary) runs as a real subprocess.
 func TestMain(m *testing.M) {
+	testgit.Isolate()
 	if len(os.Args) > 1 && os.Args[1] == shell.DetachedVerb { // the detached runner re-executes this binary
 		os.Exit(shell.RunDetached(os.Args[2:], os.Stdout, os.Stderr))
 	}

@@ -9,9 +9,9 @@ import (
 )
 
 // payloadExcluded lists the module directories whose Go files stay out of
-// the plugin payload on purpose: the deliberately invalid lint fixtures and
-// the development tools.
-var payloadExcluded = []string{"bad/", "tools/"}
+// the plugin payload on purpose: the deliberately invalid lint fixtures, the
+// development tools and the test-only git isolation.
+var payloadExcluded = []string{"bad/", "tools/", "internal/testgit/"}
 
 // TestPayloadAllowlistCoversEngineSource fails when a non-test Go file of
 // this module is neither in packaging/payload-files.txt nor under an

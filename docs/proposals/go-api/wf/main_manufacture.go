@@ -520,7 +520,9 @@ func confineRepository(src, ws string, onto func(string) (string, bool)) (droppe
 			if _, inside := snapshotRelative(ws, to); !inside {
 				return fmt.Errorf("remote %s is %s, a local repository outside the fixture", r.key, r.value)
 			}
-			if res, err := exec.Command("git", "config", "--file", filepath.Join(gitDir, "config"), r.key, to).CombinedOutput(); err != nil {
+			rewrite := exec.Command("git", "config", "--file", filepath.Join(gitDir, "config"), r.key, to)
+			rewrite.Env = isolatedGitEnv()
+			if res, err := rewrite.CombinedOutput(); err != nil {
 				return fmt.Errorf("rewriting %s: %v: %s", r.key, err, res)
 			}
 			next, nextBase, ok := repositoryAt(to)
@@ -579,7 +581,9 @@ func sanitizeRepository(gitDir string) (remotes []gitSetting, dropped []string, 
 	}
 	file := filepath.Join(gitDir, "config")
 	config := func(args ...string) *exec.Cmd {
-		return exec.Command("git", append([]string{"config", "--file", file}, args...)...)
+		cmd := exec.Command("git", append([]string{"config", "--file", file}, args...)...)
+		cmd.Env = isolatedGitEnv()
+		return cmd
 	}
 	out, err := config("--list", "-z").Output()
 	if err != nil {

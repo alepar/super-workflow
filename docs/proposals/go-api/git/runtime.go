@@ -74,11 +74,13 @@ func resolve(workspace, p string) string {
 	return filepath.Join(workspace, p)
 }
 
-// git runs the CLI in dir. A non-zero exit is returned as exit with a nil
+// git runs the CLI in dir, without the inherited variables that would send it
+// to another repository (an engine started from a git hook inherits GIT_DIR)
+// or change how it reads pathspecs. A non-zero exit is returned as exit with a nil
 // error, so callers that read exit codes as data (merge-base --is-ancestor)
 // can; the others use must.
 func (r runtime) git(dir string, argv ...string) (out string, exit int, err error) {
-	tool := wf.Tool{Bin: r.bin, Args: argv, Dir: dir, Timeout: r.timeout, UnsetEnv: pathspecEnv}
+	tool := wf.Tool{Bin: r.bin, Args: argv, Dir: dir, Timeout: r.timeout, UnsetEnv: append(probeUnset(), pathspecEnv...)}
 	if r.snapshot {
 		tool = r.snapshotTool(dir, argv, nil)
 	}

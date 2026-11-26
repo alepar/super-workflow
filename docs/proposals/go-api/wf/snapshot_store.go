@@ -204,13 +204,21 @@ func gitCommand(gitDir string, args ...string) *exec.Cmd {
 		full = append(full, "--git-dir", gitDir)
 	}
 	cmd := exec.Command("git", append(full, args...)...)
+	cmd.Env = isolatedGitEnv()
+	return cmd
+}
+
+// isolatedGitEnv is the process environment without any GIT_* variable and
+// with git's system and global configuration off, for git the engine runs on
+// a repository it owns.
+func isolatedGitEnv() []string {
+	var env []string
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "GIT_") {
-			cmd.Env = append(cmd.Env, kv)
+			env = append(env, kv)
 		}
 	}
-	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0")
-	return cmd
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0")
 }
 
 func (s *snapshotStore) git(args ...string) *exec.Cmd { return gitCommand(s.dir, args...) }

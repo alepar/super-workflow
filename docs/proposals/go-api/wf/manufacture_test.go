@@ -702,6 +702,54 @@ func TestScriptedHarnessCannotBeNamed(t *testing.T) {
 // hooks are off, local settings that name a program, filter or file are
 // dropped and reported, includes and per-worktree config refuse the copy,
 // and relative local remotes resolve inside the copy or refuse it.
+// A suite started with GIT_DIR and GIT_WORK_TREE exported (from a git hook,
+// or for a worktree) must not reach that repository: TestMain isolates the
+// test binary's git. Re-run git-heavy tests under a hostile GIT_DIR naming a
+// throwaway repository and require it unchanged (sw-j721).
+func TestSuiteIgnoresInheritedGitEnvironment(t *testing.T) {
+	if os.Getenv("WF_TEST_HOSTILE_GIT") == "1" {
+		t.Skip("the probe itself")
+	}
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return string(out)
+	}
+	victim := t.TempDir()
+	git(victim, "init", "-q")
+	git(victim, "-c", "user.name=v", "-c", "user.email=v@v", "commit", "-q", "--allow-empty", "-m", "victim")
+	state := func() string {
+		config, err := os.ReadFile(filepath.Join(victim, ".git", "config"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, _ := os.ReadDir(filepath.Join(victim, ".git"))
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		return string(config) + "\n" + strings.Join(names, " ") + "\n" +
+			git(victim, "for-each-ref") + git(victim, "worktree", "list", "--porcelain") + git(victim, "count-objects", "-v") + git(victim, "status", "--porcelain")
+	}
+	before := state()
+	cmd := exec.Command(os.Args[0], "-test.run=^(TestManufactureCLIIsolatesTheCopysGit|TestSnapshot.*Git.*)$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "WF_TEST_HOSTILE_GIT=1",
+		"GIT_DIR="+filepath.Join(victim, ".git"), "GIT_WORK_TREE="+victim, "GIT_INDEX_FILE="+filepath.Join(victim, ".git", "index"),
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0="+filepath.Join(victim, "hooks"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("the tests under a hostile GIT_DIR failed: %v\n%s", err, out)
+	} else if !strings.Contains(string(out), "PASS") {
+		t.Errorf("no test ran: %s", out)
+	}
+	if after := state(); after != before {
+		t.Errorf("the inherited GIT_DIR's repository changed:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 func TestManufactureCLIIsolatesTheCopysGit(t *testing.T) {
 	cfg, d, _ := manufactureCLI(t)
 	marker := filepath.Join(t.TempDir(), "hook-ran")
