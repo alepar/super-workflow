@@ -31,8 +31,10 @@ to it.
   tab, say), `run` prints a note and journals one degraded `harness hint`
   record. [COORDINATOR.md](docs/proposals/go-api/COORDINATOR.md) documents the
   adapter (written against opencode 1.18.x), the plugin and its limits. The
-  adapter is covered by synthetic tests only and is untested in a live
-  opencode run; a live run is a tracked follow-up.
+  adapter is covered by synthetic tests and has passed a live run on
+  opencode 1.18.1: the run ended in success with the child's identity
+  recorded. (The notes as tagged said it was untested live; the live run
+  passed after they were written.)
 
 - **`wf.ShellBound` binds a prompt value as one shell word.** It binds like
   `wf.Bound`, path templates included, but its value is the bound text as
