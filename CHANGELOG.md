@@ -34,6 +34,14 @@
   orphaned process still runs and fetches first, it claims the unit under
   its old claim, as any earlier offer's child may. The new child's fetch is
   then refused, so the unit never has two children working on it.
+- **wftest: a keyed command that exited non-zero is not done for the
+  world's check (sw-yvoy).** Since v0.4.0 the engine checks a keyed edge
+  effect whose last result failed before applying it again. The fake
+  `World` answered done for a `shell.run` scripted to exit non-zero with
+  `wftest.Exit` or `ExitOnce`, so the engine skipped the re-run that the
+  real shell adapter, which answers not done for a keyed command, would
+  have made. A `shell.run` whose result exits non-zero now counts as failed
+  for the check, as `FailApply` does.
 
 ### Upgrading
 
@@ -48,6 +56,12 @@
   `GIT_REPLACE_REF_BASE` or `GIT_IMPLICIT_WORK_TREE`** no longer sees it.
   Set it in the command's own argv, for example
   `env GIT_SHALLOW_FILE=<file> git ...`.
+- **wftest: a test that loops back to a keyed shell edge effect after a
+  scripted non-zero `Exit`** now sees the command run again, as in
+  production, and takes the route that follows its new result. A workaround
+  that scripted the failure with `FailApplyIf` to force the re-run still
+  works and can go back to `Exit`. A test that expected the skip asserted
+  behavior production never has.
 
 ## v0.4.0
 

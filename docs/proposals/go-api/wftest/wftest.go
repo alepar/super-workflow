@@ -350,11 +350,12 @@ type World struct {
 	missing       []string                     // read keys the world had no value for, in order
 	unknown       map[string]string            // adapter.op to the error a read with no value returns
 	real          map[string]wf.AdapterRuntime // adapter.op to the Real runtime that performs it
-	failed        map[int]bool                 // indexes into applied whose Apply a script failed
+	failed        map[int]bool                 // indexes into applied whose Apply a script failed or whose command exited non-zero
 }
 
 // failedApply marks the effect just applied as failed by a script (FailApply,
-// FailApplyIf): it stays in Applied, but Check does not count it as done.
+// FailApplyIf, or a command scripted to exit non-zero): it stays in Applied,
+// but Check does not count it as done.
 func (w *World) failedApply(msg string) error {
 	if w.failed == nil {
 		w.failed = map[int]bool{}
@@ -759,7 +760,7 @@ func (w *World) ApplyAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (js
 		w.onApply(e)
 	}
 	if injected != nil {
-		return injected, nil
+		return w.commandResult(e, injected), nil
 	}
 	if rt != nil {
 		if msg, ok := w.failing[e.Adapter+"."+e.Op]; ok {
@@ -768,7 +769,7 @@ func (w *World) ApplyAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (js
 		return realApply(rt, ws, at, e)
 	}
 	if raw, ok := w.nextFuzzResult(at, e); ok {
-		return raw, nil
+		return w.commandResult(e, raw), nil
 	}
 	if w.fuzzGood {
 		if e.Adapter == "shell" && e.Op == "run" {
@@ -786,9 +787,28 @@ func (w *World) ApplyAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (js
 	}
 	if e.Adapter == "shell" && e.Op == "run" {
 		argv := argvOf(e.Args)
-		return json.Marshal(wf.RunResult{Exit: w.exitOf(argv), Stdout: w.stdoutOf(argv)})
+		raw, err := json.Marshal(wf.RunResult{Exit: w.exitOf(argv), Stdout: w.stdoutOf(argv)})
+		if err != nil {
+			return nil, err
+		}
+		return w.commandResult(e, raw), nil
 	}
 	return json.RawMessage(`{"ok":true}`), nil
+}
+
+// commandResult marks the shell.run just applied as failed when its result
+// exits non-zero, so Check answers not done for it and the engine runs the
+// command again, as the real shell adapter's check does. raw is returned as
+// is.
+func (w *World) commandResult(e wf.ExternalEffect, raw json.RawMessage) json.RawMessage {
+	if e.Adapter != "shell" || e.Op != "run" {
+		return raw
+	}
+	var r wf.RunResult
+	if json.Unmarshal(raw, &r) == nil && r.Exit != 0 {
+		_ = w.failedApply("")
+	}
+	return raw
 }
 
 // setFuzzGood serializes phase changes with effect application.
@@ -844,7 +864,8 @@ func (w *World) CheckAt(ws string, at wf.EffectContext, e wf.ExternalEffect) (wf
 // Check implements wf.AdapterRuntime: the scripted answer for the effect's
 // key (EffectDone, EffectUnknown), else a Real runtime's own check, else done
 // when the world already applied an effect with that op and key and no
-// script failed that apply, else not done.
+// script failed that apply (a command that exited non-zero counts as failed),
+// else not done.
 func (w *World) Check(ws string, e wf.ExternalEffect) (wf.EffectStatus, error) {
 	return w.CheckAt(ws, wf.EffectContext{}, e)
 }
