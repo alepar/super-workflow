@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.9
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.9`. GitHub installs use the plugin tag
+`plugin-v0.4.9`. This release adds `wf dev heartbeat died`, an operator form
+that releases a gone child's claim as an orphan without spending a retry, and
+teaches `wf.Reject` as the default for a late judgement in the guide and the
+authoring skill. No existing behavior changes.
 
 ### What changed
 
