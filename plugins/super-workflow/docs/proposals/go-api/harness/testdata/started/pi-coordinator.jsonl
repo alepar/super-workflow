@@ -1,0 +1,2 @@
+{"type":"session","id":"fixture-pi-parent","cwd":"/test/work","timestamp":"2000-01-01T00:00:00.000Z"}
+{"type":"message","timestamp":"2000-01-01T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"toolCall","name":"bash","arguments":{"command":"cd /test/work && SUPER_PI_CHILD=wf-1011121314151617 SUPER_PI_PARENT=\"$PI_SESSION_ID\" nohup pi -p -ne --session-id wf-1011121314151617 <<'WF_BRIEF' >/dev/null 2>/nonexistent/child-logs/example/wf-1011121314151617.stderr &\nworkflow prompt example --claim 1011121314151617 --state-dir /test/state\nWF_BRIEF"}}]}}
