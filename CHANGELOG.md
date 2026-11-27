@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.2
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.2`. GitHub installs use the plugin tag
+`plugin-v0.4.2`. This patch release changes one `wftest` behaviour: each
+`Check` variant now spends its own `MaxRuns`, so a bounded check with
+variants runs longer and `CheckReport.Runs` is the sum over variants. Read
+Upgrading before you move a test to it.
 
 ### What changed
 

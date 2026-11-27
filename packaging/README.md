@@ -9,7 +9,7 @@ the marketplace directory at its absolute path while it is registered.
 Use the same source commit and version for both harnesses.
 
 ```sh
-python3 scripts/package-plugin.py --ref HEAD --version 0.4.1 --output "$PWD/plugin-release"
+python3 scripts/package-plugin.py --ref HEAD --version 0.4.2 --output "$PWD/plugin-release"
 marketplace="$PWD/plugin-release/marketplace"
 ```
 
