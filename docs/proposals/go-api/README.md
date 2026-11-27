@@ -485,8 +485,11 @@ Each agent has a typed JSON result. Review results contain complete evidence
 rows; the engine computes their verdict. Named enum types reject unknown values;
 `RouteCases` declares each alternative. Ordinary revision edges are separate
 from retry budgets: retries handle unusable attempts, while `MaxVisits` bounds
-valid design and code revisions. `OnFailure` supplies operational failure
-routes across the definition, including failed edge effects.
+valid design and code revisions. A `MaxVisits` budget that reads a counter is
+evaluated after the arriving transition's `Inc`s, so an edge that increments
+`fixes` pays for its own visit under `2 + fixes`. `OnFailure` supplies
+operational failure routes across the definition, including failed edge
+effects.
 
 Artifacts use `NewArtifact` without a path. The engine allocates the producer's
 path, and consumers declare `Consumes`. Across a Map boundary, pass a typed

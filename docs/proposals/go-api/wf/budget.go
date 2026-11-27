@@ -71,7 +71,10 @@ func (b Budget) Counters() []Counter {
 // MaxVisits caps visits of the edge's source state at most N times, where N is
 // b: the (N+1)th arrival takes over instead of entering the state. The count is
 // per instance of the definition that declares the state (the top-level run,
-// each Map item instance, each Sub launch) and never resets within it. over is
+// each Map item instance, each Sub launch) and never resets within it. b is
+// read after the arriving transition's counter updates: its Incs, and the
+// scope resets they cause, count toward the budget of the visit they cause, so
+// in 2 + fixes an edge carrying fixes.Inc() pays for its own arrival. over is
 // a full Edge: its With effects are stored, rendered, hashed and linted like
 // those of any other edge.
 func MaxVisits[S any](b Budget, over Edge[S]) {

@@ -20,6 +20,17 @@
 - **The engine's own tests pass under macOS's temp directory (sw-vi0h).**
   Test isolation resolves `TMPDIR` to its real path, and two prompt-size
   tests no longer depend on how long the temp directory's path is.
+- **A `MaxVisits` budget is read after the arriving transition's counter
+  updates (sw-h8ge).** The engine checked a target state's visit budget
+  against the counters as they stood before the edge into it was taken, so
+  the edge's own `Inc` did not count. A budget such as `2 + fixes` therefore
+  refused the very visit that the `fixes.Inc()` on the arriving edge was
+  meant to allow. The budget is now read over the counters the target will
+  see: the edge's `Inc`s apply, after the scope resets they cause (`ScopedTo`),
+  in the same order the transition applies them. When a spent budget
+  redirects through an over edge, the next target's budget also counts the
+  over edge's `Inc`s. A budget of constants only, or one whose counters the
+  arriving edge does not touch, behaves as before.
 
 ### Upgrading
 
@@ -28,6 +39,14 @@
   under `/tmp` prints as `/private/tmp/...`. A run recorded under an alias
   of its workspace is treated as the same run in the same place: `run`
   attaches to it and `next` does not relocate it.
+- Run behaviour changes for a definition whose `MaxVisits` budget reads a
+  counter that an edge into the capped state increments, or resets through
+  `ScopedTo`. That arrival now counts the update: one more visit per `Inc`,
+  or a smaller budget after a reset. Check each such cap against the visits
+  it should allow; a cap written as "one per record written" now means what
+  it says. The definition hash does not change, and plans already journaled
+  keep the target they chose, so a resumed run follows the new order from
+  its next decision.
 
 ## v0.4.4
 

@@ -393,11 +393,14 @@ func (d *Def) find(name string) *node {
 func (in *instance) node() *node { return in.def.find(in.Cur) }
 
 // eval evaluates a budget over the instance's counters.
-func (in *instance) eval(b Budget) int {
+func (in *instance) eval(b Budget) int { return evalCounters(b, in.Counters) }
+
+// evalCounters evaluates a budget over the given counter values.
+func evalCounters(b Budget, counters map[string]int) int {
 	total := 0
 	for _, t := range b.terms {
 		if t.c != nil {
-			total += in.Counters[t.c.name]
+			total += counters[t.c.name]
 		} else {
 			total += t.k
 		}

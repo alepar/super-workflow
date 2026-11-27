@@ -1974,7 +1974,9 @@ func (c *cycle) edgeFailed(in *instance, class OutcomeClass, why string) error {
 // ---------------------------------------------------------------- plans
 
 // planOf builds the journaled plan for a chosen edge use: the edge, then the
-// MaxVisits over edge of any target whose arrivals are spent.
+// MaxVisits over edge of any target whose arrivals are spent. A target's
+// budget is read over the counters as transit leaves them for the steps
+// planned so far: the arriving transition's scope resets and Incs apply first.
 func (c *cycle) planOf(in *instance, u edgeUse, output ...json.RawMessage) (EdgePlan, error) {
 	view := in
 	if len(output) > 0 {
@@ -1992,12 +1994,44 @@ func (c *cycle) planOf(in *instance, u edgeUse, output ...json.RawMessage) (Edge
 		}
 		p.Steps = append(p.Steps, step)
 		to := u.e.to
-		if to == nil || to.maxVisits == nil || in.Visits[to.name] < in.eval(to.maxVisits.max) {
+		if to == nil || to.maxVisits == nil || in.Visits[to.name] < evalCounters(to.maxVisits.max, in.countersAfter(p.Steps)) {
 			return p, nil
 		}
 		u = to.maxVisits.over
 	}
 	return p, errors.New("MaxVisits over edges loop")
+}
+
+// countersAfter is the instance's counters as transit leaves them once the
+// plan's steps are taken: the counters scoped to any incremented counter are
+// zeroed, then every Inc applies, in that order.
+func (in *instance) countersAfter(steps []EdgeStep) map[string]int {
+	var incs []string
+	for _, s := range steps {
+		for _, ef := range s.Effects {
+			if ef.Kind == "inc" {
+				incs = append(incs, ef.Counter)
+			}
+		}
+	}
+	if len(incs) == 0 {
+		return in.Counters
+	}
+	out := maps.Clone(in.Counters)
+	if out == nil {
+		out = map[string]int{}
+	}
+	for _, name := range incs {
+		for _, cn := range in.def.counters {
+			if cn.scope == name {
+				out[cn.name] = 0
+			}
+		}
+	}
+	for _, name := range incs {
+		out[name]++
+	}
+	return out
 }
 
 func (c *cycle) stepOf(in *instance, u edgeUse) (EdgeStep, error) {
