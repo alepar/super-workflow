@@ -465,8 +465,12 @@ reports `End: "budget"` and `BudgetReason`; `Check` records this as
 `not explored (budget)` in `NotExplored` and `CoverageProblems`. This is
 incomplete exploration, not a successful run. Repeated completed contexts
 remain loop findings, and all-good liveness bounds remain strict. Completed
-seeds must end at success, a human gate or a named failure, with no unit left
-running, one producer per allocated
+seeds must end at success, a human gate or a named failure; an all-good seed
+may also end at a `Stopped` terminal it entered from a state whose every edge
+into that terminal is a plain edge marked `Ends(reason)`, such as an options-guarded hand-off to a
+person. Timeouts, exhausted budgets and unmarked edges into a stop remain
+liveness findings. A completed seed leaves no unit
+running, has one producer per allocated
 artifact, a journal that folds to the same state, and a fix line on every
 refusal. A read the World cannot answer is a `fixture-gap` finding, never a
 pass; `wftest.UnknownFails(w, adapter, op, msg)` declares that such a read

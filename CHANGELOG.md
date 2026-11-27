@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Liveness honours a stop declared with `Ends` (sw-l6xo).** An all-good
+  fuzz run that ended at a `Stopped` terminal was a liveness finding unless
+  a fault had been injected, even when the edge into that terminal carried
+  `Edge.Ends(reason)`. An options-guarded hand-off to a person, opened by a
+  `Check` variant, was reported although its author had declared it
+  intentional. Now the root's last transition into the `Stopped` terminal
+  passes liveness when every edge from its source to that terminal is a
+  plain edge marked `Ends`. A stop reached through a timeout, an exhausted
+  retry or visit cap, a failure-class route, a forwarded child stop or an
+  unmarked edge is still a finding, and so is a source with both a marked
+  and an unmarked edge to the terminal, since the journal does not record
+  which one the run took.
+
+### Upgrading
+
+- **A checker that recorded an all-good liveness finding at an `Ends`-marked
+  stop as known** no longer gets that finding. Remove the known entry.
+
 ## v0.4.2
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

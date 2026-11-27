@@ -447,7 +447,7 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 		if result.Finding == nil {
 			f.definitionErrors()
 		}
-		if result.Finding == nil && config.Liveness && f.good && result.Status.Phase == wf.RunEnded && !result.Status.Outcome.Delivered() && !f.declaredStoppedAfterFault() {
+		if result.Finding == nil && config.Liveness && f.good && result.Status.Phase == wf.RunEnded && !result.Status.Outcome.Delivered() && !f.declaredStoppedAfterFault() && !f.endsDeclaredStop() {
 			f.find("liveness", "all-good results cannot recover this run to success or a human gate")
 		}
 		if result.Finding == nil && !result.Suspended && !result.PrefixOutcome {

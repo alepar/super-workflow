@@ -65,6 +65,9 @@ func TestDeclaredTerminalDoesNotHideNamedHaltOrLoop(t *testing.T) {
 	}
 }
 
+// The edges into the stop are not all plain Ends edges (the retry's
+// exhausted route is unmarked), so the journal cannot prove which one the run
+// took: the all-good stop stays a liveness finding.
 func TestAllGoodDeclaredStopStillFailsLiveness(t *testing.T) {
 	factory := func() *Sim {
 		d := wf.New("all-good-stop")
