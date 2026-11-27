@@ -184,6 +184,10 @@ type instance struct {
 	// (FetchCoverageOf).
 	Coverage map[string]*FetchCoverage `json:",omitempty"`
 
+	// Harnesses is the canonical harness that produced the output each
+	// agent state last accepted, by state (HarnessOf).
+	Harnesses map[string]string `json:",omitempty"`
+
 	// Refusals counts the submission_refused records of the open instruction
 	// and RefusalFP is the last one's fingerprint: every new token (an
 	// instruction_issued, so every new attempt and every backoff re-issue)
@@ -514,6 +518,7 @@ func (st *runState) apply(r JournalRecord) error {
 		in.accept(r.State, d.Output, d.Computed)
 		if !d.Computed {
 			in.acceptCoverage(r.State)
+			in.acceptHarness(r.State, st.unitHarness(in.Unit))
 		}
 		if u := in.Unit; u != nil && !u.State.terminal() && u.Bound != "" {
 			st.initIndex()
@@ -1139,6 +1144,12 @@ func (in *instance) rename(states map[string]string, cur string) {
 		if n := name(old); n != old {
 			delete(in.Coverage, old)
 			in.Coverage[n] = v
+		}
+	}
+	for old, v := range in.Harnesses {
+		if n := name(old); n != old {
+			delete(in.Harnesses, old)
+			in.Harnesses[n] = v
 		}
 	}
 	for old, v := range in.Visits {

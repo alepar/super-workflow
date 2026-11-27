@@ -138,6 +138,8 @@ func (x *runCtx) value(k ctxKey) (any, error) {
 		return x.pathDocument(in.Children[k.ref.(*node).name])
 	case "fetchCoverage":
 		return x.fetchCoverageValue(k.ref.(*node))
+	case "harness":
+		return x.harnessValue(k.ref.(*node))
 	case "childOutcome":
 		b, err := json.Marshal(in.ChildOutcomes[k.ref.(*node).name])
 		return json.RawMessage(b), err

@@ -156,6 +156,7 @@ docs/proposals/go-api/wf/gate_int.go
 docs/proposals/go-api/wf/handout.go
 docs/proposals/go-api/wf/harness_defaults.go
 docs/proposals/go-api/wf/harness_git.go
+docs/proposals/go-api/wf/harness_of.go
 docs/proposals/go-api/wf/harvest.go
 docs/proposals/go-api/wf/hash.go
 docs/proposals/go-api/wf/headless_live.go

@@ -248,6 +248,16 @@ Compute has `Retry`, not a direct `OnClass` method. Declare observations with
 Definition defaults also apply, so add a local class route only when that state
 needs different handling.
 
+`wf.HarnessOf(c, state)` reads which harness produced an agent state's
+accepted output, from a route, a check or a compute: the canonical name of
+the child harness when the unit ran with `OnFamily`, otherwise the harness
+of the coordinator it was handed out to, and `""` before the state accepts
+an output. Like `OutputOf` it is the latest accepted visit's; the state's
+own checks and route read the attempt they decide. It comes from the
+journal, so it stays the same across a resume on another coordinator
+harness. What a name means to the run, such as the home family or the
+other, is the definition's choice.
+
 ## Artifacts and human review
 
 The tour's Plan writes an allocated artifact; Review consumes it and Ship

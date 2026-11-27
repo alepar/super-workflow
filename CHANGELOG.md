@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **`wf.HarnessOf(c, agent)` reads which harness produced an accepted output
+  (sw-o2f9).** A definition that tags or routes on where an agent state's
+  output came from could only infer it from the coordinator's harness, which
+  changes meaning across a resume on another harness. `wf.HarnessOf` now
+  returns the canonical harness name (`claude`, `codex`, ...) of the
+  hand-out whose output the state last accepted in this instance: the child
+  harness for a unit dispatched with `OnFamily`, otherwise the harness of
+  the coordinator the unit was handed out to. It is `""` before the state
+  accepts an output. The value is folded from the hand-out record of the
+  accepted attempt, so a read after a resume on another coordinator harness
+  still names the harness that produced the output. The state's own checks
+  and route read the attempt they decide. It needs no declaration and the
+  engine attaches no meaning to the name.
+
+### Upgrading
+
+- Nothing to change. `wf.HarnessOf` is a new read; existing definitions and
+  journals behave as before.
+
 ## v0.4.3
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

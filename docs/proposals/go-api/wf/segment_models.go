@@ -61,11 +61,14 @@ func (c *cycle) segmentModels(i int, h string) (SegmentModels, error) {
 	return c.resolveSegment(h, nil, ModelsFromDefaults)
 }
 
+// segmentHarness is runState.segmentHarness.
+func (c *cycle) segmentHarness(i int) string { return c.st.segmentHarness(i) }
+
 // segmentHarness is the harness segment i is driven from: its binding, else
 // the previous segment's, else the harness the run was started under.
-func (c *cycle) segmentHarness(i int) string {
+func (st *runState) segmentHarness(i int) string {
 	for ; i >= 0; i-- {
-		s := c.st.segments[i]
+		s := st.segments[i]
 		if s.Harness != "" {
 			return s.Harness
 		}
@@ -73,7 +76,7 @@ func (c *cycle) segmentHarness(i int) string {
 			return s.models.Harness // a fork note's: the history's harness
 		}
 	}
-	h, _ := recordedHarness(*c.st.started)
+	h, _ := recordedHarness(*st.started)
 	return h
 }
 
