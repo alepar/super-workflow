@@ -691,6 +691,12 @@ func TestStatusSchemaRoundTrips(t *testing.T) {
 		"HarnessCheckedData.Fix":         "as Why",
 		"SegmentModels.Children":         "needs a definition with a family hint; TestHeadlessPrimitiveClaudeToCodex and TestChildTablesSurviveResume cover it",
 		"SegmentView.Harness":            "needs a segment bound by a coordinator with a session; TestHarnessSegmentsMigrateThroughStopAndResume covers it",
+		"InstanceStatus.Returned":        "needs a send-back definition; TestSendBackReturnsTheWorkToItsProducerWithTheReasons checks the status",
+		"Return.From":                    "as InstanceStatus.Returned",
+		"Return.Label":                   "as InstanceStatus.Returned",
+		"Return.Round":                   "as InstanceStatus.Returned",
+		"Return.Of":                      "as InstanceStatus.Returned",
+		"Return.Reasons":                 "as InstanceStatus.Returned",
 	}
 	var statuses []string
 	snap := func(w *wiEnv) { statuses = append(statuses, w.must("status", "w1", "--json")) }

@@ -32,6 +32,7 @@ Each example exports `Definition() *wf.Def`. From the module directory,
 | P12 / E13 | `examples/typedexit` | `wf.NewEnum`, `wf.Cases`, `wf.MaxVisits`, `wf.Budget` |
 | P13 | `examples/checkrepair` | `shell.Command`, `shell.Run`, `wf.RunResult`, `wf.Out` |
 | P14 | `examples/park` | `wf.PolicyAnswerable`, `wf.Policy`, `wf.PolicyAnswer`, `wf.PolicyRule.Park` |
+| P15 | `examples/sendback` | `wf.Agent.SendBack`, `wf.Returned`, `wf.NewArtifact`, `wf.Reserved` |
 | E2 | `examples/noprogress` | `wf.Retry`, `wf.RetryPolicy.NoProgressAfter`, `wf.RetryPolicy.OnStalled`, `wf.RetryPolicy.Fingerprint` |
 | E14 | `examples/dispatch` | `wf.Agent.Dispatch`, `wf.Model`, `wf.Effort`, `wf.AgentType`, `wf.Map.Parallel` |
 | E15 | `examples/unavailable` | `wf.Unavailable`, `wf.RetryPolicy.OnClass`, `wf.Retry`, `bd.Create` |

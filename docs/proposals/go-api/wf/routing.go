@@ -26,6 +26,7 @@ type edgeData struct {
 	ends              string // Edge.Ends: the reason this end is intentional
 	unreachable       bool
 	unreachableReason string
+	sendBack          *sendBackData // SendBack: the edge returns work to its producer, bounded
 }
 
 // edgeUse is one use of an edge: the edge plus the effects attached to this

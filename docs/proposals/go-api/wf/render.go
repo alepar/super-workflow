@@ -195,6 +195,9 @@ func edgeText(s StateView, e EdgeView) string {
 		}
 		t += "]"
 	}
+	if e.SendBack != "" {
+		t += " [send back " + e.SendBack + "]"
+	}
 	if e.When != "" {
 		t += " when " + e.When
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/park"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/resumable"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/router"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/sendback"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/stale"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/tournament"
@@ -51,6 +52,7 @@ func main() {
 		park.Definition(),
 		resumable.Definition(),
 		router.Definition(),
+		sendback.Definition(),
 		stale.Definition(),
 		tour.Definition(),
 		tournament.Definition(),

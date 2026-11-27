@@ -32,6 +32,7 @@ docs/proposals/go-api/examples/orchestrator/def.go
 docs/proposals/go-api/examples/park/def.go
 docs/proposals/go-api/examples/resumable/def.go
 docs/proposals/go-api/examples/router/def.go
+docs/proposals/go-api/examples/sendback/def.go
 docs/proposals/go-api/examples/stale/def.go
 docs/proposals/go-api/examples/tour/checker/checker.go
 docs/proposals/go-api/examples/tour/cmd/workflow/main.go
@@ -219,6 +220,7 @@ docs/proposals/go-api/wf/schema.go
 docs/proposals/go-api/wf/schema_view.go
 docs/proposals/go-api/wf/scratch.go
 docs/proposals/go-api/wf/segment_models.go
+docs/proposals/go-api/wf/send_back.go
 docs/proposals/go-api/wf/snapshot_adapter.go
 docs/proposals/go-api/wf/snapshot_hashcache.go
 docs/proposals/go-api/wf/snapshot_hashcache_darwin.go

@@ -14,6 +14,7 @@ lint orchestrator: ok
 lint park: ok
 lint resumable: ok
 lint router: ok
+lint sendback: ok
 lint stale: ok
 lint tour: ok
 lint tournament: ok
@@ -625,6 +626,36 @@ router v0 — 5 states, start: Classify
   Question           terminal ■ success
   Unclear            terminal ■ stopped
 
+#### graph sendback
+sendback v0 — 5 states, start: Draft
+
+▶ Draft              agent → Summary
+      prompt: Write the document to draft.md and summarize it. If the block below is not empty, the reviewer returned your draft: fix each reason in draft.md, which already holds your prior version.
+{{returned}}
+      inputs: returned returned as returned
+      produces: draft.md
+      route: drafted
+      ├── drafter gave up [retry ≤2, then recovery offer] ──▶ Human
+      ├── drafted ──▶ Review
+      └── default blocked route [on blocked] ──▶ Human
+  Review             agent → Verdict
+      prompt: Review the document at [DOC]. Approve it, or list each finding that must be fixed.
+      inputs: bound DOC = {artifact.draft.md}
+      consumes: draft.md
+      route: approved | revise
+      ├── reviewer gave up [retry ≤2, then recovery offer] ──▶ Human
+      ├── approved ──▶ Accepted
+      ├── findings remain after two returns ──▶ Human
+      ├── revise [send back ≤2, then findings remain after two returns] ──▶ Draft
+      └── default blocked route [on blocked] ──▶ Human
+  Human              gate "The reviewer still has findings after two returns; keep the draft?" [reserved]
+      cases decision: keep → person keeps | drop → person drops
+      ├── person keeps ──▶ Accepted
+      ├── person drops ──▶ Dropped
+      └── no answer after 24h0m0s ──▶ Dropped
+  Accepted           terminal ■ success
+  Dropped            terminal ■ stopped
+
 #### graph stale
 stale v2 — 5 states, start: AwaitHead
 
@@ -1168,6 +1199,24 @@ stateDiagram-v2
   Question --> [*]
   Unclear --> [*]
 
+#### mermaid sendback
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> Human : drafter gave up
+  Draft --> Review : drafted
+  Draft --> Human : default blocked route
+  Review --> Human : reviewer gave up
+  Review --> Accepted : approved
+  Review --> Human : findings remain after two returns
+  Review --> Draft : revise
+  Review --> Human : default blocked route
+  Human --> Accepted : person keeps
+  Human --> Dropped : person drops
+  Human --> Dropped : no answer after 24h0m0s
+  note right of Human : reserved
+  Accepted --> [*]
+  Dropped --> [*]
+
 #### mermaid stale
 stateDiagram-v2
   [*] --> AwaitHead
@@ -1293,6 +1342,7 @@ orchestrator sha256:0c28f4c9146fc87a
 park sha256:36f91bf486abcbdb
 resumable sha256:8206ecbc17d360af
 router sha256:8488bc4d070fbc50
+sendback sha256:0f40e503fb8beee9
 stale sha256:e016cadef9b798d7
 tour sha256:d4505783bbba8d35
 tournament sha256:9ae56e08d486985c
@@ -1300,7 +1350,7 @@ typedexit sha256:3a654c58f5a38b6f
 unavailable sha256:0db74e9b65bfb0df
 
 #### go test
-?   	github.com/alepar/super-workflow/docs/proposals/go-api	[no test files]
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/bad
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/bd
 ?   	github.com/alepar/super-workflow/docs/proposals/go-api/cmd/wfcheck	[no test files]
@@ -1322,6 +1372,7 @@ ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/orchestrato
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/park
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/resumable
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/router
+ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/sendback
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/stale
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour
 ?   	github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour/checker	[no test files]
@@ -1335,6 +1386,7 @@ ok  	github.com/alepar/super-workflow/docs/proposals/go-api/git
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/harness
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/harness/agytest
 ?   	github.com/alepar/super-workflow/docs/proposals/go-api/internal/harnessfixture	[no test files]
+?   	github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit	[no test files]
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/shell
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/sink
 ok  	github.com/alepar/super-workflow/docs/proposals/go-api/tools/reanchor

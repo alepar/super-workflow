@@ -159,6 +159,10 @@ type EdgeView struct {
 	Over        bool    `json:"-"`
 	EndsOutcome Outcome `json:",omitempty"`
 	Ends        string  `json:",omitempty"` // Edge.Ends: why this end is intentional; "" when unmarked
+	// SendBack is a send-back edge's bound and fallback, "≤<budget>, then
+	// <fallback label>"; omitted on every other edge so other definitions'
+	// hashes do not change.
+	SendBack string `json:",omitempty"`
 }
 
 // RetryView is a retry policy.
@@ -296,6 +300,9 @@ func inspectStates(d *Def, path string) []StateView {
 				ev.Class = e.class.String()
 			}
 			ev.Over = e.visits != nil
+			if sb := e.sendBack; sb != nil {
+				ev.SendBack = "≤" + sb.max.String() + ", then " + useLabel(sb.fallback)
+			}
 			sv.Edges = append(sv.Edges, ev)
 		}
 		for _, l := range n.locks {
@@ -357,6 +364,12 @@ func inspectStates(d *Def, path string) []StateView {
 		n.kind.view(n, &sv)
 		if n.maxVisits != nil {
 			sv.use(n.maxVisits.over)
+		}
+		for _, e := range n.edges {
+			if sb := e.sendBack; sb != nil {
+				sv.budgets = append(sv.budgets, sb.max)
+				sv.useAs(sb.fallback, failedUse)
+			}
 		}
 		out = append(out, sv)
 	}

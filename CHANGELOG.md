@@ -20,10 +20,39 @@
   policy-answerable gate answer the variants whose policy gives it. It is a
   static listing over `Inspect`; `--json` prints the routes.
 
+- **Send work back to the agent that produced it (sw-3op4).** A judging
+  agent, compute or command declares `SendBack(producer, label, reasons,
+  budget, fallback)`, an edge it routes like any other. Taking it journals
+  the reasons the workflow's `reasons` function reads from the judge's
+  result in the routing decision's plan, and enters the producer for a fresh
+  unit. That unit's prompt binds `wf.Returned()`: the sender, the round of
+  the budget, the reasons, the producer's prior output and, for each
+  allocated artifact, the prior file and this visit's path, where the engine
+  has copied it so the producer edits its own work in place. The block is
+  empty on any other visit and travels through the same prompt delivery as
+  any input, paged when the run pages. The returns over the edge are counted
+  per instance from the journal: once the budget is spent, choosing the
+  edge takes the fallback instead, and the producer's own `MaxVisits` still
+  applies on arrival. `wf.ReturnedOf` reads the return; `status` shows it on
+  the instance; `wftest.Trace.Returns` lists the returns a run took; the
+  `dead-ends` report lists the fallback. New lint rules: `send-back-target`
+  (the producer is an upstream agent of the definition, not the sender, and
+  the edge is taken from a route or case), `send-back-fallback` (the
+  fallback is not itself a send-back, and a fallback into a stop carries
+  `Ends(reason)`) and `send-back-unread` (the producer's prompt binds
+  `wf.Returned()`). A send-back edge bounds its own cycle for
+  `cycle-no-measure`. New example: `examples/sendback`.
+
 ### Upgrading
 
 - Nothing to change. `dead-ends` is a new verb and `Def.DeadEnds` a new
-  read; existing definitions and journals behave as before.
+  read; `SendBack`, `wf.Returned` and `wf.ReturnedOf` are new API, and the
+  journal's `EdgeStep` gains the optional `SendBack` and `SendBackSpent`
+  fields. Existing definitions, their hashes and journals behave as before.
+- A back-edge with `MaxVisits` that returns a draft for revision can become
+  a `SendBack`: the reasons then reach the producer as data and the bound
+  and fallback are checked by lint. It is a definition change (a new hash),
+  so a run in flight keeps its definition.
 
 ## v0.4.5
 

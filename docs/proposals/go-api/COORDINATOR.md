@@ -365,6 +365,13 @@ required order. Status shows fetch coverage, which is not a claim that the
 model read the text.
 The coordinator still passes the brief unchanged.
 
+A unit whose state a downstream step sent back (`SendBack`) is an ordinary
+unit: hand it out like any other. Its prompt carries the sender's reasons and
+the producer's prior output, and its allocated artifacts already hold the
+prior version, so the child repairs its own work. Never repair the output
+yourself or pass the reasons on by hand. `status` shows `returned by <state>
+("<edge>", round r of n)` on the instance while that visit is open.
+
 `<call>` is your harness's spawn tool with the model, effort and agent type
 already in it as that tool's own parameters, and its prompt argument (Codex:
 `message`) written as `<the text between the lines>`: pass the brief there,

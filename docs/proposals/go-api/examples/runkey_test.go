@@ -27,6 +27,7 @@ import (
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/park"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/resumable"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/router"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/sendback"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/stale"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/tour"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/tournament"
@@ -55,7 +56,7 @@ func allDefs() []*wf.Def {
 		agentless.Definition(), approval.Definition(), broaden.Definition(), checkrepair.Definition(),
 		critique.Definition(), dispatch.Definition(), escalation.Definition(), fanout.Definition(), feature.Definition(),
 		gatedchain.Definition(), noprogress.Definition(), orchestrator.Definition(), park.Definition(),
-		resumable.Definition(), router.Definition(), stale.Definition(), tour.Definition(), tournament.Definition(),
+		resumable.Definition(), router.Definition(), sendback.Definition(), stale.Definition(), tour.Definition(), tournament.Definition(),
 		typedexit.Definition(), unavailable.Definition(),
 	}
 }

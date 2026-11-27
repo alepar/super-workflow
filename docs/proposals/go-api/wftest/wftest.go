@@ -1361,6 +1361,34 @@ func (t *Trace) RetriesSpent() int {
 	return n
 }
 
+// Return is one send-back the run took (wf SendBack): the instance, the
+// sending state and edge, the producer it returned to, and the journaled
+// round, budget and reasons.
+type Return struct {
+	Instance, From, Label, To string
+	Round, Of                 int
+	Reasons                   []string
+}
+
+// Returns lists the send-backs the run took, in journal order, read from
+// the plans the engine journaled.
+func (t *Trace) Returns() []Return {
+	var out []Return
+	for _, r := range t.journal {
+		var d struct{ Plan *wf.EdgePlan }
+		if json.Unmarshal(r.Data, &d) != nil || d.Plan == nil {
+			continue
+		}
+		for _, s := range d.Plan.Steps {
+			if s.SendBack != nil {
+				out = append(out, Return{Instance: r.Instance, From: s.From, Label: s.Label, To: s.To,
+					Round: s.SendBack.Round, Of: s.SendBack.Of, Reasons: s.SendBack.Reasons})
+			}
+		}
+	}
+	return out
+}
+
 // Crashes lists the record kinds whose append crashed the engine (CrashAt), in
 // order. A CrashAt that never fires is a scenario that did not reach its point.
 func (t *Trace) Crashes() []wf.JournalKind { return t.crashed }

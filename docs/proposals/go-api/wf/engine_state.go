@@ -184,6 +184,12 @@ type instance struct {
 	// (FetchCoverageOf).
 	Coverage map[string]*FetchCoverage `json:",omitempty"`
 
+	// Returns counts the send-backs taken per edge ("<from>\x00<label>") in
+	// this instance; ReturnedTo is the return that entered each state's
+	// latest visit, by state (SendBack, Returned, ReturnedOf).
+	Returns    map[string]int     `json:",omitempty"`
+	ReturnedTo map[string]*Return `json:",omitempty"`
+
 	// Harnesses is the canonical harness that produced the output each
 	// agent state last accepted, by state (HarnessOf).
 	Harnesses map[string]string `json:",omitempty"`
@@ -653,6 +659,7 @@ func (st *runState) apply(r JournalRecord) error {
 		for _, c := range d.Incs {
 			in.Counters[c]++
 		}
+		in.noteReturns(in.Pending, d.To)
 		in.Cur = d.To
 		in.Visits[d.To]++
 		in.Attempt, in.Spent, in.FPs = 1, 0, nil

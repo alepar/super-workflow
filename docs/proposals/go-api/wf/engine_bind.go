@@ -762,6 +762,12 @@ func (s scope) inputValues(inputs []Input) ([]promptInput, error) {
 				return nil, err
 			}
 			pi.value = v
+		case "returned":
+			value, err := s.returnedDocument(s.in.node())
+			if err != nil {
+				return nil, err
+			}
+			pi.value, pi.out = value, true
 		case "child-input":
 			if len(s.in.Input) == 0 {
 				return nil, fmt.Errorf("%w: the instance has no input", ErrUnresolved)

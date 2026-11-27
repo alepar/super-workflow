@@ -37,7 +37,7 @@ var allRules = []wf.RuleID{
 	wf.RuleMapPartialFailure, wf.RuleMapWriteOverlap, wf.RuleSubExitUnmapped,
 	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNameDuplicate, wf.RuleChildNotExported,
 	wf.RuleHoldEffectOutside, wf.RuleComputeUnavailable, wf.RuleRouteNoCandidates,
-	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge,
+	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge, wf.RuleSendBackTarget, wf.RuleSendBackFallback, wf.RuleSendBackUnread,
 	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath, wf.RuleMaxlenTag, wf.RuleFetchCoverage,
 }
 
@@ -61,6 +61,47 @@ func childOf(name string) wf.Child[rItem, rRes] {
 }
 
 func strField(s string) string { return s }
+
+type (
+	rJudge struct{}
+	rStop  struct{}
+)
+
+// sendBackRuleDef is a producer, a judge that sends back to it and a stop.
+// toSelf aims the send-back at the judge, binds has the producer bind
+// wf.Returned(), and reasoned gives the fallback its Ends.
+func sendBackRuleDef(name string, toSelf, binds, reasoned bool) *wf.Def {
+	d := wf.New(name)
+	a := wf.NewAgent[rA, string](d)
+	j := wf.NewAgent[rJudge, string](d)
+	end := wf.NewTerminal[rEnd](d, wf.Success)
+	stop := wf.NewTerminal[rStop](d, wf.Stopped)
+	d.OnFailure(wf.Blocked, stop)
+	p := wf.PromptText("p")
+	if binds {
+		p = wf.PromptText("p {{r}}", wf.As("r", wf.Returned()))
+	}
+	a.Spec(p, wf.Retry(wf.Const(1), a.To(stop, "a gave up")))
+	a.Then(a.To(j, "made"))
+	j.Spec(wf.PromptText("judge"), wf.Retry(wf.Const(1), j.To(stop, "j gave up")))
+	fallback := j.To(stop, "unfixed")
+	if reasoned {
+		fallback = fallback.Ends(wf.Stopped, "the work was not fixed")
+	}
+	var producer wf.State = a
+	if toSelf {
+		producer = j
+	}
+	back := j.SendBack(producer, "back", func(s string) []string { return []string{s} }, wf.Const(1), fallback)
+	ok := j.To(end, "ok")
+	j.Route(func(s string, _ wf.Ctx) wf.Edge[rJudge] {
+		if s == "" {
+			return ok
+		}
+		return back
+	}, ok, back)
+	return d
+}
 
 var ruleCases = []struct {
 	rule wf.RuleID
@@ -90,6 +131,9 @@ var ruleCases = []struct {
 		a.Route(func(string, wf.Ctx) wf.Edge[rA] { return again }, done, again)
 		return d
 	}},
+	{wf.RuleSendBackTarget, func() *wf.Def { return sendBackRuleDef("send-back-target", true, true, true) }},
+	{wf.RuleSendBackFallback, func() *wf.Def { return sendBackRuleDef("send-back-fallback", false, true, false) }},
+	{wf.RuleSendBackUnread, func() *wf.Def { return sendBackRuleDef("send-back-unread", false, false, true) }},
 	{wf.RuleDispatchHint, func() *wf.Def {
 		d, a, _, _ := okDef("dispatch-hint")
 		a.Dispatch(wf.Effort("huge"))

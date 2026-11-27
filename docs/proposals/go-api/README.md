@@ -173,6 +173,24 @@ policies. Use `Route` or `RouteCases` when exit codes need more distinctions.
 Agents, computes and commands all support `Then(edge)` for an unconditional
 next step; a command's `Then` also follows that edge after a nonzero exit.
 
+To return work to the agent that produced it, declare a send-back edge on the
+judging state: `review.SendBack(draft, "revise", reasons, wf.Const(2), fallback)`.
+It is an ordinary route or case candidate. `reasons` reads them from the
+judge's output; the engine journals them with the routing decision. The
+producer's next visit is a fresh unit whose prompt binds `wf.Returned()`: a
+JSON document with the sender, the round of the budget, the reasons, the
+producer's prior output and its allocated artifacts, each already copied to
+this visit's path to edit in place. It is empty on any other visit, and long
+returns are delivered like any long input. Once the budget's returns over that
+edge are spent, choosing it takes `fallback` instead; a fallback into a stop
+needs `Ends(reason)` (lint `send-back-fallback`). The producer must be an
+agent upstream of the judge (`send-back-target`) whose prompt binds
+`wf.Returned()` (`send-back-unread`). `wf.ReturnedOf(c, draft)` reads the
+return in a check, route or compute. The count is per instance and folded
+from the journal, so a resume, a Map child and a fork cut before a return
+all see the right budget. Effects already applied stay applied, as on any
+loop edge. See [the send-back example](examples/sendback/def.go).
+
 `NewMap[State, Item, Key, Result]` takes the key type third (it must be
 comparable), and the child's yielded result type fourth. Read joined results
 in a Compute with `wf.Joined(c, build)`, then feed that compute's output to a

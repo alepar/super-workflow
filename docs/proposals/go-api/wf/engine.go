@@ -1305,7 +1305,7 @@ func (e *Engine) status(run RunID, strict bool) (RunStatus, error) {
 			in := c.st.insts[id]
 			rs.Instances = append(rs.Instances, InstanceStatus{
 				ID: id, State: in.Cur, Phase: in.Phase, Attempt: in.Attempt, Reason: in.statusReason(),
-				Counters: copyCounts(in.Counters),
+				Counters: copyCounts(in.Counters), Returned: in.ReturnedTo[in.Cur],
 			})
 		}
 		if rs.Phase == RunEnded {
@@ -1987,10 +1987,22 @@ func (c *cycle) planOf(in *instance, u edgeUse, output ...json.RawMessage) (Edge
 		view = &copy
 	}
 	var p EdgePlan
+	spent := ""
 	for depth := 0; depth < 16; depth++ {
 		step, err := c.stepOf(view, u)
 		if err != nil {
 			return p, err
+		}
+		step.SendBackSpent, spent = spent, ""
+		if sb := u.e.sendBack; sb != nil {
+			used, err := c.sendBackStep(in, &step, sb, p.Steps, output)
+			if err != nil {
+				return p, err
+			}
+			if used {
+				spent, u = step.Label, sb.fallback
+				continue
+			}
 		}
 		p.Steps = append(p.Steps, step)
 		to := u.e.to

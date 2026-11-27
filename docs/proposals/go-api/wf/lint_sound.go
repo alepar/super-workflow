@@ -553,7 +553,9 @@ func ruleCycleNoMeasure(c *lintCtx) []Problem {
 	}
 	cut := func(s int, e *edgeData) bool {
 		n := c.d.nodes[s]
-		return n.maxVisits != nil && e != n.maxVisits.over.e
+		// A send-back edge is bounded by its own budget; once spent, its
+		// fallback, still in the graph, is all it takes.
+		return n.maxVisits != nil && e != n.maxVisits.over.e || e.sendBack != nil
 	}
 	var out []Problem
 	for _, comp := range g.sccs(removed, cut) {

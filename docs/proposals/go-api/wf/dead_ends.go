@@ -381,6 +381,15 @@ func triggersOf(n *node) []trigger {
 	for _, class := range sortedClasses(n.defaults) {
 		add(classTrigger(n, n.defaults[class], class, 0, " (definition default)"))
 	}
+	for _, e := range n.edges {
+		if sb := e.sendBack; sb != nil {
+			single, why := "no", fmt.Sprintf("after %s returns to %s", sb.max, e.to.name)
+			if constPart(sb.max) <= 0 && len(sb.max.Counters()) == 0 {
+				single, why = "yes", "the send-back has no budget: its first choice takes the fallback"
+			}
+			add(trigger{u: sb.fallback, what: fmt.Sprintf("send-back %q spent (≤%s)", e.label, sb.max), single: single, why: why, failure: true})
+		}
+	}
 	if n.maxVisits != nil {
 		add(trigger{u: n.maxVisits.over, what: fmt.Sprintf("visit cap %s reached", n.maxVisits.max), single: "no", why: "repeated visits", failure: true})
 	}

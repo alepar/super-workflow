@@ -324,6 +324,9 @@ type InstanceStatus struct {
 	Attempt  int
 	Reason   string // why a blocked instance halted
 	Counters map[string]int
+	// Returned is the send-back that entered the current state's visit
+	// (SendBack); nil on any other visit.
+	Returned *Return `json:",omitempty"`
 }
 
 // CoordinatorTurnStatus reports issued continuation decisions, including
@@ -712,6 +715,11 @@ type EdgeStep struct {
 	Effects  []EffectData `json:",omitempty"`
 	Optional bool         `json:",omitempty"` // Edge.Optional: a failed effect does not stop the transition
 	RoutedBy string       `json:",omitempty"` // Edge.OptionalRoutedBy: what routes a failed effect
+	// SendBack is set on a step that returns work to its producer (SendBack).
+	SendBack *SendBackStep `json:",omitempty"`
+	// SendBackSpent names the send-back edge whose spent budget this step,
+	// the edge's fallback, replaced.
+	SendBackSpent string `json:",omitempty"`
 }
 
 // EdgePlan is the edge the Engine chose, journaled so a crash between the

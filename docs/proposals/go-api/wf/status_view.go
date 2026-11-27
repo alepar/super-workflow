@@ -54,12 +54,15 @@ func RenderStatus(rs RunStatus) string {
 	}
 
 	for _, in := range rs.Instances {
+		name := in.ID
+		if name == "" {
+			name = "run"
+		}
 		if in.Reason != "" {
-			name := in.ID
-			if name == "" {
-				name = "run"
-			}
 			fmt.Fprintf(&b, "instance %s %s at %s: %s\n", name, in.Phase, in.State, escapeControl(in.Reason))
+		}
+		if r := in.Returned; r != nil && in.Phase != phaseDone {
+			fmt.Fprintf(&b, "instance %s at %s: returned by %s (%q, round %d of %d), %d reason(s)\n", name, in.State, r.From, r.Label, r.Round, r.Of, len(r.Reasons))
 		}
 	}
 	if turn := rs.CoordinatorTurn; turn != nil {

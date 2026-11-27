@@ -49,6 +49,7 @@ var rules = []rule{
 	ruleAgentBlockedRoute,
 	ruleAgentOutputPath,
 	ruleMaxlenTag,
+	ruleSendBack,
 }
 
 // stagedRules become rules once every client definition is migrated to

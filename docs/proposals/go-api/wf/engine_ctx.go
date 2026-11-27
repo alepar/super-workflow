@@ -140,6 +140,13 @@ func (x *runCtx) value(k ctxKey) (any, error) {
 		return x.fetchCoverageValue(k.ref.(*node))
 	case "harness":
 		return x.harnessValue(k.ref.(*node))
+	case "returned":
+		var r Return
+		if p := in.ReturnedTo[k.ref.(*node).name]; p != nil {
+			r = *p
+		}
+		b, err := json.Marshal(r)
+		return json.RawMessage(b), err
 	case "childOutcome":
 		b, err := json.Marshal(in.ChildOutcomes[k.ref.(*node).name])
 		return json.RawMessage(b), err

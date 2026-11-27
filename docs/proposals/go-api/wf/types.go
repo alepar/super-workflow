@@ -335,6 +335,9 @@ const (
 	RuleCommandKey          RuleID = "command-key"
 	RuleLiteralModel        RuleID = "literal-model"
 	RuleAgentSelfEdge       RuleID = "agent-self-edge"
+	RuleSendBackTarget      RuleID = "send-back-target"   // a send-back's producer is not an upstream agent of the definition, or the edge is not a route
+	RuleSendBackFallback    RuleID = "send-back-fallback" // a send-back's fallback is a send-back, or a stop with no Ends(reason)
+	RuleSendBackUnread      RuleID = "send-back-unread"   // a send-back's producer does not bind wf.Returned()
 	RuleReservedPolicy      RuleID = "reserved-gate-policy"
 	RuleInputUnresolved     RuleID = "input-unresolved"
 	RuleAgentRetry          RuleID = "agent-retry"

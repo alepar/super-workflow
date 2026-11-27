@@ -174,6 +174,9 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 			return "", nil, nil, false, err
 		}
 	}
+	if err := c.copyReturnedArtifacts(in, n); err != nil {
+		return "", nil, nil, false, c.failErr(in, n, err)
+	}
 	if blk, err := c.artifactsBlock(in, n); err != nil {
 		return "", nil, nil, false, c.failErr(in, n, err)
 	} else if blk != "" {
