@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.8
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.8`. GitHub installs use the plugin tag
+`plugin-v0.4.8`. This release makes `run --options` overlay the run's options
+instead of replacing them: fields a file leaves out keep the registration's
+defaults (or the predecessor's or journaled values). Read Upgrading.
 
 ### What changed
 
