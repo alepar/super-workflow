@@ -85,7 +85,12 @@ simulations. Keep inputs and generated files in their run or workspace paths.
 
 Use `examples/resumable/def.go` for observation-backed `DoneWhen` and an
 `Uncertain` route. Use `examples/unavailable/def.go` and
-`examples/checkrepair/def.go` for outcomes and bounded repair. Test exhaustion,
+`examples/checkrepair/def.go` for outcomes and bounded repair, and
+`examples/sendback/def.go` for returning work to its producer. That example
+declares an explicit `SendBack` edge; a compute or check reaches the same
+return by returning `wf.Reject`. Script a rejected output and assert that the
+producer's next visit gets the reasons. Also script an unfixable fault and
+assert that it stops without a return. Test exhaustion,
 resume after an interrupted effect, and required operator decisions. Choose
 whether a bookkeeping failure stops the phase or permits a reported degraded
 result.

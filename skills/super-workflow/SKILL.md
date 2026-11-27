@@ -47,6 +47,7 @@ have the prompt, check, and fallback use the same set.
 | Plain unconditional edge | `step.ThenTo(next, "receipt verified")` |
 | Unconditional edge with a write | `step.Then(step.To(next, "receipt recorded").With(effect))` |
 | Exhaustive enum verdict | `wf.RouteValue` for the whole output. Use `RouteCases(wf.Cases(...))` with a selector for a field. |
+| Late judgement of an agent's output | A compute or check that finds an upstream agent's output wrong returns `wf.Reject(reasons...)`; the engine sends the work back to that agent once by default. Use a plain error, or `wf.Unavailable`, for faults the agent cannot fix, such as a failed read or a missing tool: returning those wastes a round before the same stop. Prefer a check on the agent's submission when the data exists then. |
 | Bounded recovery | `wf.Attempts(n, exhaustedEdge)` includes the initial ordinary attempt. Use `wf.Retry` for a computed budget and `wf.MaxVisits` for re-entry. Give unavailable input a separate route from a completed false result. |
 | Delivered result with work outstanding | Use `PartialWhen` on a success terminal when the user can use the result and readiness still matters. A child that ends Partial settles Accepted. See the reference for reading the readiness signal at the parent. |
 

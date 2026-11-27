@@ -176,7 +176,9 @@ next step; a command's `Then` also follows that edge after a nonzero exit.
 A state that finds an upstream output wrong returns the work to the agent that
 wrote it, with the reasons, and that agent repairs its own output. The engine
 does this by default for a compute body or a check that returns
-`wf.Reject(reasons...)`. It returns the work to the one agent whose output
+`wf.Reject(reasons...)`, and Reject is the default way to report a late
+judgement: a compute or a check that finds fault with an agent's output
+after that agent's unit has settled. It returns the work to the one agent whose output
 that call read, at most once per rejecting state and producer in an instance
 (`d.Returns(wf.Const(n))` changes the bound, `wf.Const(0)` switches it off).
 Then it fails the state exactly as the plain error would have. A call that
@@ -215,10 +217,16 @@ At each place a compute or a check detects bad upstream content, replace
 `return fmt.Errorf(...)` with `return wf.Reject(...)`, keeping the message as
 the reasons. Nothing else changes: no edges, no prompt bindings and no
 producer names. Where one call reads several agents' outputs, use
-`wf.RejectOf(producer, ...)`. Keep plain errors for operational failures (a
-read that failed, a missing tool): those must not go back to an agent. Watch
-`status` for `reject unattributed` notes, which mark the sites that need
-RejectOf.
+`wf.RejectOf(producer, ...)`. Watch `status` for `reject unattributed`
+notes, which mark the sites that need RejectOf.
+
+Keep a plain error, often classed `wf.Unavailable`, where the producer
+cannot fix the fault: a read that failed, a missing tool, a broken
+environment, or a fault in another state's work. Returning such a fault
+spends a round on the producer and then ends at the same stop. Where the data
+a judgement needs exists when the agent submits, prefer a `wf.Check` on that
+submission over a later Reject: the agent repairs within its own turn, at no
+extra visit.
 
 `NewMap[State, Item, Key, Result]` takes the key type third (it must be
 comparable), and the child's yielded result type fourth. Read joined results

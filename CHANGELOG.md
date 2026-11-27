@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Docs: `wf.Reject` is the default for a late judgement (sw-ev2g).** The
+  engine guide and the authoring skill now teach Reject for a compute or
+  check that finds an upstream agent's output wrong. Faults the agent cannot
+  fix, such as a failed read or a missing tool, keep a plain error or
+  `wf.Unavailable`. A check on the submission is still preferred when the
+  data exists then. No API or behavior change.
+
 ## v0.4.8
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
