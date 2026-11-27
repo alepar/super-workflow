@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.4.7
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.7`. GitHub installs use the plugin tag
+`plugin-v0.4.7`. This release makes send-back automatic: a compute or check
+that returns `wf.Reject(...)` sends the work back to the agent whose output it
+read, once by default, with the reasons and the prior output attached by the
+engine, then fails over as before. Nothing changes for a definition that does
+not raise `wf.Reject`. Lint `send-back-unread` is removed. Read Upgrading.
 
 ### What changed
 
