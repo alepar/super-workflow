@@ -289,6 +289,10 @@ func TestPageUnderTwoKBWithDeepPaths(t *testing.T) {
 	page := call("wf", "prompt", ins[0].Name, "--state-dir", state)
 	const realName = "Design/LocalDesign/Decompose#1"
 	size := len(page) + strings.Count(page, ins[0].Name)*(len(realName)-len(ins[0].Name))
+	// A temp dir too long for an 88-character workspace (macOS's TMPDIR) is
+	// measured as if it were 88: the binary and state dir sit under ws, so
+	// each place the page names one of them carries the same excess.
+	size -= strings.Count(page, ws) * max(0, len(ws)-88)
 	if size > 2048 || !strings.Contains(page, bin) {
 		t.Fatalf("the page would be %d bytes with a %d-character binary, a %d-character state dir and a %d-character workspace, over 2 KB:\n%s", size, len(bin), len(state), len(ws), page)
 	}

@@ -257,7 +257,8 @@ func TestFanoutAllRefusedStillReports(t *testing.T) {
 
 // A batch whose --out lies under a symbolic link into the source workspace
 // is refused before anything is written, whether its forks would run or all
-// be refused: the source is left as it was.
+// be refused: the source is left as it was. The link is resolved, so the
+// refusal names the overlap it leads to.
 func TestFanoutRefusesAnOutputBehindALinkIntoTheSource(t *testing.T) {
 	for _, states := range []string{"pxA", "pxB"} {
 		t.Run(states, func(t *testing.T) {
@@ -272,7 +273,7 @@ func TestFanoutRefusesAnOutputBehindALinkIntoTheSource(t *testing.T) {
 				before = listTree(t, w)
 				return filepath.Join(link, "batch")
 			})
-			if code == 0 || code == 8 || forks != nil || !strings.Contains(stdout+stderr, "symlink ancestor") {
+			if code == 0 || code == 8 || forks != nil || !strings.Contains(stdout+stderr, "overlaps source world") {
 				t.Errorf("exit %d, forks %v: %s %s", code, forks, stdout, stderr)
 			}
 			if after := listTree(t, ws); strings.Join(after, "\n") != strings.Join(before, "\n") {

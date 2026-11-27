@@ -2223,7 +2223,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	if workspace == "" {
 		workspace = "."
 	}
-	workspace, err := filepath.Abs(workspace)
+	workspace, err := realPath(workspace)
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)
 	}
@@ -2350,7 +2350,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		if err != nil {
 			return c.fromError("run", err)
 		}
-		if st.started.Workspace != "" && st.started.Workspace != workspace {
+		if st.started.Workspace != "" && !sameRealPath(st.started.Workspace, workspace) {
 			return c.failf(exitUsage, "run: run %s uses workspace %s; use next or resume with --workspace to relocate it", live, st.started.Workspace)
 		}
 		if f.modelMap != "" {

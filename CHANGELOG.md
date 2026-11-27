@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Roots reached through a symbolic link now checkpoint and fork
+  (sw-vi0h).** The engine refuses to write through a symbolic link inside a
+  run's roots, and before this change it also refused a link above them. On
+  macOS `/tmp` and `/var` lead into `/private`, so a workspace, state
+  directory or fork destination under either one could not be checkpointed
+  (`symlink workspace`, `symlink path ancestor`, `openat ...: not a
+  directory`), and a `--snapshots` run could not fork or rewind. The engine
+  now resolves the roots it is handed (workspace, state root, run directory,
+  and the `fork`, `fanout` and `manufacture` destinations) to their real
+  paths once, when it receives them. A link inside a root is still refused.
+  A fork destination reached through a link into the source world is now
+  refused as `fork destination overlaps source world` rather than as a
+  symlink ancestor.
+- **The engine's own tests pass under macOS's temp directory (sw-vi0h).**
+  Test isolation resolves `TMPDIR` to its real path, and two prompt-size
+  tests no longer depend on how long the temp directory's path is.
+
+### Upgrading
+
+- Paths the engine prints and records (the workspace in `cd` lines, a fork's
+  workspace and state directory) are now real paths. On macOS a workspace
+  under `/tmp` prints as `/private/tmp/...`. A run recorded under an alias
+  of its workspace is treated as the same run in the same place: `run`
+  attaches to it and `next` does not relocate it.
+
 ## v0.4.4
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

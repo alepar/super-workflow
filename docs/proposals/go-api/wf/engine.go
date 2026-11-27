@@ -280,15 +280,16 @@ func NewEngine(j Journal, reg *Adapters, opts EngineOptions) Executor {
 		}
 	}
 
-	if opts.StateRoot != "" {
-		state, _ := filepath.Abs(opts.StateRoot)
-		opts.StateRoot = state
-		workspace := opts.Workspace
-		if workspace != "" {
-			workspace, _ = filepath.Abs(workspace)
+	if opts.Workspace != "" {
+		if workspace, err := realPath(opts.Workspace); err == nil {
 			opts.Workspace = workspace
 		}
-		j = &rootedJournal{Journal: j, workspace: workspace, state: state, active: map[RunID]PathRoots{}}
+	}
+	if opts.StateRoot != "" {
+		if state, err := realPath(opts.StateRoot); err == nil {
+			opts.StateRoot = state
+		}
+		j = &rootedJournal{Journal: j, workspace: opts.Workspace, state: opts.StateRoot, active: map[RunID]PathRoots{}}
 	}
 	e := &Engine{j: j, opts: opts, defs: map[string]*Def{}}
 	e.reg = reg.withRuntime(engineRuntime{e})
@@ -450,7 +451,7 @@ func (e *Engine) withRunMode(run RunID, dry bool, check func([]JournalRecord) er
 	}
 	if !dry && len(recs) > 0 && recs[0].Roots != nil {
 		from, to := recs[0].Roots.Workspace, e.opts.Workspace
-		if from != "" && to != "" && from != to {
+		if from != "" && to != "" && !sameRealPath(from, to) {
 			if err := e.reg.relocateWorkspace(from, to); err != nil {
 				return err
 			}
@@ -684,7 +685,7 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 	switch {
 	case err == nil:
 		if len(recs) > 0 && recs[0].Roots != nil && e.opts.Workspace != "" {
-			if original := recs[0].Roots.Workspace; original != "" && original != e.opts.Workspace {
+			if original := recs[0].Roots.Workspace; original != "" && !sameRealPath(original, e.opts.Workspace) {
 				return "", nil, fmt.Errorf("%w: run %s uses workspace %s; continue with next or resume to relocate", ErrRejected, id, original)
 			}
 		}

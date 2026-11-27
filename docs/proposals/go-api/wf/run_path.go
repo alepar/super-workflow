@@ -189,6 +189,30 @@ func confinedRunPath(root string, p RunPath) (string, error) {
 	return filepath.Join(root, filepath.FromSlash(string(p))), nil
 }
 
+// realPath is path made absolute with every symbolic link on its existing
+// part resolved; a missing tail is kept as written. The engine resolves the
+// roots it is handed (workspace, state root, run directory, fork destination)
+// once, here, so a platform alias above them (macOS's /tmp and /var lead into
+// /private) is not mistaken for a link inside them, which later checks refuse.
+func realPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return runPathExistingPrefix(abs)
+}
+
+// sameRealPath reports whether a and b name one place once resolved; a run
+// recorded under an alias of its workspace has not moved.
+func sameRealPath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := realPath(a)
+	rb, errB := realPath(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
 func runPathExistingPrefix(path string) (string, error) {
 	ancestor := path
 	var missing []string
@@ -208,7 +232,7 @@ func runPathExistingPrefix(path string) (string, error) {
 		missing = append(missing, filepath.Base(ancestor))
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
-			return "", fmt.Errorf("RunPath has no existing ancestor: %s", path)
+			return "", fmt.Errorf("path has no existing ancestor: %s", path)
 		}
 		ancestor = parent
 	}

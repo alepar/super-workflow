@@ -45,8 +45,11 @@ func TestCLIPrintsCommandsForTheCallingHarness(t *testing.T) {
 			}
 			const run = "command-shape"
 			// Long absolute paths force the paged renderer to preserve commands
-			// that exceed its normal prose width.
-			state := filepath.Join(dir, strings.Repeat("long-state-", 12))
+			// that exceed its normal prose width. The state dir is padded to
+			// about 150 characters, past the 100-column width, whatever the
+			// temp dir's length: macOS's longer TMPDIR would otherwise push
+			// the first page past its envelope.
+			state := filepath.Join(dir, strings.Repeat("long-state-", max(1, (150-len(dir))/len("long-state-"))))
 			env := []string{"WF_TEST_NAMED=1", marker}
 			other := t.TempDir()
 			check := func(body, verb string) string {

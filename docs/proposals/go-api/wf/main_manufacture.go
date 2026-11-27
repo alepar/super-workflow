@@ -150,14 +150,14 @@ func (c *cli) manufacture(row Subcommand, args []string) int {
 			}
 		}
 	}
-	src, err := filepath.Abs(*workspace)
+	src, err := realPath(*workspace)
 	if err != nil {
 		return c.failf(exitUsage, "manufacture: %v", err)
 	}
 	if info, err := os.Stat(src); err != nil || !info.IsDir() {
 		return c.failf(exitUsage, "manufacture: --workspace %s: no such directory", *workspace)
 	}
-	dst, err := filepath.Abs(*out)
+	dst, err := realPath(*out)
 	if err != nil {
 		return c.failf(exitUsage, "manufacture: %v", err)
 	}

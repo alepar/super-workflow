@@ -92,8 +92,10 @@ func TestPlainCommandProblemCatchesShellShapes(t *testing.T) {
 // command per line, with absolute paths: what a permission checker reading
 // it passes without a person.
 func TestEveryPrintedCommandIsOnePlainLine(t *testing.T) {
-	bin := os.Args[0]
-	if !filepath.IsAbs(bin) {
+	// The engine names itself by os.Executable, which on Linux is the real
+	// path even when the binary was started through a link.
+	bin, err := os.Executable()
+	if err != nil || !filepath.IsAbs(bin) {
 		t.Skip("the test binary path is not absolute")
 	}
 	for _, named := range []bool{false, true} {

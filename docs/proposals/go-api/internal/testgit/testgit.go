@@ -6,6 +6,7 @@ package testgit
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -14,7 +15,15 @@ import (
 // fixture's git reads only its own repository. A test package that runs git,
 // directly or through the engine, calls it first in TestMain. Tests that need
 // a GIT_* variable set it themselves with t.Setenv.
+//
+// It also resolves TMPDIR to its real path. The engine resolves the roots it
+// is handed, so a fixture under an aliased temp directory (macOS's /var leads
+// into /private/var) would otherwise compare its alias with the engine's
+// real path. Tests of aliased roots make their own links (sw-vi0h).
 func Isolate() {
+	if real, err := filepath.EvalSymlinks(os.TempDir()); err == nil {
+		os.Setenv("TMPDIR", real)
+	}
 	for _, kv := range os.Environ() {
 		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "GIT_") {
 			os.Unsetenv(name)

@@ -62,7 +62,7 @@ func (e *Engine) snapshotRunDir(run RunID) (string, error) {
 	if e.opts.RunDir == nil || e.opts.RunDir(run) == "" {
 		return "", fmt.Errorf("%w: snapshots require a run directory", ErrUnavailable)
 	}
-	return filepath.Abs(e.opts.RunDir(run))
+	return realPath(e.opts.RunDir(run))
 }
 func snapshotRelative(root, p string) (string, bool) {
 	rel, err := filepath.Rel(root, p)
@@ -470,11 +470,13 @@ func forkRefusal(err error) error {
 	return err
 }
 
-// checkForkDestination checks out, absolute, as a place to create a fork or
-// a batch of them before anything is written there: it is not in or at a
-// source root, does not exist, and its nearest existing ancestor has no
-// symbolic link on its way (a link could lead into a source root). It
-// returns that ancestor.
+// checkForkDestination checks out, a real path (realPath), as a place to
+// create a fork or a batch of them before anything is written there: it is
+// not in or at a source root, does not exist, and its nearest existing
+// ancestor has no symbolic link on its way. A link the caller's path went
+// through is resolved before this, so one into a source root is refused as
+// the overlap it is; a link that appears after resolution is refused here.
+// It returns that ancestor.
 func checkForkDestination(out string, sources ...string) (string, error) {
 	for _, source := range sources {
 		if source != "" {
@@ -646,7 +648,7 @@ func (e *Engine) forkSnapshot(run RunID, seq int64, out string, mark func(*Rewou
 		return SnapshotFork{}, err
 	}
 	prefix, def, st, data, sourceDir, adapters, names := pre.prefix, pre.def, pre.st, pre.data, pre.sourceDir, pre.adapters, pre.names
-	out, err = filepath.Abs(out)
+	out, err = realPath(out)
 	if err != nil {
 		return SnapshotFork{}, err
 	}

@@ -82,7 +82,7 @@ func (c *cli) fanout(source *Engine, run RunID, f *flags) int {
 		return c.fromError("fanout", err)
 	}
 	targets := plan.Targets
-	out, err := filepath.Abs(f.forkOut)
+	out, err := realPath(f.forkOut)
 	if err != nil {
 		return c.fromError("fanout", err)
 	}
