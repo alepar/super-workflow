@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.4.6
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.6`. GitHub installs use the plugin tag
+`plugin-v0.4.6`. This release adds three features: a step can send work back
+to its producer with reasons, a bounded number of times, and then takes a
+required fallback (`SendBack`); `workflow dead-ends` lists every route that
+can end a run; and `workflow dev rewind --to unchanged` forks a run at the
+longest prefix the new definition leaves unchanged. All three are additive.
 
 ### What changed
 
