@@ -273,7 +273,9 @@ func (e *Engine) Heartbeat(run RunID, t HeartbeatTarget, alive bool) error {
 
 // HeartbeatAs is Heartbeat from coordinator co: a died report on a child of a
 // session co replaced (or that a later session replaced) loses it as an
-// orphan, exempt from the lost cap.
+// orphan, exempt from the lost cap. So does an operator's died report (wf
+// dev heartbeat): the person attests that the child is gone and no
+// coordinator is left to answer for it.
 func (e *Engine) HeartbeatAs(run RunID, t HeartbeatTarget, alive bool, co Coordinator) error {
 	return e.withRun(run, func(c *cycle) error {
 		if err := c.checkSegment("heartbeat", harness.Caller{Harness: co.Harness, Session: co.Session, Root: co.Root, FromEnv: co.Session != ""}); err != nil {
@@ -295,7 +297,7 @@ func (e *Engine) HeartbeatAs(run RunID, t HeartbeatTarget, alive bool, co Coordi
 					return fmt.Errorf("%w: session is outside immutable until-unit boundary", ErrRejected)
 				}
 			}
-			if err := c.loseSession(t.Session); err != nil {
+			if err := c.loseSession(t.Session, c.e.opts.operatorChild); err != nil {
 				return err
 			}
 			return c.drive()
@@ -333,6 +335,15 @@ func (e *Engine) HeartbeatAs(run RunID, t HeartbeatTarget, alive bool, co Coordi
 		if err := c.emit(in, JournalHeartbeat, 0, HeartbeatData{Name: t.Name, Status: "died", By: "coordinator"}); err != nil {
 			return err
 		}
+		if c.e.opts.operatorChild {
+			// A person reports the child gone (dev heartbeat): its
+			// coordinator is not there to answer, so the child was lost with
+			// it, not by its own fault.
+			if err := c.loseOrphan(in, "an operator reported its child gone"); err != nil {
+				return err
+			}
+			return c.drive()
+		}
 		if u := in.Unit; u != nil && c.childCoordinatorReplaced(co, u) {
 			// Its coordinator was replaced: the child was lost with it, not
 			// by its own fault, so it never reaches the lost cap.
@@ -349,8 +360,9 @@ func (e *Engine) HeartbeatAs(run RunID, t HeartbeatTarget, alive bool, co Coordi
 }
 
 // loseSession loses every claimed unit whose claim names session, the orphans
-// of a coordinator that is gone. No such unit journals nothing.
-func (c *cycle) loseSession(session string) error {
+// of a coordinator that is gone. No such unit journals nothing. An operator's
+// report (wf dev heartbeat) says so in each unit's degraded record.
+func (c *cycle) loseSession(session string, operator bool) error {
 	for _, id := range append([]string(nil), c.st.order...) {
 		if c.st.ended {
 			return nil
@@ -360,7 +372,13 @@ func (c *cycle) loseSession(session string) error {
 		if !c.untilUnitAllows(in) || u == nil || in.Settled || !u.State.claimed() || u.Claim == nil || u.Claim.Session != session {
 			continue
 		}
-		if err := c.lose(in, LostCauseOrphan); err != nil {
+		var err error
+		if operator {
+			err = c.loseOrphan(in, fmt.Sprintf("an operator reported the children of coordinator session %s gone", session))
+		} else {
+			err = c.lose(in, LostCauseOrphan)
+		}
+		if err != nil {
 			return err
 		}
 	}

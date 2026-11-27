@@ -30,6 +30,20 @@ func init() {
 		}
 		DevSubcommands = append(DevSubcommands, row)
 	}
+
+	// heartbeat's operator form: a person releases a claim whose child is
+	// gone, from a plain shell, when no coordinator is left to answer.
+	row, _ := findRow("heartbeat")
+	normal := row.handle
+	row.Summary = "operator-only died <name> or died --session <id>: lose a claim whose child is gone as an orphan, spending no retry"
+	row.handle = func(c *cli, row Subcommand, args []string) int {
+		if harness.Detect(c.env) != "generic" || childCaller(c.env) {
+			return c.failf(exitRejected, "dev %s: reserved for a person; a coordinator answers a stall with heartbeat", row.Name)
+		}
+		c.operatorChild = true
+		return normal(c, row, args)
+	}
+	DevSubcommands = append(DevSubcommands, row)
 }
 
 func (c *cli) refuseStarted() int {

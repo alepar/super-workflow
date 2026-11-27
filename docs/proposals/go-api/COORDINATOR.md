@@ -1412,6 +1412,18 @@ record) offers that unit again, with a degraded
   submits; a later `next` sweeps it once it goes quiet.
 
 A `heartbeat died` for a child of a replaced session also counts as an orphan.
+When no coordinator is left to answer, a person releases such claims from a
+plain shell, one with no agent harness markers, after confirming the children
+are gone. Plain `heartbeat` is refused there, because it is a coordinator verb:
+
+```
+workflow dev heartbeat <run> died <name>
+workflow dev heartbeat <run> died --session <id>
+```
+
+Each claim is lost as an orphan: no retry is spent, and the next coordinator
+is offered it again. Agent sessions are refused, and an operator reports
+`died` only.
 An older session that comes back never clears a newer one's units. Run `next`
 only from the coordinator: a `next` from any other session counts as a new
 coordinator. On Claude Code, Codex and agy, while the earlier coordinator's

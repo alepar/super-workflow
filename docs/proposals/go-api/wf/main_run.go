@@ -949,8 +949,12 @@ var Subcommands = []Subcommand{
 			if f.note != "" && status != "active" {
 				return c.failf(exitUsage, "%s: --note goes with active only", row.Name)
 			}
+			if c.operatorChild && status != "died" {
+				return c.failf(exitUsage, "dev %s: an operator reports died only", row.Name)
+			}
 			co := envCoordinator(c.env)
 			return c.withEngine(row, stateDir, func(x Executor) int {
+				x.(*Engine).opts.operatorChild = c.operatorChild
 				if err := x.(*Engine).HeartbeatAs(run, t, status == "active", co); err != nil {
 					return c.fromError(row.Name, err)
 				}

@@ -10,6 +10,24 @@
   fix, such as a failed read or a missing tool, keep a plain error or
   `wf.Unavailable`. A check on the submission is still preferred when the
   data exists then. No API or behavior change.
+- **`wf dev heartbeat died` releases a gone child's claim from a plain shell
+  (sw-d964).** A claimed unit whose child is gone stays running when no
+  coordinator is left to answer its stall. A stop that drains, or a run
+  waiting to resume, then keeps it until someone answers. Plain `heartbeat` is
+  a coordinator verb and is refused outside the harness that drives the run.
+  The new operator form `wf dev heartbeat died <name>` or
+  `wf dev heartbeat died --session <id>` works from a shell with no agent
+  harness markers, like the other `dev` forms. It loses the claim as an
+  orphan: it spends no retry, never counts toward the lost cap, and is
+  offered again to the next coordinator. The operator attests that the child
+  is gone. `dev heartbeat active` is refused, and so is the form from an
+  agent harness.
+
+### Upgrading
+
+- No change for existing callers. Operator tooling that used
+  `dev failed --class transient` to clear the claims of a gone coordinator
+  can use `dev heartbeat died --session <id>` instead, which spends no retry.
 
 ## v0.4.8
 
