@@ -458,7 +458,8 @@ func TestEveryFlagReachesTheEngine(t *testing.T) {
 		// The parser defines exactly the flags the row documents.
 		localHook := row.Name == "coordinator-stop" || row.Name == "install-coordinator-stop"
 		// version takes no run: its --json is exercised by TestVersionVerb.
-		selfOnly := row.Name == "version" || row.Name == "setup-codex-rules" // setup-codex-rules: TestSetupCodexRules
+		// setup-codex-rules: TestSetupCodexRules; dead-ends reads no run: TestDeadEndsCommand
+		selfOnly := row.Name == "version" || row.Name == "setup-codex-rules" || row.Name == "dead-ends"
 		args := []string{row.Name, "x"}
 		if localHook || selfOnly {
 			args = args[:1]

@@ -967,6 +967,7 @@ usage: workflow <subcommand> [args]
   explain  --state-dir dir --assets dir --workspace dir explain a unit with its transition, route, checks and effects
   journal  --state-dir dir --assets dir --workspace dir print the journal as JSON Lines
   lock     --state-dir dir --assets dir --workspace dir --json say whether a process holds the run's lock now, and who last held it (read without taking it)
+  dead-ends --variant name=JSON --json list every route of <definition> into a stopped or stalled terminal: its trigger and whether one answer takes it (--variant: per options value)
   check     check <definition> without a model: lint, calibration and simulation
 Read this command's --help and correct its arguments, then run it again.
 `

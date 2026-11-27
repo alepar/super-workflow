@@ -111,6 +111,7 @@ docs/proposals/go-api/wf/coordinator_stop_native.go
 docs/proposals/go-api/wf/coordinator_turn.go
 docs/proposals/go-api/wf/coordinator_turn_binding.go
 docs/proposals/go-api/wf/coordinator_turn_cli.go
+docs/proposals/go-api/wf/dead_ends.go
 docs/proposals/go-api/wf/deadline.go
 docs/proposals/go-api/wf/debug_view.go
 docs/proposals/go-api/wf/decode_run_value.go

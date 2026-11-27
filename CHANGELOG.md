@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **`dead-ends <definition>` lists every route that ends a run (sw-nqak).**
+  A definition can end a run on paths its author did not mean as stops: one
+  failing grader of five takes a panel's partial edge, or a verdict that
+  reads like an approval shares its edge with stop. The new verb, and its
+  library form `Def.DeadEnds`, list each route into a `Stopped` or `Stalled`
+  terminal: the deciding state and edge, any states that only pass the run
+  on (a cleanup command), the trigger that selects the edge (a case value, a
+  gate answer, a retry or visit cap spent, a failure class, a timeout, a
+  route-around, a Map join or a Sub exit), and whether one answer alone can
+  take it (`yes`, `no` or `unknown` when a closure or the item count
+  decides). A Sub exit or a Map partial edge lists the child's routes that
+  produce it. `--variant name=JSON` (repeatable) names run options values:
+  each route then lists the variants its `When` guards hold under, and each
+  policy-answerable gate answer the variants whose policy gives it. It is a
+  static listing over `Inspect`; `--json` prints the routes.
+
+### Upgrading
+
+- Nothing to change. `dead-ends` is a new verb and `Def.DeadEnds` a new
+  read; existing definitions and journals behave as before.
+
 ## v0.4.5
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

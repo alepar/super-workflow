@@ -1590,6 +1590,12 @@ exit 2. Missing fixtures, simulation findings and uncovered edges fail the
 command; the report includes reduced failure scripts and fields the checks
 do not constrain.
 
+`workflow dead-ends <definition> [--variant name=JSON]... [--json]` lists
+every route of a definition into a stopped or stalled terminal, with the
+trigger that selects it and whether one answer alone takes it; a Sub exit or
+a Map join lists its child's routes. It reads no run and always exits 0 on a
+known definition; it is a report for the author, not a gate.
+
 `workflow dev harvest <run> --into <corpus dir>` extracts accepted agent
 results from a kept run for use as calibration and simulation corpus entries.
 

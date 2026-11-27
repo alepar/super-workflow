@@ -21,6 +21,14 @@ its chosen path. The full check adds calibration, hostile submissions, failure
 and recovery paths, gate delivery, journal relocation and edge coverage. A
 passing happy-path test alone does not establish that a definition is ready.
 
+`go run ./cmd/workflow dead-ends tour` lists every route that can end a run at
+a stopped or stalled terminal: the edge, the trigger that selects it and
+whether one answer alone (one agent output, one blocked report, one Map child
+not ending in success) takes it. A Sub exit or a Map join lists the child
+routes behind it. Pass `--variant name=JSON` once per options value to see
+which routes each value leaves open and which gate answers its policy gives.
+Read it for stops you did not intend; `Ends` documents the ones you did.
+
 To start it with an agent coordinator, supply the goal and suite command:
 
 ```sh
