@@ -1403,6 +1403,7 @@ type flags struct {
 	dryRun                                                            bool
 	snapshots                                                         bool
 	forkOut                                                           string
+	changed                                                           string
 	restoreSeq                                                        int64
 	approvalHold                                                      int64
 	expectedAdmission, receipt                                        int64
@@ -2758,13 +2759,14 @@ var devStarted = Subcommand{
 var DevSubcommands = []Subcommand{
 	{
 		Name:    "rewind",
-		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir", "--to died", "--out dir", "--model-map key=model[,key=model]"},
-		Summary: "fork <run> at the state that died into a new run that carries on from there (the source is left as it was); resume the fork with next --adopt on a fixed binary",
+		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir", "--to died", "--out dir", "--changed def/state[,def/state]", "--model-map key=model[,key=model]"},
+		Summary: "fork <run> at the state that died, a checkpoint, or (--to unchanged) before the first state this binary's definition changed, into a new run that carries on from there (the source is left as it was); resume the fork with next --adopt on a fixed binary",
 		handle:  (*cli).drive,
 		subject: "run id",
 		define: func(fs *flag.FlagSet, f *flags) {
 			fs.StringVar(&f.to, "to", "", "where to fork: died (the state whose decision ended the run, or a halted state), or a checkpoint's journal seq (with --out), to run again what followed it")
 			fs.StringVar(&f.forkOut, "out", "", "restore a snapshot into a new directory containing workspace and state")
+			fs.StringVar(&f.changed, "changed", "", "with --to unchanged: states whose code changed in ways their declaration does not show (<definition>/<state>, comma-separated); the cut lands before the first run of any of them")
 			fs.StringVar(&f.modelMap, "model-map", "", "tier, all or model = model[,...]: the models the fork spawns with")
 		},
 		act: func(c *cli, row Subcommand, stateDir string, run RunID, f *flags) int {
@@ -2774,8 +2776,14 @@ var DevSubcommands = []Subcommand{
 			if code := c.takeBoundaryModelMap("dev rewind", f); code != exitOK {
 				return code
 			}
+			if f.changed != "" && f.to != "unchanged" {
+				return c.failf(exitUsage, "dev rewind: --changed needs --to unchanged")
+			}
 			return c.withEngine(row, stateDir, func(x Executor) int {
 				e := x.(*Engine)
+				if f.to == "unchanged" {
+					return c.rewindUnchanged(e, stateDir, run, f)
+				}
 				if f.forkOut != "" {
 					rep, err := e.RewindInto(run, f.to, f.forkOut)
 					if err != nil {

@@ -1265,6 +1265,26 @@ refused, listing each state that vanished or changed: that is when a
 `Migration` is needed. Run creation journals the definition's shape for
 this; a journal from before it compares state names only.
 
+`workflow dev rewind <run> --to unchanged [--changed <def>/<state>[,...]]`
+forks the run at the longest prefix this binary's definition leaves
+unchanged, then the fork is adopted with `next --adopt` as below. Run
+creation and every migration record each state's identity: its shape,
+prompt (with the content of the assets it reads), checks, edges, and the
+whole declared view. The cut lands before the first record that runs a state
+whose identity changed, that no longer exists, or that `--changed` names.
+A snapshot run (`--out` required) is restored from the latest checkpoint
+before it; any other run is forked by its journal. The kept prefix is
+adopted in memory first. When that adoption is refused, the rewind steps back
+to an earlier arrival or checkpoint, up to three times, and reports each
+refused cut. Code inside closures (route, check and compute bodies) is not
+part of a state's identity. A fix there leaves the definition hash as it was,
+so name the states it changed with `--changed`. A fix's landing note
+should list those states. With no change found and none named, the verb
+refuses. If this binary's source differs from the run's build stamp, it
+says the change is in code it cannot see and asks for `--changed` or
+`--to <seq>`. Otherwise it says nothing changed. A journal from before
+per-state identities is refused; pick a checkpoint with `--to <seq>`.
+
 `workflow dev rewind <run> --to died` forks a run that died into a new run
 that carries on from there; the source is left as it was. The point "died" is
 the state whose decision ended the run: from the run's transition into its

@@ -157,6 +157,13 @@ func (c *cycle) appendMigration(def *Def, data MigratedData) error {
 			}
 		}
 	}
+	if data.StateIDs == nil {
+		roots := data.AssetRoots
+		if roots == nil {
+			roots = c.selectedAssetRoots(def)
+		}
+		data.StateIDs = stateIDs(def, roots)
+	}
 	return c.emitAs("", "", 0, JournalMigrated, 0, data)
 }
 

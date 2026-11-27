@@ -43,6 +43,27 @@
   `wf.Returned()`). A send-back edge bounds its own cycle for
   `cycle-no-measure`. New example: `examples/sendback`.
 
+- **`dev rewind --to unchanged` forks a run at the longest prefix the
+  current definition leaves unchanged (sw-0x90).** Run creation and every
+  migration now record each state's identity (`StateIDs`): short hashes of
+  its shape, prompt (with the content of the assets it reads), checks, edges
+  and whole declared view, including the definition-level values it reads.
+  The verb finds the first journal record that runs a state whose identity
+  changed or that no longer exists, and cuts before it. A snapshot run is
+  restored from the latest checkpoint before that record; any other run is
+  forked by its journal. The kept prefix is adopted onto the current
+  definition in memory first. A refused cut steps back to an earlier arrival
+  or checkpoint, up to three times, and the report lists each refusal. The
+  report names the first change and the identity parts that changed (shape,
+  prompt, checks, edges), the records kept, and the effects applied after the
+  cut. Closure bodies (routes, checks, computes) are not part of a state's
+  identity, so `--changed <def>/<state>[,...]` names the states a
+  code-only fix changed, and the cut lands before the first run of any of
+  them. With nothing changed and nothing named, the verb refuses. If the
+  binary's source differs from the run's build stamp, it says the change is
+  in code it cannot see and asks for `--changed` or `--to <seq>`. Otherwise
+  it reports nothing to rewind. `Engine.RewindUnchanged` is the library form.
+
 ### Upgrading
 
 - Nothing to change. `dead-ends` is a new verb and `Def.DeadEnds` a new
@@ -53,6 +74,11 @@
   a `SendBack`: the reasons then reach the producer as data and the bound
   and fallback are checked by lint. It is a definition change (a new hash),
   so a run in flight keeps its definition.
+- `run_started` and `migrated` records gain the optional `StateIDs` field.
+  Older engines ignore it. Journals written before it cannot use
+  `--to unchanged`; pick a checkpoint with `--to <seq>` as before. A fix
+  landing for a running workflow should name the states whose code it
+  changed, so an operator can pass them to `--changed`.
 
 ## v0.4.5
 

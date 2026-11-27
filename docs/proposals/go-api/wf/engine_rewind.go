@@ -96,6 +96,12 @@ func (e *Engine) Rewind(run RunID, to string) (RewindReport, error) {
 	}
 	kept := forkRecords(recs, chain)
 	d := RewoundData{From: run, Seq: kept[len(kept)-1].Seq, State: state, Applied: appliedDropped(recs, kept)}
+	return e.writeRewind(run, kept, d)
+}
+
+// writeRewind writes kept and d as the run's next free fork id
+// (<run>.rw<k>) and carries the source's run dir to it.
+func (e *Engine) writeRewind(run RunID, kept []JournalRecord, d RewoundData) (RewindReport, error) {
 	for k := 1; k <= rewindLimit; k++ {
 		fork := RunID(fmt.Sprintf("%s.rw%d", run, k))
 		done, err := e.writeFork(fork, kept, d)

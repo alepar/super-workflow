@@ -865,7 +865,7 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 		Harness: harness, HarnessFromEnv: e.opts.HarnessFromEnv && harness == e.opts.Harness,
 		Workspace: workspace, ModelMap: modelMap, Models: nilIfEmpty(models), Efforts: nilIfEmpty(efforts), ChildModels: childModels, Headless: headlessCfg, Budget: e.opts.RunBudget,
 		Delegations: nilIfEmpty(delegations), Predecessor: predID, Given: given(e.opts.GivenParams, params),
-		Detach: e.detachFact(), Shape: defShape(d), Manufactured: e.opts.manufactured, Build: &build,
+		Detach: e.detachFact(), Shape: defShape(d), StateIDs: stateIDs(d, roots), Manufactured: e.opts.manufactured, Build: &build,
 	})
 	if err != nil {
 		return "", nil, err

@@ -757,6 +757,12 @@ type RunStartedData struct {
 	// its children, so a later binary can tell which states an adoption
 	// keeps (E1). Journals from before it carry none.
 	Shape map[string]string `json:",omitempty"`
+	// StateIDs is each state's identity (stateIDs): "<definition>/<state>"
+	// to its shape, prompt, checks, edges and whole-view hashes, so a later
+	// binary can find the longest prefix of the run its definition leaves
+	// unchanged (dev rewind --to unchanged). Journals from before it carry
+	// none.
+	StateIDs map[string]string `json:",omitempty"`
 	// Harness is the normalized coordinator harness. A journal written before
 	// slots were removed also carries "Slots"; decoding ignores it.
 	Harness string `json:",omitempty"`
@@ -1221,6 +1227,9 @@ type MigratedData struct {
 	// type (E1). Shape is the new definition's shape (RunStartedData.Shape).
 	Adopted bool              `json:",omitempty"`
 	Shape   map[string]string `json:",omitempty"`
+	// StateIDs is the new definition's state identities
+	// (RunStartedData.StateIDs): the records after this one are judged by them.
+	StateIDs map[string]string `json:",omitempty"`
 }
 
 // RunEndedData is the payload of run_ended: the terminal reached and its

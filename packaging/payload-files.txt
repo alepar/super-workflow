@@ -213,6 +213,7 @@ docs/proposals/go-api/wf/render.go
 docs/proposals/go-api/wf/replay.go
 docs/proposals/go-api/wf/result_run_paths.go
 docs/proposals/go-api/wf/retry.go
+docs/proposals/go-api/wf/rewind_unchanged.go
 docs/proposals/go-api/wf/routing.go
 docs/proposals/go-api/wf/run_path.go
 docs/proposals/go-api/wf/sandbox_shim.go
