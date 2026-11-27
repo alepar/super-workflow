@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.4
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.4`. GitHub installs use the plugin tag
+`plugin-v0.4.4`. This patch release adds one read, `wf.HarnessOf`, which
+names the harness that produced an agent state's accepted output. Nothing
+existing changes.
 
 ### What changed
 
