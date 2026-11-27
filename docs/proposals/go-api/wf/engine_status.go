@@ -594,6 +594,10 @@ func (c *cycle) statusReasons(rs *RunStatus, now time.Time) {
 		rs.NothingReadyReason = "waiting for the run's operator to resume"
 		return
 	}
+	if rs.BudgetStop != "" {
+		rs.NothingReadyReason = "stopped on its run budget (" + rs.BudgetStop + "): the run's operator, not its coordinator, raises it with: " + rs.BudgetResume
+		return
+	}
 	if rs.Phase == RunEnded || len(c.pendingUnits()) > 0 {
 		return
 	}

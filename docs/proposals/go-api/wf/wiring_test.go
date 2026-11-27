@@ -27,7 +27,6 @@ import (
 var engineOnlyOptions = map[string]string{
 	"Clock":           "test seam: default time.Now",
 	"Nonce":           "test seam: default crypto/rand hex",
-	"RunBudget":       "engine-only: no workflow flag sets it (spec §4.8)",
 	"HandOutWindow":   "tuning default (2m)",
 	"SpawnWindow":     "tuning default (3m)",
 	"FetchedLease":    "tuning default (30m)",
@@ -358,6 +357,7 @@ var wiProbes = map[string]wiProbe{
 	"run --run-id":         {"none", "run agent-cli --run-id w1", "run agent-cli --run-id w2"},
 	"run --continue":       {"none", "run agent-cli --continue w0", "run agent-cli --run-id w1"},
 	"run --model-map":      {"none", "run agent-cli --run-id w1 --model-map opus=sonnet", "run agent-cli --run-id w1"},
+	"run --budget":         {"none", "run agent-cli --run-id w1 --budget turns=5", "run agent-cli --run-id w1"},
 	"run --delegate":       {"none", "run gate-cli --run-id w1 --delegate clGate=no", "run gate-cli --run-id w1"},
 	"run --harness":        {"none", "run agent-cli --run-id w1 --harness claude", "run agent-cli --run-id w1 --harness generic"},
 	"run --family":         {"none", "run family-other --run-id w1 --family claude=claude", "run family-other --run-id w1"},
@@ -373,6 +373,7 @@ var wiProbes = map[string]wiProbe{
 	"next --adopt":         {"rehashed", "next w1 1 --adopt", "next w1 1"},
 	"resume --adopt":       {"rehashed", "resume w1 --adopt", "resume w1"},
 	"resume --model-map":   {"stopped", "resume w1 --operator op --reason r --model-map opus=sonnet", "resume w1 --operator op --reason r"},
+	"resume --budget":      {"stopped", "resume w1 --operator op --reason r --budget turns=5", "resume w1 --operator op --reason r"},
 	"resume --operator":    {"stopped", "resume w1 --operator op --reason r", "resume w1 --reason r"},
 	"resume --reason":      {"stopped", "resume w1 --operator op --reason r", "resume w1 --operator op"},
 	"started --harness":    {"agent", "dev started w1 {name} --session s --agent a --harness codex", "dev started w1 {name} --session s --agent a"},
@@ -854,6 +855,18 @@ func TestStatusSchemaRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuses = append(statuses, string(mappedJSON))
+
+	// A run its budget stopped: the budget in force and why it stopped.
+	bd := rsChainDef()
+	bh := newHarnessOpts(t, bd, nil, wf.EngineOptions{RunBudget: wf.RunBudget{Turns: 1, Tokens: 1000, Wall: time.Hour}})
+	brun := bh.run(bd, nil)
+	bh.submit(brun, bh.next(brun)[0], `{"V":"ok"}`)
+	bh.next(brun)
+	budgetJSON, err := json.Marshal(bh.status(brun))
+	if err != nil {
+		t.Fatal(err)
+	}
+	statuses = append(statuses, string(budgetJSON))
 
 	// An ended keyed run advertises a usable successor command.
 	d := clAgentDef("keyed-status")

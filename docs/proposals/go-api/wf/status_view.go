@@ -71,6 +71,9 @@ func RenderStatus(rs RunStatus) string {
 	if bpt := rs.Breakpoint; bpt != nil {
 		fmt.Fprintf(&b, "%s\n", bpt.summary())
 	}
+	if rs.BudgetStop != "" {
+		fmt.Fprintf(&b, "stopped on its run budget, not ended: %s\nits operator raises the budget with:\n  %s\n", rs.BudgetStop, rs.BudgetResume)
+	}
 	for _, ch := range rs.Children {
 		if ch.Available {
 			fmt.Fprintf(&b, "children on %s: available (%s)\n", ch.Harness, escapeControl(ch.Version))

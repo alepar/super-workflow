@@ -102,7 +102,7 @@ func (e *Engine) resume(run RunID, op *Operator) error {
 			switch {
 			case r.Kind == JournalRunEnded && r.Instance == "":
 				ended = true
-			case r.Kind == JournalPaused || r.Kind == JournalBreakpointHalted:
+			case r.Kind == JournalPaused || r.Kind == JournalBreakpointHalted || r.Kind == JournalBudgetStopped && r.Instance == "":
 				paused = true
 			case r.Kind == JournalResumed:
 				paused, unbound = false, true
@@ -138,6 +138,9 @@ func (e *Engine) resume(run RunID, op *Operator) error {
 		return nil
 	}
 	return e.withRunChecked(run, check, func(c *cycle) error {
+		if c.st.ended {
+			return fmt.Errorf("%w: resume: run %s has ended: an ended run is never resumed", ErrRejected, run)
+		}
 		modelMap := e.opts.BoundaryModelMap
 		if err := checkModelMap(c.st.def, modelMap); err != nil {
 			return fmt.Errorf("resume: %w", err)
@@ -156,6 +159,9 @@ func (e *Engine) resume(run RunID, op *Operator) error {
 			return fmt.Errorf("%w: resume: run %s is not stopped", ErrRejected, run)
 		}
 		rd := ResumedData{ModelMap: modelMap}
+		if err := c.resumeBudget(&rd); err != nil {
+			return err
+		}
 		if op != nil && c.st.paused {
 			rd.Operator, rd.Reason, rd.Harness, rd.Session = strings.TrimSpace(op.Name), strings.TrimSpace(op.Reason), op.Harness, op.Session
 		}
@@ -166,11 +172,39 @@ func (e *Engine) resume(run RunID, op *Operator) error {
 	})
 }
 
+// resumeBudget sets the resumed record's budget from resume --budget, and
+// refuses a resume that would leave a budget stop with its limit still spent:
+// the run would stop again at its next agent instruction.
+func (c *cycle) resumeBudget(rd *ResumedData) error {
+	b := c.st.budget
+	if ch := c.e.opts.ResumeBudget; ch != nil {
+		if !c.st.paused {
+			return fmt.Errorf("%w: resume: run %s is not stopped: its budget changes only when a resume clears a stop; stop it (wf stop), then resume it with --budget", ErrRejected, c.run)
+		}
+		b = ch.Over(b)
+		rd.Budget = &b
+	}
+	if c.st.budgetStop == "" {
+		return nil
+	}
+	if why, spent := c.spentUnder(b); spent {
+		if rd.Budget == nil {
+			return fmt.Errorf("%w: resume: run %s was stopped by its run budget (%s): resume it with --budget raising that limit", ErrRejected, c.run, c.st.budgetStop)
+		}
+		return fmt.Errorf("%w: resume: run %s: --budget leaves the run budget spent (%s): raise that limit past what the run has spent", ErrRejected, c.run, why)
+	}
+	return nil
+}
+
 // stoppedInstruction is what next returns while the run is stopped.
 func (c *cycle) stoppedInstruction() Instruction {
 	reason := "The run is stopped (wf stop): start nothing new."
-	if b := c.st.breakpoint; b != nil {
+	switch b := c.st.breakpoint; {
+	case b != nil:
 		reason = "The run is stopped at a " + b.summary() + ". Start nothing new."
+	case c.st.budgetStop != "":
+		reason = "The run is stopped on its run budget (" + c.st.budgetStop + "), not ended. Start nothing new." +
+			" Only the run's operator, another session, raises the budget, with: " + c.budgetResumeLine() + "."
 	}
 	return Instruction{Run: c.run, Kind: InstructionStopped, Workspace: c.workspace(), Counts: c.countsLine(), Breakpoint: c.st.breakpoint,
 		Prompt: reason + " Children already running finish on their own. " +

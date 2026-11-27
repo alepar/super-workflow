@@ -84,6 +84,27 @@ Register each adapter your definition uses; `wf.Main(def)` alone does not
 register shell or Git runtimes. The tour uses inline commands. For detached
 commands, see the effect runner registration in [cmd/workflow](cmd/workflow/main.go).
 
+### Run budget
+
+A run budget caps a whole run in agent turns, reported tokens and wall-clock
+time. `Registration.Budget` computes the default from the options the run
+starts with, so a workflow can scale it with its own knobs (a deeper review,
+a larger budget); `run --budget turns=N,tokens=N,wall=D` replaces the limits
+it names, and `0` removes one. The result is journaled on `run_started`, and
+`status --json` shows it as `Budget`. Once a limit is spent, an instruction
+already open finishes, and an instance about to issue its next agent
+instruction is stopped: a Map item settles with `BudgetStopped`, a Sub child
+stops its parent, and a stop that reaches the run stops the run. The run is
+then stopped, not ended (`Stopped`, with `BudgetStop` naming the limit);
+`next` and `status` say so and print the exact resume command
+(`BudgetResume`), which only the run's operator runs. Its
+operator raises the budget with `workflow resume <run> --operator <name>
+--reason <why> --budget turns=N`, and the run carries on from where it
+stopped. A resume that leaves the spent limit spent is refused. Tokens count
+only the usage children report with `done --usage`. Pass the same function as
+`wftest.CheckConfig.Budget`, and `Check` also simulates the budget being
+spent early, midway and late in a run.
+
 ### Your own adapter and exactly-once effects
 
 An adapter runtime (`wf.AdapterRuntime`) performs its ops' effects with
@@ -202,6 +223,10 @@ result sees an inner Map only through that child's terminal and `Yield`.
 **Budget:** one run budget covers every level. A seat the budget stops is
 `BudgetStopped` in its own panel's result, never `Refused`. Its panel then
 joins on the seats that returned; under `AllOK` it takes the partial edge.
+Every item above the stop, at any depth, has `BudgetStoppedBelow` set in its
+own parent's result, so the outer `Joined` sees that a panel decided on fewer
+seats even when the panel reached its success terminal. Whether that result
+stands is the definition's choice.
 **Recovery:** a crash before or after any journal write
 resumes to the same result, with every child spawned once and every state
 accepted once. `wf/nested_map_test.go` and `wftest`'s `TestCheckNestedMap`

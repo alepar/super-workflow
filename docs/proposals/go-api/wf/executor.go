@@ -291,14 +291,18 @@ type SubmitResult struct {
 	Failure *FailureOutcome `json:",omitempty"`
 }
 
-// RunBudget bounds a whole run; the zero value is no budget. The Engine
-// journals it in run_started. Turns count instruction_issued records, less the
+// RunBudget bounds a whole run; a zero limit is no limit. The Engine journals
+// it in run_started (EngineOptions.RunBudget: run --budget, else the
+// registration's Budget), and a resume may raise it (resume --budget). Turns count instruction_issued records, less the
 // units lost or withdrawn before their attempt_started, so a unit handed out and
 // never started costs no turn. Tokens sum the submissions' Tokens and Wall runs
 // from run_started's stamp. Once a limit is reached an instruction already open may finish, but an instance about
 // to issue a new one is stopped (budget_stopped): a Map child settles as
-// Instance.BudgetStopped, a Sub child halts its parent, and a stopped run
-// reports RunEnded with outcome Stopped and no terminal.
+// Instance.BudgetStopped, a Sub child stops its parent, and a stop that
+// reaches the run itself stops the run (RunStatus.Stopped, BudgetStop): it
+// has not ended, and an operator's resume --budget that raises the budget
+// carries it on from where it stopped. Every ancestor of a stopped instance
+// shows Instance.BudgetStoppedBelow.
 type RunBudget struct {
 	Turns  int           `json:",omitempty"`
 	Tokens int           `json:",omitempty"`
@@ -348,8 +352,14 @@ type RunStatus struct {
 	Breakpoint *BreakpointStatus `json:",omitempty"` // active breakpoint, if stopped on arrival
 	// Stopped: wf stop or a breakpoint stopped the run; its running children may still
 	// finish, and nothing new starts until a person's resume.
-	Stopped bool       `json:",omitempty"`
-	Held    []HeldUnit `json:",omitempty"` // units a blocked failure holds
+	Stopped bool `json:",omitempty"`
+	// BudgetStop is why the run budget stopped the run, while that stop
+	// stands (Stopped is then set), and BudgetResume the command its
+	// operator raises the budget with; Budget is the budget in force.
+	BudgetStop   string     `json:",omitempty"`
+	BudgetResume string     `json:",omitempty"`
+	Budget       RunBudget  `json:",omitzero"`
+	Held         []HeldUnit `json:",omitempty"` // units a blocked failure holds
 	// Recoveries are the open recovery offers the coordinator answers with
 	// wf recover (B2, F1).
 	Recoveries []RecoveryView `json:",omitempty"`
@@ -1284,6 +1294,10 @@ type ResumedData struct {
 	// the segment it opens resolves it for its harness. Nil carries the
 	// previous segment's map on.
 	ModelMap map[string]string `json:",omitempty"`
+	// Budget is the run budget from this resume on (resume --budget), nil
+	// when the resume left it as it was. A resume that clears a budget stop
+	// raises it past what the run has spent.
+	Budget *RunBudget `json:",omitempty"`
 	// Operator, Harness, Session and Reason are who cleared a stop and why:
 	// the operator's name for itself, its identity from its environment
 	// (Harness "generic" and no session for a plain shell) and its reason

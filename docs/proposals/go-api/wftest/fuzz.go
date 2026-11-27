@@ -62,8 +62,12 @@ type FuzzConfig struct {
 	// MaxSteps bounds work per instance; the global driver bound scales with
 	// spawned instances. Per-instance actions and journal records still cap cycles.
 	MaxSteps int
-	Prefix   []FuzzAction
-	Valid    map[string][]json.RawMessage
+	// RunBudget is the engine's run budget for this run (see
+	// wf.RunBudget); zero is none. A run the budget stops ends the drive
+	// with End "run budget".
+	RunBudget wf.RunBudget
+	Prefix    []FuzzAction
+	Valid     map[string][]json.RawMessage
 	// FailPercent is the share of agent turns that take a hostile action
 	// (refuse, transient, blocked, ended without done), 20 when zero.
 	// SchemaPercent is the share of submits drawn from the output schema
@@ -462,6 +466,8 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 			result.End = "finding"
 		case result.BudgetReason != "":
 			result.End = "budget"
+		case result.Status.BudgetStop != "":
+			result.End = "run budget"
 		case result.Status.Phase == wf.RunEnded && result.Status.Outcome.Delivered():
 			result.End = string(result.Status.Outcome) // success or partial
 		case f.last.Kind == wf.InstructionHumanGate:
@@ -493,7 +499,7 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 		f.find("adapter-error", err.Error())
 		return
 	}
-	opts := wf.EngineOptions{Assets: s.assets, Defs: []*wf.Def{s.def}, RunID: r.id, Harness: "claude", Clock: func() time.Time { return f.now }, RunDir: func(wf.RunID) string { return dir }, EffectRunner: s.runner, Nonce: func() string { return fmt.Sprintf("%016x", f.random.Uint64()) }}
+	opts := wf.EngineOptions{Assets: s.assets, Defs: []*wf.Def{s.def}, RunID: r.id, Harness: "claude", Clock: func() time.Time { return f.now }, RunDir: func(wf.RunID) string { return dir }, EffectRunner: s.runner, Nonce: func() string { return fmt.Sprintf("%016x", f.random.Uint64()) }, RunBudget: config.RunBudget}
 	if s.workspace != "" {
 		opts.Workspace = s.workspace
 	}
@@ -543,6 +549,10 @@ driver:
 			return
 		}
 		if current.Phase == wf.RunEnded {
+			return
+		}
+		if current.BudgetStop != "" {
+			result.Status = current // the run budget stopped the run: nothing more starts
 			return
 		}
 		eligible := true
@@ -1409,7 +1419,7 @@ func (f *fuzzRun) finishProperties() {
 	if !f.explainedStop() {
 		return
 	}
-	if r.BudgetReason == "" && r.Status.Phase != wf.RunEnded && f.last.Kind != wf.InstructionHumanGate && f.last.Kind != wf.InstructionManualVerification && f.last.Kind != wf.InstructionWaiting && f.last.Kind != wf.InstructionRecovery && len(r.Status.Fix) == 0 && !f.namedHalt(r.Status) {
+	if r.BudgetReason == "" && r.Status.BudgetStop == "" && r.Status.Phase != wf.RunEnded && f.last.Kind != wf.InstructionHumanGate && f.last.Kind != wf.InstructionManualVerification && f.last.Kind != wf.InstructionWaiting && f.last.Kind != wf.InstructionRecovery && len(r.Status.Fix) == 0 && !f.namedHalt(r.Status) {
 		f.find("stall-unnamed", "the seed must end at a decision or a named failure")
 		return
 	}

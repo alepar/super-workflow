@@ -84,14 +84,3 @@ func (c *cycle) clearEndedChildHalt(child *instance) error {
 	}
 	return c.emit(p, JournalRetried, 0, RetriedData{Child: p.ID, Reason: p.Reason})
 }
-
-// endStoppedRun journals run_ended for a run whose root the budget stopped,
-// once: the journal then says the run ended, as a terminal would.
-func (c *cycle) endStoppedRun() error {
-	root := c.st.insts[""]
-	if c.st.ended || root == nil || root.Phase != phaseBudgetStoped {
-		return nil
-	}
-	c.killAllHeadless()
-	return c.emit(root, JournalRunEnded, 0, RunEndedData{Outcome: Stopped})
-}

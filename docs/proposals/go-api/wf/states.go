@@ -822,12 +822,16 @@ type MapResult[K comparable, R any] struct {
 // BudgetStopped is set when the executor stopped the instance on the run
 // budget (turns, tokens, wall clock) before it reached a terminal; Result and
 // Terminal are then zero, and the stop is never classed Refused (journaled
-// budget_stopped).
+// budget_stopped). BudgetStoppedBelow is set when the budget stopped an
+// instance below this one, at any depth (an inner Map's item, a Sub's child):
+// the instance may still have reached a terminal, on less work than it
+// planned. Whether that terminal stands is the definition's choice.
 type Instance[R any] struct {
-	Result        R
-	Class         OutcomeClass
-	Terminal      string
-	BudgetStopped bool
+	Result             R
+	Class              OutcomeClass
+	Terminal           string
+	BudgetStopped      bool
+	BudgetStoppedBelow bool `json:",omitempty"`
 }
 
 // Map is dynamic fan-out over runtime items with a join.

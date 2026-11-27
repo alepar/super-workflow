@@ -46,8 +46,48 @@
   `Registration.PagedPrompts` starts the registration's runs paged, as
   `--paged-prompts` does. `--paged-prompts=false` opts one run out.
 
+- **Run budget from the command line and the registration (sw-zpeo).** A run
+  budget could be set only through `EngineOptions.RunBudget`, so a binary
+  built on `wf.MainWith` could not cap a run. `run --budget
+  turns=N,tokens=N,wall=D` now sets it, over a default that
+  `Registration.Budget` computes from the run's options; the flag replaces
+  the limits it names and `0` removes one. It is journaled on `run_started`
+  and shown in `RunStatus.Budget`. `wf.ParseBudget`, `wf.BudgetChange` and
+  `wf.DefaultBudget` are the parser, the change and the default the CLI uses.
+- **A budget stop of the run is a stop, and a resume raises the budget
+  (sw-zpeo).** A stop that reached the run journaled `run_ended`, so the
+  only way on was a new run. Now the run is stopped (`RunStatus.Stopped`,
+  with `BudgetStop` naming the spent limit and `BudgetResume` the operator's
+  exact resume command, which `next` and `status` also print), and only the
+  run's operator raises it: `resume --budget` raises the
+  limits it names, journaled on `resumed` (`ResumedData.Budget`); the stopped
+  instances carry on from where they stopped. A resume that leaves the spent
+  limit spent is refused. `resume` now also refuses an ended run that a stop
+  had preceded, which it used to journal `resumed` on.
+- **A budget stop below an instance shows on it (sw-zpeo).** An inner Map
+  item the budget stopped was visible only in that inner Map's result: the
+  outer `Joined` saw its parent reach a success terminal, and the run could
+  end at success with no trace of the stop. Now every ancestor of a stopped
+  instance has `Instance.BudgetStoppedBelow` set in its own parent's result.
+- **`wftest.Check` simulates a registration's default budget (sw-zpeo).**
+  With `CheckConfig.Budget` set and a budget for the variant's options,
+  `Check` runs an all-good run and the same run stopped by the budget at its
+  first, middle and last turns (`CheckReport.RunBudgetSeeds`). A fuzz run
+  takes `FuzzConfig.RunBudget`; a run the budget stops ends with `End: "run
+  budget"`, which is not a `stall-unnamed` finding.
+
 ### Upgrading
 
+- **A run whose budget stops it no longer ends.** It stays stopped, with no
+  `run_ended`, until its operator resumes it with `--budget`; a `run` with
+  its run key attaches to it instead of starting a successor. A journal that
+  already has `run_ended` after a budget stop stays ended. Code that waited
+  for `RunEnded` with outcome `Stopped` after a budget stop checks
+  `RunStatus.Stopped` and `BudgetStop` instead.
+- **`run --budget` on a live run** is refused when it would change the
+  budget: change it with `stop`, then `resume --budget`.
+- **`RunBudget` has a `String` method**, so `%v` prints it as
+  `turns=N,tokens=N,wall=D` (`none` for no limit).
 - **A checker that recorded an all-good liveness finding at an `Ends`-marked
   stop as known** no longer gets that finding. Remove the known entry.
 - **A Codex-coordinated run that relied on a rule in `<workspace>/.codex/rules`**

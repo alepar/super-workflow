@@ -100,14 +100,17 @@ type EngineOptions struct {
 	// BoundaryModelMap is the --model-map a resume, rewind or fork journals
 	// on the segment boundary it opens; nil carries the map on.
 	BoundaryModelMap map[string]string
-	RunID            RunID                                               // --run-id: resumes when its journal exists
-	Clock            func() time.Time                                    // default time.Now
-	Nonce            func() string                                       // default crypto/rand hex
-	SubmitLine       func(run RunID, token string) string                // default "workflow submit <run> --token <t> --output <file>"
-	SettleLine       func(run RunID, effect int64) string                // default "workflow settle <run> --effect <id> --applied|--not-applied"
-	AnswerLine       func(run RunID, gate string) string                 // default "workflow answer <run> --gate <state> --value <value>"
-	RunBudget        RunBudget                                           // zero means no budget; engine-only: no workflow flag sets it
-	VerbLine         func(run RunID, verb string, args ...string) string // default "workflow <verb> <run> <args...>"
+	RunID            RunID                                // --run-id: resumes when its journal exists
+	Clock            func() time.Time                     // default time.Now
+	Nonce            func() string                        // default crypto/rand hex
+	SubmitLine       func(run RunID, token string) string // default "workflow submit <run> --token <t> --output <file>"
+	SettleLine       func(run RunID, effect int64) string // default "workflow settle <run> --effect <id> --applied|--not-applied"
+	AnswerLine       func(run RunID, gate string) string  // default "workflow answer <run> --gate <state> --value <value>"
+	RunBudget        RunBudget                            // journaled on run_started (run --budget over Registration.Budget); zero means no budget
+	// ResumeBudget is resume --budget: the limits it names change the run
+	// budget in force from this resume on; nil leaves it as it is.
+	ResumeBudget *BudgetChange
+	VerbLine     func(run RunID, verb string, args ...string) string // default "workflow <verb> <run> <args...>"
 	// ResumeLine is the command that starts a successor of the ended run
 	// started as started (run on an ended run starts one); "" leaves it unsaid.
 	ResumeLine func(started RunStartedData) string
@@ -1258,6 +1261,10 @@ func (e *Engine) status(run RunID, strict bool) (RunStatus, error) {
 			rs.CoordinatorTurn = &CoordinatorTurnStatus{Continuations: t.count, LastSeq: t.last, StallSeq: t.stall}
 		}
 		rs.Stopped = c.st.paused && !c.st.ended
+		rs.Budget = c.st.budget
+		if rs.Stopped && c.st.budgetStop != "" {
+			rs.BudgetStop, rs.BudgetResume = c.st.budgetStop, c.budgetResumeLine()
+		}
 		if rs.Stopped {
 			rs.Breakpoint = c.st.breakpoint
 		}
@@ -1289,9 +1296,6 @@ func (e *Engine) status(run RunID, strict bool) (RunStatus, error) {
 		}
 		if c.st.ended {
 			rs.Phase = RunEnded
-		}
-		if root := c.st.insts[""]; root != nil && root.Phase == phaseBudgetStoped {
-			rs.Phase, rs.Outcome = RunEnded, Stopped // the run budget stopped the run itself
 		}
 		if _, held := c.heldAt(); held || c.waitingOnHolds() {
 			rs.Phase = RunBlocked // the run waits for a Retry: a halt, or holds alone
@@ -1709,9 +1713,6 @@ func (c *cycle) driveOnce() error {
 	}
 	for guard := 0; guard < 100000; guard++ {
 		if err := c.drainCleanups(); err != nil {
-			return err
-		}
-		if err := c.endStoppedRun(); err != nil {
 			return err
 		}
 		if c.st.ended || c.st.paused {

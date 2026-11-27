@@ -45,6 +45,12 @@ type Registration struct {
 	// opts one run out. A definition that routes on FetchCoverageOf needs
 	// it. A continued run keeps its predecessor's choice.
 	PagedPrompts bool
+	// Budget computes the run budget of a run this registration creates from
+	// the options it starts with (a value of the definition's options type,
+	// its zero value when none are given). run --budget overrides the limits
+	// it names; nil is no default budget. The budget is policy: the numbers
+	// belong to the workflow, the stop to the engine.
+	Budget func(options any) RunBudget
 }
 
 // ParamSpec is one run param of a registration: required, or with a default
@@ -281,7 +287,7 @@ var Subcommands = []Subcommand{
 	{Name: "version", Flags: []string{"--json"}, Summary: "print this binary's build stamp: engine and workflow source, Go toolchain, journal format (--json: the BuildStamp)", handle: version},
 	{
 		Name:    "run",
-		Flags:   []string{"--param k=v", "--options file", "--workspace dir", "--state-dir dir", "--assets dir", "--run-id id", "--snapshots", "--paged-prompts", "--halt-before STATE[,STATE]", "--model-map key=model[,key=model]", "--delegate gate=value", "--harness h", "--continue run", "--family coord=harness", "--family-home harness=dir", "--child-env-drop NAME[*]", "--headless-cmd harness=JSON-argv"},
+		Flags:   []string{"--param k=v", "--options file", "--workspace dir", "--state-dir dir", "--assets dir", "--run-id id", "--snapshots", "--paged-prompts", "--halt-before STATE[,STATE]", "--model-map key=model[,key=model]", "--budget turns=N,tokens=N,wall=D", "--delegate gate=value", "--harness h", "--continue run", "--family coord=harness", "--family-home harness=dir", "--child-env-drop NAME[*]", "--headless-cmd harness=JSON-argv"},
 		Summary: "start or resume a run of <def>; prints the RunID on stdout and the coordinator bootstrap on stderr",
 		handle:  (*cli).drive,
 		subject: "definition name",
@@ -304,6 +310,7 @@ var Subcommands = []Subcommand{
 			fs.StringVar(&f.workspace, "workspace", "", "workspace directory (default: the current directory)")
 			fs.StringVar(&f.runID, "run-id", "", "run id (resumes when its journal exists)")
 			fs.StringVar(&f.modelMap, "model-map", "", "tier, all or model = model[,...]: the models the run spawns with")
+			fs.StringVar(&f.budget, "budget", "", "turns=N,tokens=N,wall=D: the run budget, each named limit over the definition's default (0: no limit); journaled at creation")
 			fs.Var(&f.delegates, "delegate", "delegate a gate's answer to the coordinator, gate=value (repeatable)")
 			fs.StringVar(&f.cont, "continue", "", "the ended run this call continues as its successor (status's resume command names it): params derive from its recorded assets, and a run key outside its chain is refused")
 			defineHeadlessFlags(fs, f)
@@ -445,13 +452,14 @@ var Subcommands = []Subcommand{
 	},
 	{
 		Name:    "resume",
-		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir", "--operator name", "--reason r", "--adopt", "--model-map key=model[,key=model]"},
-		Summary: "clear a stop of <run> as its operator (--operator, --reason: journaled; the run's own coordinator session is refused); --adopt carries it onto a changed definition whose live states are unchanged; --model-map sets the models from this resume on",
+		Flags:   []string{"--state-dir dir", "--assets dir", "--workspace dir", "--operator name", "--reason r", "--adopt", "--model-map key=model[,key=model]", "--budget turns=N,tokens=N,wall=D"},
+		Summary: "clear a stop of <run> as its operator (--operator, --reason: journaled; the run's own coordinator session is refused); --adopt carries it onto a changed definition whose live states are unchanged; --model-map sets the models from this resume on; --budget raises the run budget (a budget stop needs it)",
 		handle:  (*cli).drive,
 		subject: "run id",
 		define: func(fs *flag.FlagSet, f *flags) {
 			fs.BoolVar(&f.adopt, "adopt", false, "adopt a changed definition with no declared Migration when every live state still exists with the same kind and result type (journaled as migrated)")
 			fs.StringVar(&f.modelMap, "model-map", "", "tier, all or model = model[,...]: the models the run spawns from this resume on")
+			fs.StringVar(&f.budget, "budget", "", "turns=N,tokens=N,wall=D: the run budget from this resume on, each named limit replaced (0: no limit); journaled")
 			fs.StringVar(&f.operator, "operator", "", "who clears the stop: your name as the run's operator (journaled)")
 			fs.StringVar(&f.reason, "reason", "", "why the stop is cleared (journaled)")
 		},
@@ -460,7 +468,14 @@ var Subcommands = []Subcommand{
 			if code := c.takeBoundaryModelMap(row.Name, f); code != exitOK {
 				return code
 			}
+			budget, err := ParseBudget(f.budget)
+			if err != nil {
+				return c.failf(exitUsage, "%s: %v", row.Name, err)
+			}
 			return c.withEngine(row, stateDir, func(x Executor) int {
+				if f.budget != "" {
+					x.(*Engine).opts.ResumeBudget = &budget
+				}
 				op := Operator{Name: f.operator, Reason: f.reason, Harness: envHarness(c.env), Session: envCoordinator(c.env).Session}
 				if err := x.(*Engine).ResumeAs(run, op); err != nil {
 					return c.fromError(row.Name, err)
@@ -1397,7 +1412,7 @@ type flags struct {
 	stateDir, child, token, output, usage, reason, gate, value, class string
 	harness, session, agent, transcript, claim, note, cont            string
 	context                                                           ContextMode
-	workspace, options, runID, modelMap                               string
+	workspace, options, runID, modelMap, budget                       string
 	headless                                                          HeadlessConfig  // run's --family, --family-home, --child-env-drop, --headless-cmd
 	optionsJSON                                                       json.RawMessage // the options themselves, as a manufacture script gives them
 	effect                                                            int64
@@ -2261,6 +2276,10 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	if err != nil {
 		return c.failf(exitUsage, "run: %v", err)
 	}
+	budgetFlag, err := ParseBudget(f.budget)
+	if err != nil {
+		return c.failf(exitUsage, "run: %v", err)
+	}
 	options, err := loadOptions(d, f.options)
 	if err == nil && f.optionsJSON != nil {
 		options, err = decodeOptions(d, f.optionsJSON)
@@ -2358,6 +2377,9 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 			}
 		}
 		roots = (&cycle{e: &Engine{opts: EngineOptions{Assets: c.assets}}, st: st}).selectedAssetRoots(d)
+		if f.budget != "" && budgetFlag.Over(st.budget) != st.budget {
+			return c.failf(exitUsage, "run: run %s is already running with budget %s; its budget changes only when a resume clears a stop: stop it (wf stop), then resume it with --budget", live, st.budget)
+		}
 	}
 	if ps := d.lintServedAssetRoots(roots); len(ps) > 0 {
 		fmt.Fprintf(c.stderr, "lint %s: %d problem(s)\n", d.name, len(ps))
@@ -2381,6 +2403,17 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	}
 	if f.options == "" && f.optionsJSON == nil && live == "" && pred == nil {
 		options = reg.DefaultOptions
+	}
+	var budget RunBudget
+	if live == "" {
+		if reg.Budget != nil {
+			o, err := c.budgetOptions(d, options, pred)
+			if err != nil {
+				return c.failf(exitUsage, "run: %v", err)
+			}
+			budget = DefaultBudget(d, reg.Budget, o)
+		}
+		budget = budgetFlag.Over(budget)
 	}
 	if f.runID != "" && validRunID(RunID(f.runID)) != nil {
 		return c.failf(exitUsage, "run: invalid --run-id %q", f.runID)
@@ -2429,7 +2462,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	if !f.pagedPromptsSet {
 		paged = reg.PagedPrompts
 	}
-	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: paged, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
+	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: paged, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), RunBudget: budget, Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
 		Headless: f.headless.orNil()})
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)
@@ -2481,6 +2514,28 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	fmt.Fprint(c.stderr, bootstrap(st, stateDir, nextLine))
 	fmt.Fprintln(c.stderr, "Drive this workflow run until it ends or asks for a person. Start sub-agents whenever it asks you to. Never answer a question meant for a person yourself.")
 	return exitOK
+}
+
+// budgetOptions is the options value a new run starts with, for its
+// registration's Budget: the given options, else its predecessor's.
+func (c *cli) budgetOptions(d *Def, options any, pred *RunStartedData) (any, error) {
+	if options == nil && d.options != nil && pred != nil && len(pred.Options) > 0 {
+		return decodeOptions(d, pred.Options)
+	}
+	return options, nil
+}
+
+// DefaultBudget is the budget fn (a Registration's Budget) gives a run of d
+// started with options. Nil options read as the zero value of d's options
+// type, as run passes them; a nil fn is no budget.
+func DefaultBudget(d *Def, fn func(options any) RunBudget, options any) RunBudget {
+	if fn == nil {
+		return RunBudget{}
+	}
+	if options == nil && d.options != nil {
+		options = reflect.Zero(d.options.typ).Interface()
+	}
+	return fn(options)
 }
 
 // runChain is where a run call lands: live is the run it resumes (a journal

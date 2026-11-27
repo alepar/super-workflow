@@ -1227,6 +1227,17 @@ refusal names no variable (J3: an agent told what was checked strips it). A
 person whose terminal inherited an agent's environment runs resume from a
 fresh terminal.
 
+The run budget stops a run the same way. Once it is spent, the run is
+stopped, not ended: `next` returns the `stopped` instruction, which names the
+spent limit and the operator's resume command, and `status --json` shows them
+as `BudgetStop` and `BudgetResume`. Report both and run nothing further: a
+coordinator never raises its own budget, and its resume is refused. The operator clears it with `workflow resume <run>
+--operator <name> --reason <why> --budget turns=N,tokens=N,wall=D`, which
+raises the limits it names (journaled on `resumed`); a resume that leaves the
+spent limit spent is refused. `--budget` also raises the budget of a run
+stopped with `workflow stop`. A Map item the budget stopped stays stopped
+after the resume: its parent already joined without it.
+
 A binary whose definition changed refuses to resume a run started at the old
 one (`definition hash differs`) unless the definition declares a `Migration`
 from the old hash. `workflow resume <run> --adopt` (also `next ... --adopt`,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -287,10 +288,11 @@ func (k *mapKind) waiting(c *cycle, in *instance, n *node) []string {
 
 // instanceJSON is the wire form of Instance[R] inside a MapResult.
 type instanceJSON struct {
-	Result        json.RawMessage `json:",omitempty"`
-	Class         OutcomeClass
-	Terminal      string
-	BudgetStopped bool
+	Result             json.RawMessage `json:",omitempty"`
+	Class              OutcomeClass
+	Terminal           string
+	BudgetStopped      bool
+	BudgetStoppedBelow bool `json:",omitempty"`
 }
 
 // mapResultJSON is the keyed result of the given children, decoded by
@@ -299,7 +301,7 @@ type instanceJSON struct {
 func mapResultJSON(kids []*instance, srcErr string) (json.RawMessage, error) {
 	items := make(map[string]instanceJSON, len(kids))
 	for _, ch := range kids {
-		items[ch.Key] = instanceJSON{Result: ch.Result, Class: ch.Class, Terminal: ch.Terminal, BudgetStopped: ch.BudgetStopped}
+		items[ch.Key] = instanceJSON{Result: ch.Result, Class: ch.Class, Terminal: ch.Terminal, BudgetStopped: ch.BudgetStopped, BudgetStoppedBelow: ch.BudgetStoppedBelow}
 	}
 	return json.Marshal(struct {
 		Items       map[string]instanceJSON
@@ -1107,19 +1109,43 @@ func (in *instance) holds(l Lock) bool {
 
 // ---------------------------------------------------------------- run budget
 
-// budgetSpent reports whether the run budget (journaled in run_started) is
-// used up, and which limit.
-func (c *cycle) budgetSpent() (string, bool) {
-	b := c.st.started.Budget
+// budgetSpent reports whether the run budget in force is used up, and which
+// limit.
+func (c *cycle) budgetSpent() (string, bool) { return c.spentUnder(c.st.budget) }
+
+// spentUnder reports whether budget b is used up by what the run has spent,
+// and why.
+func (c *cycle) spentUnder(b RunBudget) (string, bool) {
+	limit, used, ok := c.spentLimit(b)
+	if !ok {
+		return "", false
+	}
+	unit := map[string]string{"turns": "turns", "tokens": "tokens", "wall": "wall time"}[limit]
+	return fmt.Sprintf("run budget spent: %s %s", used, unit), true
+}
+
+// spentLimit is the first limit of b the run has used up (turns, tokens or
+// wall) and what it used of it.
+func (c *cycle) spentLimit(b RunBudget) (limit, used string, ok bool) {
 	switch {
 	case b.Turns > 0 && c.st.turns >= b.Turns:
-		return fmt.Sprintf("run budget spent: %d turns", c.st.turns), true
+		return "turns", strconv.Itoa(c.st.turns), true
 	case b.Tokens > 0 && c.st.tokens >= b.Tokens:
-		return fmt.Sprintf("run budget spent: %d tokens", c.st.tokens), true
+		return "tokens", strconv.Itoa(c.st.tokens), true
 	case b.Wall > 0 && !c.st.startedAt.IsZero() && c.e.opts.Clock().Sub(c.st.startedAt) >= b.Wall:
-		return fmt.Sprintf("run budget spent: %s wall time", b.Wall.Round(time.Second)), true
+		return "wall", b.Wall.Round(time.Second).String(), true
 	}
-	return "", false
+	return "", "", false
+}
+
+// budgetResumeLine is the command the run's operator raises a spent budget
+// with: the spent limit named, its new value left to the operator.
+func (c *cycle) budgetResumeLine() string {
+	limit, used, ok := c.spentLimit(c.st.budget)
+	if !ok {
+		limit, used = "turns", strconv.Itoa(c.st.turns)
+	}
+	return c.verbLine("resume", "--operator", "<name>", "--reason", "<why>", "--budget", limit+"=<above "+used+">")
 }
 
 // budgetGate stops an instance that is about to issue an agent instruction once
@@ -1139,7 +1165,7 @@ func (c *cycle) budgetGate(in *instance, n *node) (stopped bool, err error) {
 // stopOnBudget journals budget_stopped for the instance. A Map child also
 // settles: it counts as settled and not successful in the join, with
 // Instance.BudgetStopped set and a class that is never Refused. A Sub child
-// or the run itself halts with a stopped status.
+// stops its parent, and the run itself is then stopped (see RunBudget).
 func (c *cycle) stopOnBudget(in *instance, why string) error {
 	if err := c.emit(in, JournalBudgetStopped, 0, BudgetStoppedData{Reason: why}); err != nil {
 		return err

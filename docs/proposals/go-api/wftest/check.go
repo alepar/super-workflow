@@ -42,6 +42,15 @@ type CheckConfig struct {
 	// every Edge.When guard must hold under at least one variant. Problems
 	// observed under a variant name it. Empty keeps the factory's options.
 	Variants map[string]any
+	// Budget is the registration's default run budget (wf.Registration
+	// Budget). When it gives a variant's options a budget, Check also
+	// simulates that budget being spent: an all-good run, then the same run
+	// stopped by the budget at its first, middle and last turns (and at the
+	// default's own turn limit when the run reaches it), so the definition
+	// meets a budget stop early, midway and late. Every limit stops the run
+	// the same way, at its next agent instruction; where the stop lands is
+	// what the definition sees.
+	Budget func(options any) wf.RunBudget
 }
 
 // CheckReport retains every layer's diagnostics and reduced simulation
@@ -73,6 +82,7 @@ type CheckReport struct {
 	AgentSeeds                           int
 	RepeatedFaultSeeds                   int
 	ScenarioSeeds                        int
+	RunBudgetSeeds                       int // CheckConfig.Budget's runs
 	UnreachedFaults                      []string
 	// Variants lists CheckConfig.Variants by name, in the order simulated.
 	Variants     []string
@@ -104,6 +114,9 @@ func (r *CheckReport) String() string {
 	fmt.Fprintf(&b, "agent-outcome runs: %d\n", r.AgentSeeds)
 	fmt.Fprintf(&b, "repeated-fault runs: %d\n", r.RepeatedFaultSeeds)
 	fmt.Fprintf(&b, "scenario runs: %d\n", r.ScenarioSeeds)
+	if r.RunBudgetSeeds > 0 {
+		fmt.Fprintf(&b, "run-budget runs: %d\n", r.RunBudgetSeeds)
+	}
 	for _, target := range r.UnreachedFaults {
 		fmt.Fprintf(&b, "fault not reached: %s\n", target)
 	}
@@ -381,6 +394,7 @@ func (r *CheckReport) simulate(v checkVariant, cfg CheckConfig, budget *checkRun
 	r.AgentSeeds = checkAgentPaths(factory, cfg, record)
 	r.RepeatedFaultSeeds = checkRepeatedFaultPaths(factory, cfg, record)
 	r.ScenarioSeeds = checkScenarios(factory, cfg, record)
+	r.RunBudgetSeeds += checkRunBudgetPaths(factory, cfg, d, valid, record)
 	// Recover after the actual fault, including command chains inside one engine
 	// call. A random checkpoint before a failure cannot prove its repair route.
 	for _, target := range targets {

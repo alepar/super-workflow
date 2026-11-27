@@ -1,7 +1,6 @@
 package wf_test
 
 import (
-	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -96,59 +95,6 @@ func TestBudgetSpentBlocksBackoffReissue(t *testing.T) {
 	}
 	if got := len(h.kind(run, wf.JournalBudgetStopped)); got != 1 {
 		t.Fatalf("budget_stopped = %d, want 1", got)
-	}
-}
-
-func TestRootBudgetStopWritesRunEnded(t *testing.T) {
-	d := rsChainDef()
-	h := newHarnessOpts(t, d, nil, wf.EngineOptions{RunBudget: wf.RunBudget{Turns: 1}})
-	run := h.run(d, nil)
-	h.submit(run, h.next(run)[0], `{"V":"ok"}`)
-	if ins := h.next(run); len(ins) != 0 {
-		t.Fatalf("instructions = %+v, want none: the budget is spent", ins)
-	}
-	recs := h.records(run)
-	k := kinds(recs)
-	n := len(k)
-	if k[n-2] != "budget_stopped" || k[n-1] != "run_ended" {
-		t.Fatalf("journal tail = %q, want budget_stopped then run_ended", k[max(0, n-2):])
-	}
-	var d2 wf.RunEndedData
-	if err := json.Unmarshal(recs[n-1].Data, &d2); err != nil {
-		t.Fatal(err)
-	}
-	if d2.Outcome != wf.Stopped {
-		t.Fatalf("run_ended outcome = %v, want Stopped", d2.Outcome)
-	}
-	if st := h.status(run); st.Phase != wf.RunEnded || st.Outcome != wf.Stopped {
-		t.Fatalf("status = %+v, want RunEnded/Stopped", st)
-	}
-}
-
-func TestOldStoppedJournalGainsRunEnded(t *testing.T) {
-	d := rsChainDef()
-	h := newHarnessOpts(t, d, nil, wf.EngineOptions{RunBudget: wf.RunBudget{Turns: 1}})
-	run := h.run(d, nil)
-	h.submit(run, h.next(run)[0], `{"V":"ok"}`)
-	h.next(run)
-	stop := slices.IndexFunc(h.records(run), func(r wf.JournalRecord) bool { return r.Kind == wf.JournalBudgetStopped })
-	if stop < 0 {
-		t.Fatal("no budget_stopped record")
-	}
-	// An old journal: the stop, and no run_ended after it.
-	h2 := resumeFrom(t, h, d, run, stop+1)
-	h2.e = wf.NewEngine(h2.j, h2.reg, wf.EngineOptions{Defs: []*wf.Def{d}, RunBudget: wf.RunBudget{Turns: 1}, Clock: func() time.Time { return h2.now }})
-	if got := len(h2.kind(run, wf.JournalRunEnded)); got != 0 {
-		t.Fatalf("run_ended before resume = %d, want 0", got)
-	}
-	h2.next(run)
-	if got := len(h2.kind(run, wf.JournalRunEnded)); got != 1 {
-		t.Fatalf("run_ended after one Next = %d, want 1", got)
-	}
-	before := len(h2.records(run))
-	h2.next(run)
-	if after := len(h2.records(run)); after != before {
-		t.Fatalf("second Next appended %d records, want 0", after-before)
 	}
 }
 

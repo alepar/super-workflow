@@ -61,6 +61,11 @@ type runState struct {
 	// records, submitted token counts and run_started's stamp.
 	turns, tokens int
 	startedAt     time.Time
+	// budget is the run budget in force: run_started's, as each resumed
+	// record that raised it left it. budgetStop is why the budget stopped the
+	// run itself (its root), until a resume clears that stop.
+	budget     RunBudget
+	budgetStop string
 
 	// The run-wide unit name index (see unit); derivable, so not in the digest.
 	names      map[string]unitRef   // every name ever handed out
@@ -236,17 +241,21 @@ type instance struct {
 	// Child instances (Sub entry or Map item) only: Entry is the parent's
 	// arrival count at the spawning state, Key the Map item key, Settled that the
 	// parent journaled child_settled, Class how the child settled and
-	// BudgetStopped that the run budget stopped it. LastFail is the class of the
+	// BudgetStopped that the run budget stopped it. BudgetStoppedBelow is
+	// set on every ancestor of a stopped instance, the run itself included:
+	// the budget stopped something below it. LastFail is the class of the
 	// instance's last failed attempt. SourceReads counts a Map's journaled
 	// source reads per entry ("<state>#<entry>").
-	Entry         int            `json:",omitempty"`
-	Key           string         `json:",omitempty"`
-	Settled       bool           `json:",omitempty"`
-	Cancelled     bool           `json:",omitempty"` // settled by its parent's cancel: outside every join count
-	Class         OutcomeClass   `json:",omitempty"`
-	BudgetStopped bool           `json:",omitempty"`
-	LastFail      OutcomeClass   `json:",omitempty"`
-	SourceReads   map[string]int `json:",omitempty"`
+	Entry         int          `json:",omitempty"`
+	Key           string       `json:",omitempty"`
+	Settled       bool         `json:",omitempty"`
+	Cancelled     bool         `json:",omitempty"` // settled by its parent's cancel: outside every join count
+	Class         OutcomeClass `json:",omitempty"`
+	BudgetStopped bool         `json:",omitempty"`
+	// BudgetStoppedBelow: see above.
+	BudgetStoppedBelow bool           `json:",omitempty"`
+	LastFail           OutcomeClass   `json:",omitempty"`
+	SourceReads        map[string]int `json:",omitempty"`
 }
 
 type tokenInfo struct {
@@ -439,6 +448,7 @@ func (st *runState) apply(r JournalRecord) error {
 			return corrupt(r, "invalid persisted harness")
 		}
 		st.started, st.hash, st.startedAt = d, r.DefHash, r.At
+		st.budget = d.Budget
 		st.shape = d.Shape
 		st.segments = []harnessSegment{{Start: r.Seq, Cause: SegmentStart}}
 		root := newInstance("", "", st.def)
@@ -781,6 +791,12 @@ func (st *runState) apply(r JournalRecord) error {
 		in.Phase, in.Reason, in.BudgetStopped = phaseBudgetStoped, d.Reason, true
 		in.Token, in.Issued, in.Undecided = "", nil, nil
 		in.Refusals, in.RefusalFP = 0, ""
+		st.markBudgetStop(in)
+		if in.ID == "" {
+			// The budget stopped the run itself: the run is stopped, and
+			// a resume that raises the budget carries it on.
+			st.paused, st.pausedAt, st.budgetStop = true, r.At, d.Reason
+		}
 	case *RetriedData:
 		if in.heldUnit() != nil {
 			// A released hold: the held attempt ends failed and the next is queued,
@@ -868,6 +884,13 @@ func (st *runState) apply(r JournalRecord) error {
 			st.turn.generation, st.turn.stall = 0, 0
 		}
 		st.paused, st.breakpoint = false, nil
+		if d.Budget != nil {
+			st.budget = *d.Budget
+		}
+		if st.budgetStop != "" || d.Budget != nil {
+			st.budgetStop = ""
+			st.clearBudgetStops()
+		}
 		st.openSegment(r.Seq, SegmentResume)
 		st.segment().mapGiven = d.ModelMap
 	case *CoordinatorData:
@@ -1221,6 +1244,49 @@ func (in *instance) failed(st *runState, class OutcomeClass, d RefusedData) {
 		}
 	default:
 		in.reissue()
+	}
+}
+
+// markBudgetStop sets BudgetStoppedBelow on every ancestor of in, which the
+// run budget stopped.
+func (st *runState) markBudgetStop(in *instance) {
+	for p := in; p.ID != ""; {
+		if p = st.insts[p.Parent]; p == nil {
+			return
+		}
+		p.BudgetStoppedBelow = true
+	}
+}
+
+// clearBudgetStops is a resume that clears a budget stop or raises the
+// budget: every instance the budget stopped that has not settled, and is not
+// below one that has, stands ready again at the state it was stopped in. A
+// Map item the budget stopped settled for its join and stays stopped, so
+// BudgetStoppedBelow is marked again from the stops that remain.
+func (st *runState) clearBudgetStops() {
+	live := func(x *instance) bool {
+		for ; x != nil; x = st.insts[x.Parent] {
+			if x.Settled {
+				return false
+			}
+			if x.ID == "" {
+				break
+			}
+		}
+		return true
+	}
+	for _, id := range st.order {
+		if x := st.insts[id]; x.Phase == phaseBudgetStoped && live(x) {
+			x.Phase, x.Reason, x.BudgetStopped = phaseReady, "", false
+		}
+	}
+	for _, id := range st.order {
+		st.insts[id].BudgetStoppedBelow = false
+	}
+	for _, id := range st.order {
+		if x := st.insts[id]; x.BudgetStopped {
+			st.markBudgetStop(x)
+		}
 	}
 }
 

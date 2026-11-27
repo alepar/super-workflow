@@ -906,8 +906,8 @@ func TestSubChildBudgetStopStopsParent(t *testing.T) {
 	if len(who) != 2 || who[0] != "chSubRun#1" || who[1] != "" {
 		t.Fatalf("budget_stopped instances = %q, want the child and then the parent", who)
 	}
-	if st := h.status(run); st.Phase != wf.RunEnded || st.Outcome != wf.Stopped || st.Terminal != "" {
-		t.Fatalf("status = %+v, want the run ended Stopped without a terminal", st)
+	if st := h.status(run); st.Phase == wf.RunEnded || !st.Stopped || st.BudgetStop == "" {
+		t.Fatalf("status = %+v, want the run stopped on its budget, not ended", st)
 	}
 }
 
