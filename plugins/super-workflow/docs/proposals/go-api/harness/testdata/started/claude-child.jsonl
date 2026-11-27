@@ -1,0 +1,1 @@
+{"type":"user","agentId":"fixture-child","message":{"role":"user","content":"Run: workflow prompt --claim claude-fixture-claim"}}
