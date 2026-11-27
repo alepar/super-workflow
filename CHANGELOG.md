@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **`--options` overlays the run's options instead of replacing them
+  (sw-a5s6).** `run --options file` (and a manufacture script's `options`)
+  is decoded over the options the run would otherwise use: the
+  registration's `DefaultOptions` for a fresh run, the predecessor's options
+  for a successor, and the journaled options for a resume. A field the file
+  leaves out keeps that value; a field it gives wins, `false` and `""`
+  included. Undeclared fields are still refused. `run` prints the effective
+  options on stderr as `run <id> options: <json>`.
+
+### Upgrading
+
+- A partial `--options` file that relied on the zero value for the fields it
+  left out now gets the registration's defaults (or the predecessor's or
+  journaled values) for them. Name those fields explicitly to keep the old
+  values. A resume with a partial file that agrees with the journaled
+  options now attaches instead of being refused as different options. A
+  definition with no `DefaultOptions` behaves as before on a fresh run.
+
 ## v0.4.7
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

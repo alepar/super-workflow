@@ -169,7 +169,7 @@ func (c *cli) runHelp(name string) int {
 		if err != nil {
 			return c.failf(exitInfra, "run --help: %v", err)
 		}
-		fmt.Fprintf(c.stdout, "\noptions (--options <file>, JSON) default: %s\n", raw)
+		fmt.Fprintf(c.stdout, "\noptions (--options <file>, JSON; fields it leaves out keep the default) default: %s\n", raw)
 	}
 	return exitOK
 }

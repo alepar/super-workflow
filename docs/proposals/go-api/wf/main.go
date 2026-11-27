@@ -69,7 +69,8 @@ import (
 // `settle <run> --effect id --applied|--not-applied` settles an Uncertain effect.
 // `status <run>` prints the RunStatus as JSON; `journal <run>` prints the
 // journal as JSON Lines. `run` accepts --param k=v (repeatable), --options
-// file (JSON for the definition's options struct), --workspace dir (default the
+// file (JSON for the definition's options struct, decoded over the run's
+// default, predecessor's or journaled options), --workspace dir (default the
 // current directory), --run-id id, and --model-map key=model[,key=model]
 // (a key is a tier, all, <tier>.effort, all.effort or a model; resolved per
 // harness segment and journaled; resume, dev rewind and fanout take it too).

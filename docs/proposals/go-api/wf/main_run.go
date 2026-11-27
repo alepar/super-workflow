@@ -35,8 +35,11 @@ type Registration struct {
 	// each one --param leaves out, in order (a later default may read an earlier
 	// one). `run --help <def>` lists them. A param missing here has no default.
 	Params []ParamSpec
-	// DefaultOptions is the options value of a run started without --options;
-	// nil leaves the definition's zero options.
+	// DefaultOptions is the options value a fresh run starts with. A given
+	// --options file is decoded over it, so a field the file leaves out keeps
+	// its default; nil leaves the definition's zero options as the base. A
+	// successor's base is its predecessor's options, a resume's the journaled
+	// ones.
 	DefaultOptions any
 	// Preflight are the client's host checks, run before a run exists.
 	Preflight []PreflightCheck
@@ -2281,17 +2284,23 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	if err != nil {
 		return c.failf(exitUsage, "run: %v", err)
 	}
-	options, err := loadOptions(d, f.options)
+	// The given options are checked here and decoded once the call's
+	// landing is known, over the options it would otherwise use.
+	rawOptions, err := loadOptions(d, f.options)
 	if err == nil && f.optionsJSON != nil {
-		options, err = decodeOptions(d, f.optionsJSON)
+		rawOptions = f.optionsJSON
+		_, err = decodeOptions(d, nil, rawOptions)
 	}
 	if err != nil {
 		return c.failf(exitUsage, "run: %v", err)
 	}
+	var options any
 	// Where this call lands: a live run (resumed), the successor of an
-	// ended one, or a fresh run. Only a fresh run takes the registration's
-	// default options; a resume keeps the journaled ones and a successor
-	// its predecessor's, unless --options is given.
+	// ended one, or a fresh run. A fresh run takes the registration's
+	// default options, a resume the journaled ones and a successor its
+	// predecessor's; given options are decoded over that base, so a field
+	// they leave out keeps its base value.
+	var liveOptions json.RawMessage
 	if cont != nil {
 		if key, err := deriveRunID(d, params, "", nil); err == nil && key != chainBase(cont.self) {
 			return c.failf(exitUsage, "run: --continue %s: these params give run key %s, another chain than %s's (%s); nothing was started. Run the resume command status prints for %s unchanged, or drop --continue to start run %s", f.cont, key, f.cont, chainBase(cont.self), f.cont, key)
@@ -2351,6 +2360,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		if err != nil {
 			return c.fromError("run", err)
 		}
+		liveOptions = st.started.Options
 		if st.started.Workspace != "" && !sameRealPath(st.started.Workspace, workspace) {
 			return c.failf(exitUsage, "run: run %s uses workspace %s; use next or resume with --workspace to relocate it", live, st.started.Workspace)
 		}
@@ -2402,7 +2412,18 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 			modelMap = pred.ModelMap
 		}
 	}
-	if f.options == "" && f.optionsJSON == nil && live == "" && pred == nil {
+	switch {
+	case rawOptions != nil:
+		var base any = reg.DefaultOptions
+		if live != "" {
+			base = liveOptions
+		} else if pred != nil {
+			base = pred.Options
+		}
+		if options, err = decodeOptions(d, base, rawOptions); err != nil {
+			return c.failf(exitUsage, "run: options: %v", err)
+		}
+	case live == "" && pred == nil:
 		options = reg.DefaultOptions
 	}
 	var budget RunBudget
@@ -2500,6 +2521,10 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		}
 		fmt.Fprintf(c.stderr, "previous run %s ended: %s; continuing as %s%s\n", st.Predecessor, cause, id, note)
 	}
+	// The effective options, after the base and any given overlay.
+	if len(st.Options) > 0 {
+		fmt.Fprintf(c.stderr, "run %s options: %s\n", id, st.Options)
+	}
 	if c.cfg.named() {
 		if err := os.WriteFile(filepath.Join(stateDir, runIDFile), []byte(id+"\n"), 0o644); err != nil {
 			return c.failf(exitInfra, "run: recording the run id: %v", err)
@@ -2521,7 +2546,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 // registration's Budget: the given options, else its predecessor's.
 func (c *cli) budgetOptions(d *Def, options any, pred *RunStartedData) (any, error) {
 	if options == nil && d.options != nil && pred != nil && len(pred.Options) > 0 {
-		return decodeOptions(d, pred.Options)
+		return decodeOptions(d, nil, pred.Options)
 	}
 	return options, nil
 }
@@ -3142,9 +3167,9 @@ func (c *cli) bootstrap(args []string) int {
 	return exitOK
 }
 
-// loadOptions decodes the --options JSON file into a value of the definition's
+// loadOptions reads the --options JSON file and checks it against the definition's
 // options struct; nil when no file is given.
-func loadOptions(d *Def, path string) (any, error) {
+func loadOptions(d *Def, path string) (json.RawMessage, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -3155,20 +3180,33 @@ func loadOptions(d *Def, path string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading --options: %w", err)
 	}
-	v, err := decodeOptions(d, raw)
-	if err != nil {
+	if _, err := decodeOptions(d, nil, raw); err != nil {
 		return nil, fmt.Errorf("--options %s: %w", path, err)
 	}
-	return v, nil
+	return raw, nil
 }
 
 // decodeOptions decodes raw JSON into a value of the definition's options
-// struct, refusing fields it does not declare.
-func decodeOptions(d *Def, raw []byte) (any, error) {
+// struct, refusing fields it does not declare. The value starts as base (an
+// options value or its JSON; nil is the zero value), so a field raw leaves
+// out keeps base's value, as encoding/json decodes over a value.
+func decodeOptions(d *Def, base any, raw []byte) (any, error) {
 	if d.options == nil {
 		return nil, fmt.Errorf("definition %s declares no options", d.name)
 	}
 	v := reflect.New(d.options.typ)
+	if rm, ok := base.(json.RawMessage); ok && len(rm) == 0 {
+		base = nil
+	}
+	if base != nil {
+		b, err := json.Marshal(base)
+		if err == nil {
+			err = json.Unmarshal(b, v.Interface())
+		}
+		if err != nil {
+			return nil, fmt.Errorf("base options: %w", err)
+		}
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v.Interface()); err != nil {

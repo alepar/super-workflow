@@ -107,7 +107,11 @@ refused map opened is still unbound, though the run is not stopped), or
 `dev rewind --model-map ...` or `fanout --model-map ...` again, and call
 `next`. Never retry `next` with the same map: it fails the same way.
 `--delegate gate=value` delegates a gate's answer to the coordinator (section
-6); `--options file` carries the definition's options.
+6); `--options file` carries the definition's options. The file is decoded
+over the options the run would otherwise use (the registration's defaults for
+a fresh run, the predecessor's for a successor, the journaled ones for a
+resume), so it need name only the fields it changes. `run` prints the
+effective options on stderr as `run <id> options: <json>`.
 
 The harness is read from the environment. `run --harness <h>` names it
 explicitly; a value the environment positively contradicts (it shows another

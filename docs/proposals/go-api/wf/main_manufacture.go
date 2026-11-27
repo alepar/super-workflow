@@ -128,7 +128,7 @@ func (c *cli) manufacture(row Subcommand, args []string) int {
 			return c.failf(exitUsage, "manufacture: %s: every script but the last is a predecessor script (until \"ended\")", p)
 		}
 		if s.Options != nil {
-			if _, err := decodeOptions(reg.Def, s.Options); err != nil {
+			if _, err := decodeOptions(reg.Def, nil, s.Options); err != nil {
 				return c.failf(exitUsage, "manufacture: %s: options: %v", p, err)
 			}
 		}
