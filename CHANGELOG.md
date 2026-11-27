@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.4.3
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.3`. GitHub installs use the plugin tag
+`plugin-v0.4.3`. This release adds a run budget (`run --budget`, a
+registration default, raising it on resume), fetch coverage readable by the
+definition, paged delivery as a registration default, and a Codex rule
+preflight that reads the project rules Codex loads. A run that hits its
+budget now pauses instead of ending, and the rule preflight ignores an
+untrusted project's rules. Read Upgrading before you move to it.
 
 ### What changed
 
