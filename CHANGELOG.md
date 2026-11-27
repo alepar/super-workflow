@@ -16,11 +16,31 @@
   unmarked edge is still a finding, and so is a source with both a marked
   and an unmarked edge to the terminal, since the journal does not record
   which one the run took.
+- **The Codex rule preflight reads the project rules Codex loads (sw-gk89).**
+  It read the Codex home's rules and `<workspace>/.codex/rules` only, so a
+  rule in the repository root was missed when the run's workspace was a
+  worktree, and an untrusted project's rules counted although Codex skips
+  them. It now reads `.codex/rules` in every directory from the working
+  directory's project root (the nearest `.git`) down to the working
+  directory, as Codex layers project config, and only while Codex's
+  `config.toml` trusts that root; a linked worktree counts as trusted when its
+  main checkout is. When Codex would skip the project's rules, the refusal
+  says the project is untrusted and names the files.
+- **`MainConfig.CodexProjectRule(repo)`** returns the rules file
+  (`repo/.codex/rules/super-workflow.rules`) and the rule for the binary a
+  client installs at `InstalledBinary`, so an install can write a per-checkout
+  rule instead of a profile-wide one. `setup-codex-rules --write` is
+  unchanged.
 
 ### Upgrading
 
 - **A checker that recorded an all-good liveness finding at an `Ends`-marked
   stop as known** no longer gets that finding. Remove the known entry.
+- **A Codex-coordinated run that relied on a rule in `<workspace>/.codex/rules`**
+  or in an untrusted project now fails the rule preflight. Put the rule in the
+  project root's `.codex/rules` (an install can write it with
+  `MainConfig.CodexProjectRule`) and trust that project in Codex, or keep it in
+  the Codex home's rules.
 
 ## v0.4.2
 

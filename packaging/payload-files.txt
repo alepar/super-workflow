@@ -102,6 +102,7 @@ docs/proposals/go-api/wf/child_claim.go
 docs/proposals/go-api/wf/child_log.go
 docs/proposals/go-api/wf/cli_debug.go
 docs/proposals/go-api/wf/cli_identity.go
+docs/proposals/go-api/wf/codex_project.go
 docs/proposals/go-api/wf/command_workspace.go
 docs/proposals/go-api/wf/context_mode.go
 docs/proposals/go-api/wf/coordinator_lock.go

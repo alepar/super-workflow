@@ -165,8 +165,13 @@ func (c *cli) spawnPrefix() []string {
 	if err != nil {
 		return nil
 	}
+	return spawnPrefixFor(c.cfg, bin)
+}
+
+// spawnPrefixFor is spawnPrefix for the binary at bin wired by cfg.
+func spawnPrefixFor(cfg MainConfig, bin string) []string {
 	line := multiVerbLine(bin, "S", "R", "spawn")
-	if c.cfg.named() {
+	if cfg.named() {
 		line = wfLine(bin, "S", "R", "spawn")
 	}
 	words := shellWords(line)
@@ -197,14 +202,22 @@ func setupCodexRulesRow() Subcommand {
 		}}
 }
 
+// codexRulesName is the rules file the engine writes, in the Codex home's
+// rules directory and in a project's .codex/rules.
+const codexRulesName = "super-workflow.rules"
+
+// codexHome is the Codex home: CODEX_HOME, else ~/.codex.
+func codexHome(env harness.Env) string {
+	if home := env("CODEX_HOME"); home != "" {
+		return home
+	}
+	return filepath.Join(env("HOME"), ".codex")
+}
+
 // codexRulesFile is where setup-codex-rules writes the rule: the Codex
 // home's rules directory, as herdr-threads keeps its own.
 func codexRulesFile(env harness.Env) string {
-	home := env("CODEX_HOME")
-	if home == "" {
-		home = filepath.Join(env("HOME"), ".codex")
-	}
-	return filepath.Join(home, "rules", "super-workflow.rules")
+	return filepath.Join(codexHome(env), "rules", codexRulesName)
 }
 
 // codexRule is the execpolicy rule that lets Codex run prefix outside its
@@ -216,11 +229,12 @@ func codexRule(prefix []string) string {
 }
 
 // codexRuleCheck asks Codex whether spawn, the spawn verb's command as next
-// prints it, is allowed outside its sandbox by the rules in its home and the
-// workspace: Codex matches its rules against the argv of each command a
-// shell line runs, so the check takes the printed line's words as they are,
-// and a line that ran another command first would fail it. why and fix are
-// empty when it is allowed.
+// prints it, is allowed outside its sandbox by the rules Codex loads: those
+// in its home and the project rules of a session in this process's working
+// directory (codexProjectLayers). Codex matches its rules against the argv
+// of each command a shell line runs, so the check takes the printed line's
+// words as they are, and a line that ran another command first would fail
+// it. why and fix are empty when it is allowed.
 func (c *cli) codexRuleCheck(spawn string) (why, fix string) {
 	prefix := c.spawnPrefix()
 	if len(prefix) == 0 {
@@ -230,19 +244,26 @@ func (c *cli) codexRuleCheck(spawn string) (why, fix string) {
 	if env == nil {
 		env = os.Getenv
 	}
-	var files []string
-	home := filepath.Dir(codexRulesFile(env))
-	dirs := []string{home}
-	if c.workspace != "" {
-		dirs = append(dirs, filepath.Join(c.workspace, ".codex", "rules"))
+	dirs := []string{filepath.Dir(codexRulesFile(env))}
+	var skipped []string // project rules Codex skips: it does not trust root
+	cwd, _ := os.Getwd()
+	layers, root, trusted := codexProjectLayers(env, cwd)
+	if trusted {
+		dirs = append(dirs, layers...)
+	} else {
+		skipped = rulesFiles(layers)
 	}
-	for _, d := range dirs {
-		m, _ := filepath.Glob(filepath.Join(d, "*.rules"))
-		files = append(files, m...)
-	}
+	files := rulesFiles(dirs)
 	fix = fmt.Sprintf("run %s and confirm it: it writes %s with the one rule %s",
 		strings.Join([]string{prefix[0], "setup-codex-rules"}, " "), codexRulesFile(env), strings.TrimSpace(strings.SplitN(codexRule(prefix), "\n", 2)[1]))
+	untrusted := func() (string, string) {
+		return fmt.Sprintf("Codex does not trust the project %s, so it skips its rules (%s): no rule it loads lets the spawn verb run outside its sandbox", root, strings.Join(skipped, ", ")),
+			fmt.Sprintf("trust %s in Codex (it asks when a session starts there), or %s", root, fix)
+	}
 	if len(files) == 0 {
+		if len(skipped) > 0 {
+			return untrusted()
+		}
 		return "no Codex rule lets the spawn verb run outside Codex's sandbox (no rules files)", fix
 	}
 	argv := []string{"codex", "execpolicy", "check"}
@@ -258,9 +279,22 @@ func (c *cli) codexRuleCheck(spawn string) (why, fix string) {
 		return fmt.Sprintf("codex execpolicy check did not answer (exit %d)", code), fix
 	}
 	if res.Decision != "allow" {
+		if len(skipped) > 0 {
+			return untrusted()
+		}
 		return "no Codex rule lets the spawn verb run outside Codex's sandbox: a sandboxed child has no network and hangs", fix
 	}
 	return "", ""
+}
+
+// rulesFiles are the *.rules files in dirs, in order.
+func rulesFiles(dirs []string) []string {
+	var files []string
+	for _, d := range dirs {
+		m, _ := filepath.Glob(filepath.Join(d, "*.rules"))
+		files = append(files, m...)
+	}
+	return files
 }
 
 // setupCodexRules prints, or with write writes, the Codex rule for the

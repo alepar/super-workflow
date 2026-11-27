@@ -513,7 +513,12 @@ never fall back to your harness; each attempt fails with class `unavailable`,
 naming why and the fix. `workflow setup-codex-rules` prints the one rule;
 `workflow setup-codex-rules --write` writes it to
 `$CODEX_HOME/rules/super-workflow.rules` (a person's confirmation: it lets Codex
-run that command outside its sandbox). The check asks Codex about the spawn
+run that command outside its sandbox). The check also reads the project rules
+Codex loads for a session in your working directory: `.codex/rules/*.rules` in
+every directory from the project root (the nearest `.git`) down to it, only
+while Codex trusts that root (a linked worktree's main checkout counts). A
+client's install can write the rule for its installed binary there
+(`MainConfig.CodexProjectRule`). The check asks Codex about the spawn
 command exactly as next prints it. A spawn that still finds itself sandboxed
 after the check passed was most likely run chained or altered, and its refusal
 says so. `spawn` itself refuses to start a child

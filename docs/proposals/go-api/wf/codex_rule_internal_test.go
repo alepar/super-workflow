@@ -18,6 +18,7 @@ func TestCodexRuleCheckTakesThePrintedForm(t *testing.T) {
 		t.Skip("the fake codex is a shell script")
 	}
 	root := t.TempDir()
+	t.Chdir(root) // no project rules: only the Codex home's count
 	home, bin := filepath.Join(root, "codex"), filepath.Join(root, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
