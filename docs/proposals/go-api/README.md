@@ -173,23 +173,52 @@ policies. Use `Route` or `RouteCases` when exit codes need more distinctions.
 Agents, computes and commands all support `Then(edge)` for an unconditional
 next step; a command's `Then` also follows that edge after a nonzero exit.
 
-To return work to the agent that produced it, declare a send-back edge on the
-judging state: `review.SendBack(draft, "revise", reasons, wf.Const(2), fallback)`.
-It is an ordinary route or case candidate. `reasons` reads them from the
-judge's output; the engine journals them with the routing decision. The
-producer's next visit is a fresh unit whose prompt binds `wf.Returned()`: a
-JSON document with the sender, the round of the budget, the reasons, the
-producer's prior output and its allocated artifacts, each already copied to
-this visit's path to edit in place. It is empty on any other visit, and long
-returns are delivered like any long input. Once the budget's returns over that
-edge are spent, choosing it takes `fallback` instead; a fallback into a stop
-needs `Ends(reason)` (lint `send-back-fallback`). The producer must be an
-agent upstream of the judge (`send-back-target`) whose prompt binds
-`wf.Returned()` (`send-back-unread`). `wf.ReturnedOf(c, draft)` reads the
-return in a check, route or compute. The count is per instance and folded
-from the journal, so a resume, a Map child and a fork cut before a return
-all see the right budget. Effects already applied stay applied, as on any
-loop edge. See [the send-back example](examples/sendback/def.go).
+A state that finds an upstream output wrong returns the work to the agent that
+wrote it, with the reasons, and that agent repairs its own output. The engine
+does this by default for a compute body or a check that returns
+`wf.Reject(reasons...)`. It returns the work to the one agent whose output
+that call read, at most once per rejecting state and producer in an instance
+(`d.Returns(wf.Const(n))` changes the bound, `wf.Const(0)` switches it off).
+Then it fails the state exactly as the plain error would have. A call that
+read no agent output, or several, returns nothing: it fails as before and
+`status` shows a `reject unattributed` note; `wf.RejectOf(producer,
+reasons...)` names the producer. A check's Reject accepts the checked
+submission and returns the work upstream; a compute's Reject spends none of
+the compute's attempts.
+
+The producer's next visit is a fresh unit. Its instruction opens with "Your
+earlier output was returned by <state> (round r of n): <reasons>. Your prior
+output and files follow for revision." Then comes a `returned` input: a JSON
+document with the sender, the round, the reasons, the producer's prior output
+and its allocated artifacts, each already copied to this visit's path to
+edit in place. It is delivered like any input, paged when long. A prompt that
+binds `wf.Returned()` places that document itself. The producer's own
+`MaxVisits` still applies on arrival.
+
+To route a return from a route or case table, or to give it its own bound
+and fallback, declare a send-back edge on the judging state:
+`review.SendBack(draft, "revise", reasons, wf.Const(2), fallback)`. It is an
+ordinary route or case candidate, `reasons` reads the reasons from the
+judge's output, and it takes precedence over the automatic return for a
+Reject aimed at the same producer. Once its returns are spent, choosing it
+takes `fallback`; a fallback into a stop needs `Ends(reason)` (lint
+`send-back-fallback`), and the producer must be an agent upstream of the
+judge (`send-back-target`). `wf.ReturnedOf(c, draft)` reads the return in a
+check, route or compute. Counts are per instance and folded from the
+journal, so a resume, a Map child and a fork cut before a return all see the
+right budget. Effects already applied stay applied, as on any loop edge. See
+[the send-back example](examples/sendback/def.go).
+
+### Make an existing workflow self-repairing
+
+At each place a compute or a check detects bad upstream content, replace
+`return fmt.Errorf(...)` with `return wf.Reject(...)`, keeping the message as
+the reasons. Nothing else changes: no edges, no prompt bindings and no
+producer names. Where one call reads several agents' outputs, use
+`wf.RejectOf(producer, ...)`. Keep plain errors for operational failures (a
+read that failed, a missing tool): those must not go back to an agent. Watch
+`status` for `reject unattributed` notes, which mark the sites that need
+RejectOf.
 
 `NewMap[State, Item, Key, Result]` takes the key type third (it must be
 comparable), and the child's yielded result type fourth. Read joined results

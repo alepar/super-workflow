@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Automatic returns: a compute or check that rejects an upstream output
+  sends the work back to its producer (sw-5blp).** A compute body or a check
+  returns `wf.Reject(reasons...)` in place of a plain error. With no edge
+  declared, the engine returns the work to the one agent whose output that
+  call read through its Ctx (`OutputOf`, an artifact read). It does so at
+  most once per rejecting state and producer in an instance; `d.Returns(budget)`
+  changes the bound and `wf.Const(0)` switches it off. Then the state fails
+  exactly as the plain error would have. A call that read no agent output,
+  or several, returns nothing: it fails as before, with a `reject
+  unattributed` note in `status`, and `wf.RejectOf(producer, reasons...)`
+  names the producer. A check's Reject accepts the checked submission and
+  returns the work upstream. A compute's Reject spends none of the compute's
+  attempts. An explicit `SendBack` edge to the same producer takes
+  precedence, with its bound and fallback. The producer's `MaxVisits` still
+  wins on arrival.
+- **A returned unit no longer needs a prompt binding.** Every returned visit,
+  automatic or explicit, opens with "Your earlier output was returned by
+  <state> (round r of n): <reasons>. Your prior output and files follow for
+  revision." A prompt that does not bind `wf.Returned()` gets the returned
+  document as a `returned` input, delivered like any input and paged when
+  long. Lint rule `send-back-unread` is removed: the reasons always reach the
+  producer.
+- Journal plans mark an automatic return's step `Auto` (no declared edge,
+  `Index` -1); `wf.Return`, status and `wftest.Trace.Returns` carry `Auto`.
+  `dead-ends` notes the bound. The README has a recipe for making an
+  existing workflow self-repairing.
+
+### Upgrading
+
+- Nothing changes for a definition that raises no `wf.Reject`: hashes, runs
+  and journals are as before. `d.Returns` enters the hash only when set.
+- To make a workflow self-repairing, replace `fmt.Errorf` with `wf.Reject` at
+  each content check in a compute or check. Keep plain errors for
+  operational failures.
+- A definition that lists `send-back-unread` in its lint expectations drops
+  it; a producer that does not bind `wf.Returned()` now passes lint.
+- A returned producer's instruction gains the one-line return note above,
+  including under an explicit `SendBack`.
+
 ## v0.4.6
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

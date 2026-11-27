@@ -113,6 +113,15 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 	if err := c.adoptBaseline(in, n, k); err != nil {
 		return "", nil, nil, false, err
 	}
+	// A returned visit carries its return to a prompt that does not bind
+	// wf.Returned(): as an input of its own, delivered like any input.
+	if in.ReturnedTo[n.name] != nil && !bindsReturned(k) {
+		doc, err := sc.returnedDocument(n)
+		if err != nil {
+			return "", nil, nil, false, c.failErr(in, n, err)
+		}
+		ins = append(ins, promptInput{name: "returned", value: doc})
+	}
 
 	originals := map[string]string{}
 	for i, pi := range ins {
@@ -159,6 +168,9 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 	}
 	if why := previousRefusal(in); why != nil {
 		b.WriteString(attemptNote("Your predecessor's output was refused", why, "Avoid this."))
+	}
+	if r := in.ReturnedTo[n.name]; r != nil {
+		b.WriteString(attemptNote(fmt.Sprintf("Your earlier output was returned by %s (round %d of %d)", r.From, r.Round, r.Of), r.Reasons, "Your prior output and files follow for revision."))
 	}
 	if why := previousBlocked(in); why != nil {
 		b.WriteString(attemptNote("The attempt before yours ended blocked", why, "The unit was started again with that known: if the same thing still blocks you, run failed again saying what you need."))
@@ -518,6 +530,11 @@ func (o agentOps[S, O]) decide(c *cycle, in *instance, n *node, s Submission) (S
 	var refusals, names []string
 	var blocked error
 	unavailable := false
+	// The first check that rejected an upstream output (wf.Reject), with
+	// the outputs it read.
+	var reject error
+	var rejectRead []*node
+	rejectName := ""
 	for _, ck := range o.a.checks {
 		var declared []ObservationDesc
 		for _, r := range ck.observes {
@@ -529,11 +546,17 @@ func (o agentOps[S, O]) decide(c *cycle, in *instance, n *node, s Submission) (S
 			return failedErr(err)
 		}
 		record := RecordedCheck{Name: ck.Name}
-		cerr := ck.fn(out, &recordingCtx{live: ctx, record: &record, declared: declared})
+		tr := &producerTracker{Ctx: &recordingCtx{live: ctx, record: &record, declared: declared}}
+		cerr := ck.fn(out, tr)
 		contexts.Checks = append(contexts.Checks, record)
+		var rej *RejectError
 		switch {
 		case ctx.blocked:
 			blocked = ctx.blockedErr()
+		case cerr != nil && errors.As(cerr, &rej):
+			if reject == nil {
+				reject, rejectRead, rejectName = cerr, tr.read, ck.Name
+			}
 		case cerr != nil:
 			names = append(names, ck.Name)
 			refusals = append(refusals, ck.Name+": "+cerr.Error())
@@ -554,6 +577,23 @@ func (o agentOps[S, O]) decide(c *cycle, in *instance, n *node, s Submission) (S
 			}
 		}
 		return refuse(refusals, fp)
+	case reject != nil:
+		// The submission is fine; an upstream output it was checked against
+		// is not: accept it and return the work to that output's producer.
+		plan, _, ok, err := c.rejected(in, n, reject, rejectRead, n)
+		if err != nil {
+			return SubmitResult{}, err
+		}
+		if !ok {
+			return refuse([]string{rejectName + ": " + reject.Error()}, rejectName+"|"+hashBytes(raw)[:16])
+		}
+		if raw, err = c.citationsMarked(raw); err != nil {
+			return SubmitResult{}, err
+		}
+		if err := c.emit(in, JournalAccepted, Accepted, AcceptedData{Output: raw, Plan: plan, Context: contexts}); err != nil {
+			return SubmitResult{}, err
+		}
+		return SubmitResult{Class: Accepted}, nil
 	}
 
 	ctx, err := c.ctx(in)

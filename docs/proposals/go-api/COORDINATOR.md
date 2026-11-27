@@ -365,10 +365,15 @@ required order. Status shows fetch coverage, which is not a claim that the
 model read the text.
 The coordinator still passes the brief unchanged.
 
-A unit whose state a downstream step sent back (`SendBack`) is an ordinary
+A unit whose state a downstream step sent back (`SendBack`, or a compute or
+check that raised `wf.Reject`) is an ordinary
 unit: hand it out like any other. Its prompt carries the sender's reasons and
-the producer's prior output, and its allocated artifacts already hold the
-prior version, so the child repairs its own work. Never repair the output
+the producer's prior output (a `returned` input when the prompt does not
+bind it), and its allocated artifacts already hold the prior version, so the
+child repairs its own work. A `reject unattributed` note in `status` means a
+state raised `wf.Reject` but the engine could not tell whose output it
+rejected; the state failed as before. That is for the workflow's author, not
+for you to repair. Never repair the output
 yourself or pass the reasons on by hand. `status` shows `returned by <state>
 ("<edge>", round r of n)` on the instance while that visit is open.
 

@@ -697,6 +697,7 @@ func TestStatusSchemaRoundTrips(t *testing.T) {
 		"Return.Round":                   "as InstanceStatus.Returned",
 		"Return.Of":                      "as InstanceStatus.Returned",
 		"Return.Reasons":                 "as InstanceStatus.Returned",
+		"Return.Auto":                    "needs a wf.Reject; TestRejectReturnsTheWorkToTheProducerOnce checks the status",
 	}
 	var statuses []string
 	snap := func(w *wiEnv) { statuses = append(statuses, w.must("status", "w1", "--json")) }

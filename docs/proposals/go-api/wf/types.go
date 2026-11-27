@@ -36,6 +36,7 @@ type Def struct {
 	version    int
 	nodes      []*node
 	counters   []Counter
+	returns    *Budget // Returns: the bound on automatic returns (default 1)
 	enums      []*enumData
 	locks      []Lock
 	params     []Param
@@ -337,7 +338,6 @@ const (
 	RuleAgentSelfEdge       RuleID = "agent-self-edge"
 	RuleSendBackTarget      RuleID = "send-back-target"   // a send-back's producer is not an upstream agent of the definition, or the edge is not a route
 	RuleSendBackFallback    RuleID = "send-back-fallback" // a send-back's fallback is a send-back, or a stop with no Ends(reason)
-	RuleSendBackUnread      RuleID = "send-back-unread"   // a send-back's producer does not bind wf.Returned()
 	RuleReservedPolicy      RuleID = "reserved-gate-policy"
 	RuleInputUnresolved     RuleID = "input-unresolved"
 	RuleAgentRetry          RuleID = "agent-retry"

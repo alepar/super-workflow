@@ -1368,6 +1368,7 @@ type Return struct {
 	Instance, From, Label, To string
 	Round, Of                 int
 	Reasons                   []string
+	Auto                      bool // planned for a wf.Reject with no declared edge
 }
 
 // Returns lists the send-backs the run took, in journal order, read from
@@ -1382,7 +1383,7 @@ func (t *Trace) Returns() []Return {
 		for _, s := range d.Plan.Steps {
 			if s.SendBack != nil {
 				out = append(out, Return{Instance: r.Instance, From: s.From, Label: s.Label, To: s.To,
-					Round: s.SendBack.Round, Of: s.SendBack.Of, Reasons: s.SendBack.Reasons})
+					Round: s.SendBack.Round, Of: s.SendBack.Of, Reasons: s.SendBack.Reasons, Auto: s.Auto})
 			}
 		}
 	}

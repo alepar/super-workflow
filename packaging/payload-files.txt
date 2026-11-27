@@ -209,6 +209,7 @@ docs/proposals/go-api/wf/promptref.go
 docs/proposals/go-api/wf/recorded_context.go
 docs/proposals/go-api/wf/recorded_probe.go
 docs/proposals/go-api/wf/recovery.go
+docs/proposals/go-api/wf/reject.go
 docs/proposals/go-api/wf/render.go
 docs/proposals/go-api/wf/replay.go
 docs/proposals/go-api/wf/result_run_paths.go

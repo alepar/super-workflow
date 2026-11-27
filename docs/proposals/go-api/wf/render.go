@@ -19,7 +19,11 @@ func renderView(v DefView) string {
 	if len(v.States) > 0 {
 		start = v.States[0].Name
 	}
-	fmt.Fprintf(&b, "%s v%d — %d states, start: %s\n\n", v.Name, v.Version, len(v.States), start)
+	fmt.Fprintf(&b, "%s v%d — %d states, start: %s\n", v.Name, v.Version, len(v.States), start)
+	if v.Returns != "" {
+		fmt.Fprintf(&b, "returns: ≤%s per rejecting state and producer (wf.Reject)\n", v.Returns)
+	}
+	b.WriteString("\n")
 	for i, s := range v.States {
 		mark := "  "
 		if i == 0 {

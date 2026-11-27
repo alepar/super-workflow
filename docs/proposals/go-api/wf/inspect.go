@@ -74,6 +74,7 @@ type DefView struct {
 	ParamPaths map[string]PathBase `json:",omitempty"`
 	RunKey     []string
 	Counters   []string
+	Returns    string `json:",omitempty"` // Def.Returns, when set; omitted so other definitions' hashes do not change
 	Locks      []string
 	Options    []string
 	Exports    []string
@@ -207,6 +208,9 @@ func inspectDef(d *Def, prefix, assetRoot string, onPath map[*Def]bool, withAsse
 	}
 	for _, c := range d.counters {
 		v.Counters = append(v.Counters, c.label())
+	}
+	if d.returns != nil {
+		v.Returns = d.returns.String()
 	}
 	for _, l := range d.locks {
 		v.Locks = append(v.Locks, l.name+" ("+l.scope.String()+")")

@@ -34,7 +34,18 @@ func (o computeOps[S, O]) execute(c *cycle, in *instance, n *node) error {
 	if fn == nil {
 		return c.fail(in, n, Blocked, []string{"compute has no function"}, "")
 	}
-	out, ferr := fn(ctx)
+	tr := &producerTracker{Ctx: ctx}
+	out, ferr := fn(tr)
+	if ferr != nil && !ctx.blocked {
+		plan, reasons, ok, err := c.rejected(in, n, ferr, tr.read, nil)
+		if err != nil {
+			return err
+		}
+		if ok {
+			// A return spends none of the compute's attempts: its input was wrong.
+			return c.emit(in, JournalRefused, Refused, RefusedData{Reasons: reasons, Plan: &plan})
+		}
+	}
 	switch {
 	case ctx.blocked:
 		return c.failErr(in, n, ctx.blockedErr())

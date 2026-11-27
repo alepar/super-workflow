@@ -68,7 +68,7 @@ func TestCompileRejections(t *testing.T) {
 // flatten the exit status to 1): lint must exit 2 and name the rule id.
 func TestLintRejections(t *testing.T) {
 	goBin := goTool(t)
-	for _, name := range []string{"lint_unwired_budget", "lint_reserved_policy", "lint_case_uncovered", "lint_sub_exit_unmapped", "lint_case_duplicate", "lint_sub_unyielded", "lint_route_no_candidates", "lint_send_back_target", "lint_send_back_fallback", "lint_send_back_unread"} {
+	for _, name := range []string{"lint_unwired_budget", "lint_reserved_policy", "lint_case_uncovered", "lint_sub_exit_unmapped", "lint_case_duplicate", "lint_sub_unyielded", "lint_route_no_candidates", "lint_send_back_target", "lint_send_back_fallback"} {
 		t.Run(name, func(t *testing.T) {
 			want := wantOf(t, name)
 			bin := filepath.Join(t.TempDir(), name)

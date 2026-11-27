@@ -523,5 +523,8 @@ func deadEndsCommand(c *cli, row Subcommand, args []string) int {
 		return c.printJSON(ds)
 	}
 	fmt.Fprint(c.stdout, FormatDeadEnds(name, ds))
+	if b := reg.Def.returnsBudget(); b.String() != "0" {
+		fmt.Fprintf(c.stdout, "note: a compute or check that raises wf.Reject first returns the work to its producer, up to %s time(s) per producer (Def.Returns); the routes above apply after that\n", b)
+	}
 	return exitOK
 }

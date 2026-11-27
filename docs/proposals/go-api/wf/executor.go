@@ -720,6 +720,9 @@ type EdgeStep struct {
 	// SendBackSpent names the send-back edge whose spent budget this step,
 	// the edge's fallback, replaced.
 	SendBackSpent string `json:",omitempty"`
+	// Auto marks a return the engine planned for a wf.Reject with no
+	// declared edge (Index -1).
+	Auto bool `json:",omitempty"`
 }
 
 // EdgePlan is the edge the Engine chose, journaled so a crash between the

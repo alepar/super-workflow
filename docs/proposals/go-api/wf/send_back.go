@@ -44,6 +44,8 @@ type Return struct {
 	Round   int      `json:"round"`
 	Of      int      `json:"of"`
 	Reasons []string `json:"reasons"`
+	// Auto marks a return planned for a wf.Reject with no declared edge.
+	Auto bool `json:"auto,omitempty"`
 }
 
 func sendBackEdge[S any](n *node, to State, label string, max Budget, fallback Edge[S], reasons func(json.RawMessage) ([]string, error)) Edge[S] {
@@ -138,7 +140,7 @@ func (in *instance) noteReturns(p *pendingEdge, to string) {
 			if in.ReturnedTo == nil {
 				in.ReturnedTo = map[string]*Return{}
 			}
-			in.ReturnedTo[to] = &Return{From: s.From, Label: s.Label, Round: s.SendBack.Round, Of: s.SendBack.Of, Reasons: s.SendBack.Reasons}
+			in.ReturnedTo[to] = &Return{From: s.From, Label: s.Label, Round: s.SendBack.Round, Of: s.SendBack.Of, Reasons: s.SendBack.Reasons, Auto: s.Auto}
 		}
 	}
 }
@@ -251,8 +253,8 @@ func (c *cycle) copyReturnedArtifacts(in *instance, n *node) error {
 	return nil
 }
 
-// ruleSendBack is RuleSendBackTarget, RuleSendBackFallback and
-// RuleSendBackUnread over every send-back edge of the definition.
+// ruleSendBack is RuleSendBackTarget and RuleSendBackFallback over every
+// send-back edge of the definition.
 func ruleSendBack(c *lintCtx) []Problem {
 	var out []Problem
 	for i := range c.states {
@@ -269,7 +271,7 @@ func ruleSendBack(c *lintCtx) []Problem {
 				continue
 			}
 			to := e.to
-			ak, agent := to.kind.(*agentKind)
+			_, agent := to.kind.(*agentKind)
 			switch {
 			case to == n:
 				out = append(out, n.problem(RuleSendBackTarget, "send-back %q targets the state itself: a retry is wf.Retry", e.label))
@@ -277,8 +279,6 @@ func ruleSendBack(c *lintCtx) []Problem {
 				out = append(out, n.problem(RuleSendBackTarget, "send-back %q targets %s, which is not an agent state of %s", e.label, to.name, c.d.name))
 			case !reach(to)[n]:
 				out = append(out, n.problem(RuleSendBackTarget, "send-back %q targets %s, which is not upstream of %s", e.label, to.name, n.name))
-			case !bindsReturned(ak):
-				out = append(out, n.problem(RuleSendBackUnread, "send-back %q targets %s, whose prompt does not bind wf.Returned(): the reasons would never reach it", e.label, to.name))
 			}
 			fb := sb.fallback.e
 			if fb == nil {

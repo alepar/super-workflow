@@ -37,7 +37,7 @@ var allRules = []wf.RuleID{
 	wf.RuleMapPartialFailure, wf.RuleMapWriteOverlap, wf.RuleSubExitUnmapped,
 	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNameDuplicate, wf.RuleChildNotExported,
 	wf.RuleHoldEffectOutside, wf.RuleComputeUnavailable, wf.RuleRouteNoCandidates,
-	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge, wf.RuleSendBackTarget, wf.RuleSendBackFallback, wf.RuleSendBackUnread,
+	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge, wf.RuleSendBackTarget, wf.RuleSendBackFallback,
 	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath, wf.RuleMaxlenTag, wf.RuleFetchCoverage,
 }
 
@@ -133,7 +133,6 @@ var ruleCases = []struct {
 	}},
 	{wf.RuleSendBackTarget, func() *wf.Def { return sendBackRuleDef("send-back-target", true, true, true) }},
 	{wf.RuleSendBackFallback, func() *wf.Def { return sendBackRuleDef("send-back-fallback", false, true, false) }},
-	{wf.RuleSendBackUnread, func() *wf.Def { return sendBackRuleDef("send-back-unread", false, false, true) }},
 	{wf.RuleDispatchHint, func() *wf.Def {
 		d, a, _, _ := okDef("dispatch-hint")
 		a.Dispatch(wf.Effort("huge"))
