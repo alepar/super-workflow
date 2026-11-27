@@ -190,6 +190,7 @@ func ruleAgentSelfEdge(c *lintCtx) []Problem {
 // lint. A new note is one function appended here.
 var notes = []rule{
 	ruleMapParallelReview,
+	ruleFetchCoverage,
 }
 
 // Notes runs the note rules over the definition and its children. Notes print

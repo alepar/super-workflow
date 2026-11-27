@@ -34,6 +34,7 @@ type agentKind struct {
 	route      any
 	dispatch   []DispatchOption
 	gitAuth    *GitAuthority
+	coverage   bool // ReadsFetchCoverage: the definition reads its fetch coverage
 	ops        kindOps
 }
 
@@ -1040,6 +1041,7 @@ func (k *agentKind) view(n *node, v *StateView) {
 		v.Inputs = append(v.Inputs, inputString(d))
 	}
 	v.Checks = append(v.Checks, k.checkNames...)
+	v.FetchCoverage = k.coverage
 	for _, o := range k.observes {
 		v.Observes = append(v.Observes, obsString(o))
 	}

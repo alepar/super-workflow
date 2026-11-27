@@ -90,6 +90,7 @@ type StateView struct {
 	EquivalentAnswers string             `json:",omitempty"`
 	Outcome           string             // terminals
 	PartialWhen       bool               `json:",omitempty"` // a Success terminal that ends Partial when not ready
+	FetchCoverage     bool               `json:",omitempty"` // an agent whose fetch coverage the definition reads (ReadsFetchCoverage)
 	Output            string             // agent and compute output type
 	Edges             []EdgeView
 	Retry             *RetryView

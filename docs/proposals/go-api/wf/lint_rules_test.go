@@ -38,7 +38,7 @@ var allRules = []wf.RuleID{
 	wf.RuleSubResultType, wf.RuleSubRecursive, wf.RuleChildNameDuplicate, wf.RuleChildNotExported,
 	wf.RuleHoldEffectOutside, wf.RuleComputeUnavailable, wf.RuleRouteNoCandidates,
 	wf.RuleCounterScope, wf.RuleCounterScopeDef, wf.RulePromptCandidates, wf.RuleMapParallelReview, wf.RuleArtifactName, wf.RuleArtifactTemplated, wf.RuleCommandKey, wf.RuleLiteralModel, wf.RuleAgentSelfEdge,
-	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath, wf.RuleMaxlenTag,
+	wf.RuleAgentBlockedRoute, wf.RuleAgentOutputPath, wf.RuleMaxlenTag, wf.RuleFetchCoverage,
 }
 
 // okDef is a valid agent -> terminal definition; fixtures break one thing in it.
@@ -315,6 +315,11 @@ var ruleCases = []struct {
 		return d
 	}},
 	{wf.RuleMapParallelReview, func() *wf.Def { return parallelMapDef("mapparallel", 2) }},
+	{wf.RuleFetchCoverage, func() *wf.Def {
+		d, a, _, _ := okDef("fetchcoverage")
+		a.ReadsFetchCoverage()
+		return d
+	}},
 	{wf.RuleSubExitUnmapped, func() *wf.Def {
 		d, _, _, _ := okDef("subexit")
 		s := wf.NewSub[rSub](d, childOf("kid"), func(wf.Ctx) rItem { return rItem{} })

@@ -149,6 +149,7 @@ docs/proposals/go-api/wf/failure_class.go
 docs/proposals/go-api/wf/family.go
 docs/proposals/go-api/wf/fanout_plan.go
 docs/proposals/go-api/wf/fanout_run.go
+docs/proposals/go-api/wf/fetch_coverage.go
 docs/proposals/go-api/wf/fork_rebase.go
 docs/proposals/go-api/wf/gate_int.go
 docs/proposals/go-api/wf/handout.go
@@ -261,6 +262,7 @@ docs/proposals/go-api/wftest/fuzz_schema.go
 docs/proposals/go-api/wftest/fuzz_step_progress.go
 docs/proposals/go-api/wftest/hostile/hostile.go
 docs/proposals/go-api/wftest/hostile/markdown.go
+docs/proposals/go-api/wftest/paged_fetch.go
 docs/proposals/go-api/wftest/protocol.go
 docs/proposals/go-api/wftest/protocol_gate.go
 docs/proposals/go-api/wftest/protocol_sibling.go

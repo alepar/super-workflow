@@ -174,6 +174,11 @@ type instance struct {
 	Result        json.RawMessage `json:",omitempty"`
 	Reason        string          `json:",omitempty"`
 
+	// Coverage is the fetch coverage of the attempt each agent state last
+	// accepted, by state, when that attempt fetched paged prompt pages
+	// (FetchCoverageOf).
+	Coverage map[string]*FetchCoverage `json:",omitempty"`
+
 	// Refusals counts the submission_refused records of the open instruction
 	// and RefusalFP is the last one's fingerprint: every new token (an
 	// instruction_issued, so every new attempt and every backoff re-issue)
@@ -497,6 +502,9 @@ func (st *runState) apply(r JournalRecord) error {
 	case *AcceptedData:
 		in.LastRefusal, in.LastFailure, in.LastBlocked = nil, nil, nil
 		in.accept(r.State, d.Output, d.Computed)
+		if !d.Computed {
+			in.acceptCoverage(r.State)
+		}
 		if u := in.Unit; u != nil && !u.State.terminal() && u.Bound != "" {
 			st.initIndex()
 			st.acceptedClaims[u.Bound] = acceptedClaim{Name: u.Name}
@@ -1005,6 +1013,21 @@ func (in *instance) accept(state string, out json.RawMessage, computed bool) {
 	in.Docs = append(in.Docs, namedDoc{Name: state, Raw: out})
 }
 
+// acceptCoverage records the fetch coverage of the attempt whose output
+// state accepted, or forgets an earlier visit's when this attempt fetched no
+// paged prompt: the record always belongs to the latest accepted output.
+func (in *instance) acceptCoverage(state string) {
+	f := unitCoverage(in.Unit)
+	if f == nil {
+		delete(in.Coverage, state)
+		return
+	}
+	if in.Coverage == nil {
+		in.Coverage = map[string]*FetchCoverage{}
+	}
+	in.Coverage[state] = f
+}
+
 // chose holds the instance in transition on a chosen edge.
 func (in *instance) chose(p EdgePlan) {
 	in.Pending, in.Phase, in.Cmd = &pendingEdge{Plan: p}, phaseTransition, nil
@@ -1087,6 +1110,12 @@ func (in *instance) rename(states map[string]string, cur string) {
 		if n := name(old); n != old {
 			delete(in.ChildOutcomes, old)
 			in.ChildOutcomes[n] = v
+		}
+	}
+	for old, v := range in.Coverage {
+		if n := name(old); n != old {
+			delete(in.Coverage, old)
+			in.Coverage[n] = v
 		}
 	}
 	for old, v := range in.Visits {

@@ -43,6 +43,7 @@ type Sim struct {
 	cap          int              // Cap: the paged coordinator's harness cap; 0 is wave play
 	recover      string           // WithRecovery: how the simulated coordinator answers a recovery offer no Recover step names
 	recoverSet   bool
+	paged        bool // PagedPrompts: the run starts with paged prompt delivery
 }
 
 // Option configures a Sim. It is sealed: build one with the With constructors.
@@ -166,6 +167,10 @@ type Step struct {
 	crashes []Step // crash steps that follow this action step in the script
 	at      KillPoint
 	jk      wf.JournalKind // CrashAt: the record kind
+	// Fetching: the pages the subagent fetches before a Submit or Fail in a
+	// paged Sim; fetchSet with no fetches fetches nothing more.
+	fetches  []Fetch
+	fetchSet bool
 }
 
 // markerName is the state name derived from the owning marker type S.
@@ -937,6 +942,15 @@ func (s *Sim) Run(steps ...Step) *Trace {
 	}
 	if s.cap > 0 {
 		r.pc = newCoordinator(r, s.cap)
+	} else if s.paged {
+		r.fail("PagedPrompts needs Cap(n): the paged coordinator fetches the pages")
+		return r.trace()
+	}
+	for i, st := range steps {
+		if st.fetchSet && !s.paged {
+			r.fail("script step %d (%s): Fetching needs PagedPrompts()", i+1, st.desc)
+			return r.trace()
+		}
 	}
 	r.e = r.engine()
 	if len(r.steps) > 0 && r.steps[0].kind == stepCrashAt && r.steps[0].jk == wf.JournalRunStarted {
@@ -1009,6 +1023,7 @@ func (r *runner) engine() wf.Executor {
 		opts.EffectRunner = r.s.runner
 	}
 	opts.Clock = r.s.clock
+	opts.PagedPrompts = r.s.paged
 	if r.pc != nil {
 		opts.Clock, opts.TranscriptMtime = r.pc.now, r.pc.mtime
 	}

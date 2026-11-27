@@ -363,6 +363,7 @@ const (
 	RuleArtifactName        RuleID = "artifact-name"
 	RuleMaxlenTag           RuleID = "maxlen-tag"
 	RuleArtifactTemplated   RuleID = "artifact-templated" // staged (LintStaged): a note until every client allocates
+	RuleFetchCoverage       RuleID = "fetch-coverage"     // a note: coverage is known only in a paged run
 )
 
 // Severity says whether a finding fails the lint (an error) or only prints (a note).

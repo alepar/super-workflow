@@ -401,3 +401,30 @@ func TestPagedDeliveryCommandsUseRunWorkspace(t *testing.T) {
 		}
 	}
 }
+
+// A Registration with PagedPrompts pages its runs by default, and
+// --paged-prompts=false opts one run out.
+func TestPagedDeliveryRegistrationDefault(t *testing.T) {
+	cfg := clConfig()
+	cfg.Defs = append(cfg.Defs, wf.Registration{Def: clAgentDef("paged-reg"), PagedPrompts: true})
+	for _, tc := range []struct {
+		flags []string
+		paged bool
+	}{{nil, true}, {[]string{"--paged-prompts=false"}, false}, {[]string{"--paged-prompts"}, true}} {
+		state := t.TempDir()
+		code, out, er := cliCall(cfg, append([]string{"run", "paged-reg", "--state-dir", state, "--run-id", "reg"}, tc.flags...)...)
+		if code != 0 {
+			t.Fatalf("run %v: %d %s", tc.flags, code, er)
+		}
+		run := strings.TrimSpace(out)
+		code, out, er = cliCall(cfg, "next", run, "1", "--state-dir", state, "--json")
+		var ins []wf.Instruction
+		if code != 0 || json.Unmarshal([]byte(out), &ins) != nil || len(ins) == 0 {
+			t.Fatalf("next %v: %d %s %s", tc.flags, code, out, er)
+		}
+		code, out, er = cliCall(cfg, "prompt", run, ins[0].Name, "--state-dir", state, "--page", "1")
+		if paged := code == 0 && strings.Contains(out, "Required prompt page"); paged != tc.paged {
+			t.Errorf("run %v: paged %v (exit %d, %s), want %v", tc.flags, paged, code, er, tc.paged)
+		}
+	}
+}

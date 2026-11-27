@@ -406,6 +406,29 @@ entered the model context, or was understood. The legacy transcript file-read
 check is not used for paged runs. Page-budget checking and the cross-model trial
 are separate follow-ups; this switch does not change the default.
 
+A registration can make paged delivery the default for the runs it starts
+with `Registration.PagedPrompts`; `--paged-prompts=false` opts one run out.
+
+A definition can read the coverage record. An agent state that declares
+`ReadsFetchCoverage()` can be read with `wf.FetchCoverageOf(c, state)` from a
+route, a check or a compute. The read returns the coverage of the attempt whose
+output the state last accepted (its own checks and route see the attempt they
+decide): the prompt's page count and pages fetched, and the same counts for each
+reference input with its name and whether it is required. A page fetched twice
+counts once, and a retried attempt starts its own count. `ok` is false when the
+coverage is unknown: the run has no paged delivery, or the attempt never fetched
+its prompt. Unknown never reads as zero. The record means **fetched, never
+read**, and the engine judges none of it. What counts as enough coverage, and
+where a short one routes, is the definition's policy. Reading coverage from a
+state that did not declare it blocks the step. Lint notes every declaring
+state (`fetch-coverage`), because the record exists only in a paged run.
+
+In `wftest`, `PagedPrompts()` with `Cap(n)` starts the simulated run paged.
+Before each `Submit` or `Fail` the subagent fetches every required page.
+`step.Fetching(wftest.Pages("spec", 1), wftest.Pages(""))` scripts exactly which
+pages it fetches instead (`""` is the prompt itself, and no pages means all of
+them).
+
 ## A complete feature workflow
 
 Start with [examples/feature/def.go](examples/feature/def.go). It is a complete workflow:

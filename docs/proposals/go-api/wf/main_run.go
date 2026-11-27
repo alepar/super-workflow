@@ -40,6 +40,11 @@ type Registration struct {
 	DefaultOptions any
 	// Preflight are the client's host checks, run before a run exists.
 	Preflight []PreflightCheck
+	// PagedPrompts makes paged prompt delivery the default of the runs this
+	// registration starts, as --paged-prompts does; --paged-prompts=false
+	// opts one run out. A definition that routes on FetchCoverageOf needs
+	// it. A continued run keeps its predecessor's choice.
+	PagedPrompts bool
 }
 
 // ParamSpec is one run param of a registration: required, or with a default
@@ -1373,6 +1378,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 // flags is what one run-driving subcommand accepts.
 type flags struct {
 	pagedPrompts                                                      bool
+	pagedPromptsSet                                                   bool // --paged-prompts was given, true or false
 	haltBefore                                                        []string
 	page                                                              int
 	pageCode, reference                                               string
@@ -1457,6 +1463,7 @@ func (c *cli) drive(row Subcommand, args []string) int {
 	if fs.NArg() > 0 {
 		return c.failf(exitUsage, "%s: unexpected argument %q", cmd, fs.Arg(0))
 	}
+	fs.Visit(func(fl *flag.Flag) { f.pagedPromptsSet = f.pagedPromptsSet || fl.Name == "paged-prompts" })
 	if !childUnitVerbs[cmd] && !childReadVerbs[cmd] && childCaller(c.env) { // run too: a child never starts or drives a run
 		return c.failf(exitRejected, "%s: %s", cmd, childRefusal())
 	}
@@ -2418,7 +2425,11 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 			fmt.Fprintln(c.stderr, "note: "+h)
 		}
 	}
-	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: f.pagedPrompts, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
+	paged := f.pagedPrompts
+	if !f.pagedPromptsSet {
+		paged = reg.PagedPrompts
+	}
+	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: paged, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
 		Headless: f.headless.orNil()})
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)

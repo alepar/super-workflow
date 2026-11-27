@@ -31,6 +31,20 @@
   client installs at `InstalledBinary`, so an install can write a per-checkout
   rule instead of a profile-wide one. `setup-codex-rules --write` is
   unchanged.
+- **Fetch coverage is readable by the definition (sw-lb6u).** Paged delivery
+  recorded every fetched page per unit and attempt, but only status printed
+  it. Now an agent state that declares `ReadsFetchCoverage()` can be read with
+  `wf.FetchCoverageOf(c, state)`. The read returns the page count and the
+  pages fetched for the prompt and for each reference input, with whether
+  each reference is required. It reports the accepted attempt alone, counts a
+  re-fetched page once, and returns `ok == false` when the run is not paged.
+  The record means fetched, never read. Lint notes each declaring state
+  (`fetch-coverage`). `Engine.UnitCoverage` reads a unit's live count. In
+  `wftest`, `PagedPrompts()` with `Cap(n)` runs a simulation paged, and
+  `Step.Fetching(wftest.Pages(...))` scripts the pages fetched.
+- **A registration can make paged delivery its default (sw-lb6u).**
+  `Registration.PagedPrompts` starts the registration's runs paged, as
+  `--paged-prompts` does. `--paged-prompts=false` opts one run out.
 
 ### Upgrading
 
@@ -41,6 +55,11 @@
   project root's `.codex/rules` (an install can write it with
   `MainConfig.CodexProjectRule`) and trust that project in Codex, or keep it in
   the Codex home's rules.
+- **A definition that routes on fetch coverage** declares
+  `ReadsFetchCoverage()` on the agent state it reads, and its registration
+  sets `PagedPrompts`, or its runs start with `--paged-prompts`. Without
+  paged delivery the read is unknown. Nothing changes for a definition that
+  does not read coverage: its hash, lint and runs are as before.
 
 ## v0.4.2
 

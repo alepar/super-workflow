@@ -415,6 +415,9 @@ func (c *coordinator) act(i int, st Step) {
 	}
 	switch st.kind {
 	case stepFail:
+		if !c.fetchPages(i, st, u.ins.Name) {
+			return
+		}
 		if !c.call(st.desc, func() error { _, err := c.r.e.FailedAs(c.r.id, u.ins.Name, st.reason, st.failure); return err }) {
 			return
 		}
@@ -430,6 +433,9 @@ func (c *coordinator) act(i int, st Step) {
 			return
 		}
 		c.advance(workStep)
+		if !c.fetchPages(i, st, u.ins.Name) {
+			return
+		}
 		if !c.call(fmt.Sprintf("script step %d (%s)", i+1, st.desc), func() error {
 			_, err := c.r.e.Done(c.r.id, u.ins.Name, wf.Submission{Output: out})
 			return err

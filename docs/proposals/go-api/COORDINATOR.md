@@ -356,8 +356,8 @@ You are a child agent for one unit of work. Run the command above, then do what 
 -----
 ```
 
-For a run started with `--paged-prompts`, the child's `prompt` response is page
-one of an immutable packet. The child fetches each printed continuation in a
+For a run started with `--paged-prompts`, or by a registration that pages by
+default, the child's `prompt` response is page one of an immutable packet. The child fetches each printed continuation in a
 separate command, and required indexed references through `wf read`. The engine
 tells the child to read every required page and trusts its `done`: neither
 `validate` nor `done` counts the pages fetched, and pages have no rate limit or
