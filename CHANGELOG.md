@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.4.5
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.5`. GitHub installs use the plugin tag
+`plugin-v0.4.5`. This patch release fixes two behaviours: roots reached
+through a symbolic link (macOS `/tmp` and `/var`) now checkpoint and fork,
+and a `MaxVisits` budget is read after the arriving transition's counter
+updates. Printed paths become real paths, and some visit caps allow one more
+visit. Read Upgrading before you move to it.
 
 ### What changed
 
