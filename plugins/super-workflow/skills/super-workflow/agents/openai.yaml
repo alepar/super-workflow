@@ -1,0 +1,4 @@
+interface:
+  display_name: "Super-workflow"
+  short_description: "Write and verify Go workflow definitions"
+  default_prompt: "Use $super-workflow to author and verify this Go workflow."
