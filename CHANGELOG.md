@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.16
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.16`. GitHub installs use the plugin tag
+`plugin-v0.4.16`. This release lets `wftest`'s fuzz sampler accept the
+`examples` annotation that `form.Of` fields emit, so a definition whose agent
+outputs carry `form` types can be fuzzed. No engine API, journal format, hash
+or lock change.
 
 ### What changed
 
