@@ -1,0 +1,7 @@
+{
+  "description": "Author and drive Go super-workflow definitions.",
+  "license": "MIT OR Apache-2.0",
+  "name": "super-workflow",
+  "skills": "./skills/",
+  "version": "0.4.15"
+}
