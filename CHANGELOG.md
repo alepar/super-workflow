@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Upgrading
+
+- **Effect keys, a gap in v0.4.18's note.** A key part that binds text
+  holding `/`, such as `bd.IssueKey("blocker", "{id}/{run}")`, is now spelled
+  with `%2F` in that part (`bd/blocker/<id>%2F<run>`), so a client that looks
+  beads, commits or issues up by the old key text misses the ones made since
+  the upgrade. The engine's own done lookup matches both spellings
+  (`LegacyKey`, `ExternalEffect.KeyIDs`). To keep the old spelling, give each
+  piece its own part: `wf.KeyOf("bd", "blocker", "{id}", "{run}")`.
+
 ## v0.4.19
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
