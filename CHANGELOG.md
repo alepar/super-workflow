@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.10
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.10`. GitHub installs use the plugin tag
+`plugin-v0.4.10`. This release makes Codex offers explain "agent thread
+limit reached", keeps the bound a lock wait prints, and names a lock holder
+that never appends. No definition or run hash changes. Read Upgrading.
 
 ### What changed
 
