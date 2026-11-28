@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **A CLI call caps its heap softly (sw-0kdy).** `TuneGCForCLI`, which
+  `MainWith` calls, keeps the collector at GOGC 400 and now also sets a
+  soft memory limit of 1 GiB. Each journal the call reads raises the limit
+  to 4 times the file's bytes when that is more, so a long journal never
+  keeps the collector running. On a 217 MB journal a child verb's peak RSS
+  falls from 3.5-4.3 GB to about 1.2 GB for about 4% more CPU; a small
+  journal's calls are unchanged.
+
+### Upgrading
+
+- No API, journal format, hash or lock change. A `GOMEMLIMIT` in the
+  environment is kept, and then no journal read moves the limit; a `GOGC`
+  in the environment is kept as before. A binary whose main calls `CLI`
+  without `TuneGCForCLI` is unaffected. A process that already set a lower
+  limit keeps it.
+
 ## v0.4.11
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

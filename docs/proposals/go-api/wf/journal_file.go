@@ -599,8 +599,10 @@ func (j *fileJournal) load(run RunID, l *fileRunLock) ([]JournalRecord, error) {
 // their records come from the cache and only the rest is parsed; any other
 // content, a rewrite or a shortening anywhere, is parsed in full. The cache
 // then holds data's committed bytes. The records returned are the cache's:
-// a caller hands out copies (copyRecords).
+// a caller hands out copies (copyRecords). A CLI process's soft memory
+// limit grows with the file (raiseMemoryLimit).
 func parseCached(path string, data []byte) ([]JournalRecord, int, error) {
+	raiseMemoryLimit(len(data))
 	var recs []JournalRecord
 	base := 0
 	if c := cachedRead(path); c != nil && len(data) >= len(c.raw) && bytes.Equal(data[:len(c.raw)], c.raw) {

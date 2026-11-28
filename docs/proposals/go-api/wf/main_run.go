@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -183,16 +184,54 @@ func MainWith(cfg MainConfig) {
 // cliGCPercent is the collector's target for a CLI process; see TuneGCForCLI.
 const cliGCPercent = 400
 
+// cliMemoryLimit is a CLI process's soft heap limit, and cliMemoryPerByte the
+// limit per journal byte read, when that is more (raiseMemoryLimit); see
+// TuneGCForCLI.
+const (
+	cliMemoryLimit   = 1 << 30
+	cliMemoryPerByte = 4
+)
+
+// cliMemoryTuned reports that TuneGCForCLI set the soft memory limit, so a
+// journal read may raise it.
+var cliMemoryTuned atomic.Bool
+
 // TuneGCForCLI sets the garbage collector for a process that runs one CLI
 // call, as MainWith does: a workflow binary whose main calls CLI itself calls
 // it first. A call is short and allocation-heavy (it reads the journal and
 // walks the definition), so collecting when the heap reaches five times its
-// live size instead of twice saves about a quarter of its CPU, for a peak RSS
-// up to about twice as high.
-// A GOGC set in the environment is kept.
+// live size instead of twice saves about a quarter of its CPU on a small
+// journal. On a long journal that headroom is gigabytes of garbage (each
+// lock acquisition reads and decodes the whole file), so a soft memory
+// limit of 1 GiB bounds it, raised to 4x the bytes of each journal the call
+// reads (raiseMemoryLimit): on a 217 MB journal the peak falls from 4.3 GB
+// to 1.2 GB for about 4% more CPU (sw-0kdy).
+// A GOGC or GOMEMLIMIT set in the environment is kept, and then nothing
+// raises the limit.
 func TuneGCForCLI() {
 	if _, set := os.LookupEnv("GOGC"); !set {
 		debug.SetGCPercent(cliGCPercent)
+	}
+	if _, set := os.LookupEnv("GOMEMLIMIT"); !set {
+		if debug.SetMemoryLimit(-1) > cliMemoryLimit {
+			debug.SetMemoryLimit(cliMemoryLimit)
+		}
+		cliMemoryTuned.Store(true)
+	}
+}
+
+// raiseMemoryLimit raises the soft memory limit TuneGCForCLI set to
+// cliMemoryPerByte times n, the bytes of a journal just read, when that is
+// more: a fold's live heap is about three times the journal's bytes, so a
+// limit below it would keep the collector running. It never lowers the
+// limit, and does nothing in a process TuneGCForCLI did not tune.
+func raiseMemoryLimit(n int) {
+	if !cliMemoryTuned.Load() {
+		return
+	}
+	want := int64(n) * cliMemoryPerByte
+	if want > debug.SetMemoryLimit(-1) {
+		debug.SetMemoryLimit(want)
 	}
 }
 
