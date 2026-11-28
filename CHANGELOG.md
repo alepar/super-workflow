@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Codex offers say what "agent thread limit reached" means (sw-zwao).**
+  Codex refuses `spawn_agent` with that text only while the session's
+  running children fill its thread cap. It evicts finished children by
+  itself and has no tool to close one. A child's Codex turn can run on after
+  its `done` frees the unit's place in the engine, so `next` can offer
+  before Codex has room. Each Codex offer of native spawns, including a
+  re-offer, now prints one line under its header: do not end the turn on
+  that refusal, run `next` again, and the unit comes back marked not started
+  yet. The line is guidance; the engine does not read the refusal. A new
+  optional adapter interface, `harness.SpawnNote`, carries it, and offer
+  sizing counts it. Other harnesses print nothing new.
+
+### Upgrading
+
+- No API break. A Codex coordinator's `next` output gains one line per
+  offer, so an offer near the output limit may carry one unit fewer. Tools
+  that match Codex offer text exactly see the new line after the header.
+
 ## v0.4.9
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

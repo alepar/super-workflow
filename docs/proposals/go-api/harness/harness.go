@@ -291,6 +291,14 @@ type ResumeNote interface {
 	ResumeNote() string
 }
 
+// SpawnNote supplies what a harness's own spawn refusal means and what the
+// coordinator does next. The engine prints it once, under the header of an
+// offer of native spawns. It is guidance: the engine never reads the
+// refusal.
+type SpawnNote interface {
+	SpawnNote() string
+}
+
 // registry is every known adapter in detection order: a process started
 // from another harness's shell inherits that harness's variables, so the
 // harness most likely to be the inner one comes first: Hermes, then pi
@@ -719,6 +727,15 @@ func (codex) AgentType() string { return "" }
 
 func (codex) SpawnLine(s Spawn) string {
 	return "spawn_agent(" + spawnArgs("message", s.Brief, "model", s.Model, "reasoning_effort", s.Effort) + `, fork_turns="none")`
+}
+
+// SpawnNote: Codex refuses a spawn with "agent thread limit reached" only
+// while its running children fill the session's cap; it evicts finished
+// ones by itself, and it has no tool to close one. A child's Codex turn can
+// run on after its done frees the unit's place in the engine, so the
+// engine can offer before Codex has room. The unit comes back unclaimed.
+func (codex) SpawnNote() string {
+	return `If spawn_agent answers "agent thread limit reached", Codex still counts one of your children as running, often one ending its turn after its done: do not end your turn on it. Run next again; each unit you could not start comes back, marked not started yet.`
 }
 
 // Generic is any harness without an adapter: it identifies nothing and

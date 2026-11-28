@@ -179,7 +179,12 @@ Start its child again each time. Where your harness records what a spawn
 printed, the offer shows the last lines of the earlier one, so you can see why
 the child did not start. If the same child fails to start repeatedly, say what
 its spawn printed and keep driving the run: the other units are still yours to
-start. Each of these offers waits for its evidence (a later offer's fetch, the 5
+start. On Codex, a spawn refused with "agent thread limit
+reached" means Codex still counts one of your children as running,
+often one ending its Codex turn after its `done` (Codex frees a finished
+child's place by itself): each Codex offer
+says so in one line under its header. Do not end your turn on it: run next
+again, and the unit comes back. Each of these offers waits for its evidence (a later offer's fetch, the 5
 minutes, or a whole wait), so `next` never returns one at once, over and over.
 Whichever child of the unit fetches
 first owns it; the other is told another child owns the unit and stops.

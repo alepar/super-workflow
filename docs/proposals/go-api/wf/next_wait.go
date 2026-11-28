@@ -357,6 +357,9 @@ func RenderNext(r NextResult, harnessName string, l func(verb string, args ...st
 			b.WriteString(NextStartAll + "\n")
 		}
 	}
+	if note := spawnNoteOf(a, r.Instructions); note != "" {
+		b.WriteString(note + "\n")
+	}
 	for _, in := range r.Instructions {
 		switch in.Kind {
 		case InstructionAgent:
@@ -484,6 +487,21 @@ func hasAgent(ins []Instruction) bool {
 		}
 	}
 	return false
+}
+
+// spawnNoteOf is a's note on its own spawn refusal, when ins offers a
+// native spawn (not a headless one), else "".
+func spawnNoteOf(a harness.Adapter, ins []Instruction) string {
+	n, ok := a.(harness.SpawnNote)
+	if !ok {
+		return ""
+	}
+	for _, in := range ins {
+		if in.Kind == InstructionAgent && in.Spawn == "" {
+			return n.SpawnNote()
+		}
+	}
+	return ""
 }
 
 // renderUnit is one unit as next prints it (I1): the offer, addressed to the

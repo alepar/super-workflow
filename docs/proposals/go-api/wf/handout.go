@@ -1339,6 +1339,11 @@ func (c *cycle) unitsThatFit(order []*instance, others []Instruction, co Coordin
 		lines += strings.Count(in.Prompt, "\n") + 6
 	}
 	a := harness.For(normalizeHarness(co.Harness))
+	if n, ok := a.(harness.SpawnNote); ok {
+		// Printed once under the offer's header (RenderNext).
+		bytes += len(n.SpawnNote()) + 1
+		lines++
+	}
 	over := func(bytes, lines int) bool {
 		return co.OutBytes > 0 && bytes > co.OutBytes || co.OutLines > 0 && lines > co.OutLines
 	}
