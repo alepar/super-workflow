@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.12
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.12`. GitHub installs use the plugin tag
+`plugin-v0.4.12`. This release caps a CLI process's heap softly: 1 GiB, raised
+to four times the journal it reads, unless GOMEMLIMIT is set. On a 217 MB
+journal a child verb peaks at about 1.2 GB instead of 3.5-4.3 GB. No API,
+journal format, hash or lock change.
 
 ### What changed
 
