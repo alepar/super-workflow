@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.4.19
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.19`. GitHub installs use the plugin tag
+`plugin-v0.4.19`. This release gives paths and revisions one type per form
+and has the git adapter check bound values before git reads them (sw-tagk),
+and stops reading instance ids, unit names and run ids back from text: a
+fork's successors form their own chain, and a foreign run at a chain id is
+refused (sw-5l5n). Journal shapes and definition hashes are unchanged. Read
+Upgrading.
 
 ### What changed
 
