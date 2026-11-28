@@ -467,6 +467,17 @@ refuses a `maxlen` that is not a positive whole number or that
 sits on a field of another type. A recursive type shows its caps only at its
 first level, though every level is checked.
 
+A field whose text has a format (an id, a word from a closed set) can be a
+`form.Of[G]`: a string that only `form.Parse[G]` makes, so it cannot be built
+by concatenation or recovered by splitting. G is a registered `form.Grammar`
+(`Name`, `Check`, `Samples`); `form.CheckMinted` and `form.Mint` give minted
+ids such as `F12`, `form.CheckWord` a vocabulary. Decoding a result validates
+the field, and the schema shows it as a string with the grammar's pattern or
+values and an example. An absent value is the zero `Of`; tag a field that may
+be absent `omitzero`. `formtest.CorpusTest(t)` runs every registered grammar
+against the hostile corpus. `StateView.OutputExample` is a filled example of
+an agent's result.
+
 Agent instructions allocate an absolute `output` JSON file under
 `<state-dir>/runs/<run>/out/`. The brief and prompt name that same file; write
 it, then run `done <run> <unit>` without `--output`. An optional `--output`

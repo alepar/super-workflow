@@ -42,6 +42,9 @@ docs/proposals/go-api/examples/tour/sim_test.go
 docs/proposals/go-api/examples/tournament/def.go
 docs/proposals/go-api/examples/typedexit/def.go
 docs/proposals/go-api/examples/unavailable/def.go
+docs/proposals/go-api/form/form.go
+docs/proposals/go-api/form/formtest/formtest.go
+docs/proposals/go-api/form/kinds.go
 docs/proposals/go-api/fsx/fsx.go
 docs/proposals/go-api/fsx/runtime.go
 docs/proposals/go-api/gh/gh.go

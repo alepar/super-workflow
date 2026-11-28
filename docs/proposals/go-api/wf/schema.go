@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/form"
 )
 
 // Output schema: the JSON schema of an agent's output type, derived by
@@ -13,8 +15,8 @@ import (
 //
 // Owns: the schema text an agent follows (object, properties, required, the
 // JSON primitive types, arrays, maps, enums of registered Enum-typed fields,
-// json tags, omitempty and the pattern tag of string fields) and the block's
-// wording.
+// json tags, omitempty and the pattern tag of string fields, form.Of values),
+// the block's wording, and the filled example of an output type.
 // Does not: validate submissions (Submit decodes into O and runs the checks;
 // a pattern tag is shown to the agent here and checked by validateAgentTags),
 // share a layer with fsx's schema-subset validator (a different direction), or
@@ -91,7 +93,22 @@ func (w *schemaWalk) enumValues(t reflect.Type) []any {
 var (
 	jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
 	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
+	formSchemaType    = reflect.TypeFor[formSchemer]()
 )
+
+// formSchemer is a form.Of value: text whose grammar states its schema.
+type formSchemer interface{ Schema() form.Schema }
+
+// formSchema returns the schema facts of a form.Of type or a pointer to one.
+func formSchema(t reflect.Type) (form.Schema, bool) {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if !t.Implements(formSchemaType) {
+		return form.Schema{}, false
+	}
+	return reflect.Zero(t).Interface().(formSchemer).Schema(), true
+}
 
 // ownEncoding reports a type whose Go shape says nothing about its wire shape.
 func ownEncoding(t reflect.Type) bool {
@@ -106,6 +123,19 @@ func ownEncoding(t reflect.Type) bool {
 func (w *schemaWalk) shape(t reflect.Type) map[string]any {
 	if t == reflect.TypeFor[RunPath]() {
 		return map[string]any{"type": "object", "properties": map[string]any{runPathMarker: map[string]any{"type": "string", "minLength": 1, "description": "Clean relative path inside RunDir; no absolute path or traversal."}}, "required": []string{runPathMarker}, "additionalProperties": false}
+	}
+	if fs, ok := formSchema(t); ok {
+		s := map[string]any{"type": "string"}
+		if fs.Pattern != "" {
+			s["pattern"] = fs.Pattern
+		}
+		if fs.Values != nil {
+			s["enum"] = fs.Values
+		}
+		if fs.Example != "" {
+			s["examples"] = []string{fs.Example}
+		}
+		return s
 	}
 	if ownEncoding(t) {
 		return map[string]any{}
@@ -175,4 +205,70 @@ func (w *schemaWalk) fields(t reflect.Type, props map[string]any, required *[]st
 			*required = append(*required, f.name)
 		}
 	}
+}
+
+// outputExample returns an indented JSON value of type t with every field
+// filled: a form.Of value with its grammar's example, an Enum-typed value
+// with its first value, a list and a map with one element, and an
+// optional field like a required one. A type with its own encoding is
+// null. Keys are sorted.
+func outputExample(t reflect.Type, enums []*enumData) string {
+	w := &schemaWalk{enums: enums, active: map[reflect.Type]bool{}}
+	b, err := json.MarshalIndent(w.example(t), "", "  ")
+	if err != nil {
+		panic("wf: marshalling an output example: " + err.Error()) // built from JSON values only
+	}
+	return string(b)
+}
+
+func (w *schemaWalk) example(t reflect.Type) any {
+	if t == reflect.TypeFor[RunPath]() {
+		return map[string]any{runPathMarker: "path/in/run-dir"}
+	}
+	if fs, ok := formSchema(t); ok {
+		return fs.Example
+	}
+	if vals := w.enumValues(t); len(vals) > 0 {
+		return vals[0]
+	}
+	if ownEncoding(t) {
+		return nil
+	}
+	switch t.Kind() {
+	case reflect.Pointer:
+		return w.example(t.Elem())
+	case reflect.String:
+		return "text"
+	case reflect.Bool:
+		return false
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return 0
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return ""
+		}
+		return []any{w.example(t.Elem())}
+	case reflect.Array:
+		return []any{w.example(t.Elem())}
+	case reflect.Map:
+		key := "key"
+		if fs, ok := formSchema(t.Key()); ok {
+			key = fs.Example
+		}
+		return map[string]any{key: w.example(t.Elem())}
+	case reflect.Struct:
+		if w.active[t] {
+			return nil
+		}
+		w.active[t] = true
+		defer delete(w.active, t)
+		out := map[string]any{}
+		for _, f := range jsonFields(t) {
+			out[f.name] = w.example(f.field.Type)
+		}
+		return out
+	}
+	return nil // interface: any JSON value
 }

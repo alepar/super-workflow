@@ -1,0 +1,664 @@
+# Parsing allowlist: the sites the parsing gate (parsing_allowlist_test.go)
+# permits. Tab-separated: kind, file, declaration, callee, count, reason.
+#   kind "call": a call that splits, cuts, prefix-tests, searches or
+#     pattern-matches text (strings, bytes, regexp, fmt.Sscan*).
+#   kind "conv": a conversion T(x) into a named string type outside the file
+#     that defines it (wf.RunID, wf.RunPath, bd.Status).
+#   declaration: the enclosing top-level function, Type.Method, or "-" for
+#     package-level variables.
+# A count may go down, never up without a reason a reviewer accepts: an
+# external tool's output parsed in its adapter is one; convenience is not.
+# Seeded 2026-11-27 from the parsing audit's engine inventory (sw-x7e1).
+# "seed, unclassified" marks a site not judged yet; a family tag (F1..F14,
+# H-A..H-I, adapter) names the audit family the site belongs to.
+call	bd/bd.go	ReadyIn	strings.Join	1	adapter: bd labels
+call	bd/config.go	configSensitive	strings.Cut	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	configWithoutRemotes	strings.Index	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	configWithoutRemotes	strings.Join	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	configWithoutRemotes	strings.Split	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	readConfig	bytes.TrimPrefix	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	readConfig	strings.Cut	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	readConfig	strings.HasPrefix	12	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	readConfig	strings.Index	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/config.go	readConfig	strings.Split	1	adapter: bd config reader (LF-only, audit BROKEN)
+call	bd/runtime.go	-	regexp.MustCompile	3	adapter: bd output
+call	bd/runtime.go	closeEligible	bytes.HasPrefix	1	adapter: bd output
+call	bd/runtime.go	closeEligible	strings.HasPrefix	1	adapter: bd output
+call	bd/runtime.go	cutToken	strings.Index	1	adapter: bd output
+call	bd/runtime.go	diagnostic	strings.HasPrefix	1	adapter: bd output
+call	bd/runtime.go	diagnostic	strings.Join	1	adapter: bd output
+call	bd/runtime.go	diagnostic	strings.Split	1	adapter: bd output
+call	bd/runtime.go	hasReason	strings.Split	2	adapter: bd output
+call	bd/runtime.go	labelList	strings.Split	1	adapter: bd output
+call	bd/runtime.go	runtime.run	strings.Cut	1	adapter: bd output
+call	bd/runtime.go	runtime.run	strings.Join	2	adapter: bd output
+call	bd/runtime.go	runtime.supersedeState	strings.HasPrefix	1	adapter: bd output
+call	bd/runtime.go	wordByte	strings.IndexByte	1	adapter: bd output
+call	bd/snapshot.go	-	regexp.MustCompile	2	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	envStorageOverride	bytes.TrimPrefix	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	envStorageOverride	strings.CutPrefix	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	envStorageOverride	strings.HasPrefix	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	envStorageOverride	strings.IndexAny	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	envStorageOverride	strings.Split	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	nativeGateFile	strings.HasSuffix	2	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	snapshotEnvironment	strings.Cut	1	adapter: bd config/.env reader (audit BROKEN)
+call	bd/snapshot.go	stripRemotes	strings.TrimSuffix	1	adapter: bd config/.env reader (audit BROKEN)
+call	examples/feature/contracts.go	-	regexp.MustCompile	1	seed, unclassified
+call	examples/feature/contracts.go	checkPlan	strings.HasPrefix	2	seed, unclassified
+call	examples/feature/contracts.go	goalTestStaysExternal	strings.Split	1	seed, unclassified
+call	examples/feature/contracts.go	requirements	strings.Split	1	seed, unclassified
+call	fsx/runtime.go	pointer	strings.HasPrefix	1	seed, unclassified
+call	fsx/runtime.go	pointer	strings.Split	1	seed, unclassified
+call	fsx/runtime.go	validate	strings.Join	1	seed, unclassified
+call	gh/runtime.go	pluginEndpoint	strings.Cut	1	adapter: gh; F4 marker search
+call	gh/runtime.go	repoComponent	strings.IndexFunc	1	adapter: gh; F4 marker search
+call	gh/runtime.go	runtime.Apply	strings.LastIndex	1	adapter: gh; F4 marker search
+call	gh/runtime.go	runtime.run	strings.Join	1	adapter: gh; F4 marker search
+call	git/headcheck.go	-	regexp.MustCompile	1	seed, unclassified
+call	git/runtime.go	mergeCommitErr	strings.HasPrefix	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.Check	strings.Split	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.RelocateWorkspace	strings.CutPrefix	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.RelocateWorkspace	strings.HasPrefix	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.git	strings.Join	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.status	strings.Split	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.worktrees	strings.Cut	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.worktrees	strings.Split	2	adapter: git argv and porcelain
+call	git/runtime.go	runtime.worktrees	strings.TrimPrefix	1	adapter: git argv and porcelain
+call	git/snapshot.go	runtime.Restore	strings.Cut	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Restore	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Restore	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Snapshot	strings.Cut	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Snapshot	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Snapshot	strings.Join	1	adapter: git snapshot
+call	git/snapshot.go	runtime.Snapshot	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	runtime.SnapshotPreflight	strings.Cut	1	adapter: git snapshot
+call	git/snapshot.go	runtime.SnapshotPreflight	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.SnapshotPreflight	strings.Split	4	adapter: git snapshot
+call	git/snapshot.go	runtime.SnapshotPreflight	strings.TrimSuffix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.restoreIncluded	strings.Cut	1	adapter: git snapshot
+call	git/snapshot.go	runtime.restoreIncluded	strings.Fields	1	adapter: git snapshot
+call	git/snapshot.go	runtime.restoreIncluded	strings.TrimSuffix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.snapshotGit	strings.Join	1	adapter: git snapshot
+call	git/snapshot.go	runtime.snapshotLocalConfig	strings.TrimSuffix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.snapshotTool	strings.Cut	1	adapter: git snapshot
+call	git/snapshot.go	runtime.snapshotTool	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	runtime.wipFiles	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	runtime.wipFiles	strings.TrimSuffix	1	adapter: git snapshot
+call	git/snapshot.go	snapshotBelow	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	snapshotIncludablePath	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	snapshotIncludablePath	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	snapshotObjectSkip	strings.HasPrefix	1	adapter: git snapshot
+call	git/snapshot.go	snapshotObjectSkip	strings.HasSuffix	2	adapter: git snapshot
+call	git/snapshot.go	snapshotRealParents	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	snapshotRefName	strings.HasPrefix	4	adapter: git snapshot
+call	git/snapshot.go	snapshotRefName	strings.HasSuffix	3	adapter: git snapshot
+call	git/snapshot.go	snapshotRefName	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	snapshotTreePath	strings.Split	1	adapter: git snapshot
+call	git/snapshot.go	writeIncluded	strings.Split	1	adapter: git snapshot
+call	git/writable.go	probeGit	strings.Join	2	seed, unclassified
+call	git/writable.go	probeUnset	strings.Cut	1	seed, unclassified
+call	git/writable.go	probeUnset	strings.HasPrefix	2	seed, unclassified
+call	harness/agy.go	agy.CheckModel	strings.Join	1	seed, unclassified
+call	harness/agy.go	agyJSON	strings.TrimSuffix	1	seed, unclassified
+call	harness/agy_transcript.go	-	regexp.MustCompile	2	H-G transcript reader
+call	harness/agy_transcript.go	agyStep.createdChild	strings.Index	1	H-G transcript reader
+call	harness/agy_transcript.go	agyWrapper	strings.CutPrefix	1	H-G transcript reader
+call	harness/agy_transcript.go	agyWrapper	strings.HasSuffix	1	H-G transcript reader
+call	harness/agytest/agytest.go	Tree.nextIndex	bytes.Split	1	seed, unclassified
+call	harness/agytest/agytest.go	Tree.spawnCall	strings.Cut	1	seed, unclassified
+call	harness/exec_claim.go	-	regexp.MustCompile	1	H-D literal shell reader
+call	harness/exec_claim.go	codexExecArgv	strings.Join	3	H-D literal shell reader
+call	harness/exec_claim.go	codexExecArgv	strings.TrimSuffix	1	H-D literal shell reader
+call	harness/exec_claim.go	execBatch	strings.Join	1	H-D literal shell reader
+call	harness/exec_claim.go	execCall	strings.HasPrefix	3	H-D literal shell reader
+call	harness/exec_claim.go	execCall	strings.HasSuffix	2	H-D literal shell reader
+call	harness/exec_claim.go	execCall	strings.Join	2	H-D literal shell reader
+call	harness/exec_claim.go	init	strings.Fields	1	H-D literal shell reader
+call	harness/fanout.go	coordinatorChildVerb	strings.Cut	1	seed, unclassified
+call	harness/fanout.go	coordinatorChildVerb	strings.HasPrefix	1	seed, unclassified
+call	harness/harness.go	-	regexp.MustCompile	9	H-C/H-G log regexes
+call	harness/harness.go	claude.Resolve	strings.TrimPrefix	1	H-A..H-I harness readers
+call	harness/harness.go	claude.Resolve	strings.TrimSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	codex.Tail	strings.Join	1	H-A..H-I harness readers
+call	harness/harness.go	collapseSpace	strings.Fields	1	H-A..H-I harness readers
+call	harness/harness.go	collapseSpace	strings.Join	1	H-A..H-I harness readers
+call	harness/harness.go	containsPath	strings.HasSuffix	2	H-A..H-I harness readers
+call	harness/harness.go	containsPath	strings.Index	1	H-A..H-I harness readers
+call	harness/harness.go	hermes.ReadAny	strings.HasPrefix	1	H-A..H-I harness readers
+call	harness/harness.go	hermes.ReadAny	strings.TrimSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	hermes.Resolve	strings.TrimSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	hermesNamesClaim	bytes.HasPrefix	2	H-A..H-I harness readers
+call	harness/harness.go	hermesNamesClaim	bytes.Split	1	H-A..H-I harness readers
+call	harness/harness.go	hermesPreview	strings.HasPrefix	1	H-A..H-I harness readers
+call	harness/harness.go	hermesPreview	strings.HasSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	hermesPreview	strings.LastIndex	1	H-A..H-I harness readers
+call	harness/harness.go	jsonText	strings.TrimSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	namesIn	strings.HasPrefix	1	H-A..H-I harness readers
+call	harness/harness.go	numberLines	strings.Join	1	H-A..H-I harness readers
+call	harness/harness.go	numberLines	strings.Split	1	H-A..H-I harness readers
+call	harness/harness.go	numberLines	strings.TrimSuffix	1	H-A..H-I harness readers
+call	harness/harness.go	oneLineCut	strings.Fields	1	H-A..H-I harness readers
+call	harness/harness.go	oneLineCut	strings.Join	1	H-A..H-I harness readers
+call	harness/harness.go	spawnArgs	strings.Join	1	H-A..H-I harness readers
+call	harness/harness.go	tailLines	bytes.Split	1	H-A..H-I harness readers
+call	harness/harness.go	tomlMaxThreads	fmt.Sscanf	1	H-I config scalar, line-based TOML
+call	harness/harness.go	tomlMaxThreads	strings.Cut	1	H-I config scalar, line-based TOML
+call	harness/harness.go	tomlMaxThreads	strings.HasPrefix	1	H-I config scalar, line-based TOML
+call	harness/harness.go	tomlMaxThreads	strings.HasSuffix	1	H-I config scalar, line-based TOML
+call	harness/harness.go	tomlMaxThreads	strings.IndexByte	1	H-I config scalar, line-based TOML
+call	harness/harness.go	tomlMaxThreads	strings.Split	1	H-I config scalar, line-based TOML
+call	harness/headless.go	ScrubbedEnv	strings.Cut	1	H-E headless launch rules
+call	harness/headless.go	ScrubbedEnv	strings.CutSuffix	1	H-E headless launch rules
+call	harness/headless.go	ScrubbedEnv	strings.HasPrefix	1	H-E headless launch rules
+call	harness/headless.go	parentSession	strings.Cut	1	H-E headless launch rules
+call	harness/pi.go	-	regexp.MustCompile	3	H-B pi launch line parser
+call	harness/pi.go	pi.Tail	strings.Cut	1	H-B pi launch line parser
+call	harness/pi.go	piBriefProblem	strings.HasPrefix	1	H-B pi launch line parser
+call	harness/pi.go	piBriefProblem	strings.IndexAny	1	H-B pi launch line parser
+call	harness/pi.go	piBriefProblem	strings.Split	1	H-B pi launch line parser
+call	harness/pi.go	piCd	strings.HasPrefix	1	H-B pi launch line parser
+call	harness/pi.go	piChildLive	strings.Split	1	H-B pi launch line parser
+call	harness/pi.go	piCouldBeOurs	strings.CutPrefix	1	H-B pi launch line parser
+call	harness/pi.go	piCouldBeOurs	strings.Split	1	H-B pi launch line parser
+call	harness/pi.go	piLaunch	strings.Cut	2	H-B pi launch line parser
+call	harness/pi.go	piLaunch	strings.CutSuffix	1	H-B pi launch line parser
+call	harness/pi.go	piLaunch	strings.TrimSuffix	1	H-B pi launch line parser
+call	harness/pi.go	piLaunchedCmdline	strings.Split	1	H-B pi launch line parser
+call	harness/pi.go	piLaunches	strings.Cut	1	H-B pi launch line parser
+call	harness/pi.go	piRoot	strings.HasPrefix	1	H-B pi launch line parser
+call	harness/pi.go	piShellTokens	strings.IndexByte	3	H-B pi launch line parser
+call	shell/detached.go	deathReason	strings.Cut	2	adapter: detached runner argv
+call	shell/detached.go	deathReason	strings.LastIndex	1	adapter: detached runner argv
+call	shell/detached.go	detachModeOf	strings.CutPrefix	1	adapter: detached runner argv
+call	shell/detached.go	detachModeOf	strings.Fields	1	adapter: detached runner argv
+call	shell/detached.go	detachModeOf	strings.Split	1	adapter: detached runner argv
+call	shell/detached.go	detached.startForked	fmt.Sscan	1	adapter: detached runner argv
+call	shell/detached.go	detached.startSystemd	strings.Cut	2	adapter: detached runner argv
+call	shell/detached.go	nestedPidNS	strings.CutPrefix	1	adapter: detached runner argv
+call	shell/detached.go	nestedPidNS	strings.Fields	1	adapter: detached runner argv
+call	shell/detached.go	nestedPidNS	strings.Split	1	adapter: detached runner argv
+call	shell/detached.go	systemdAnswer	strings.Cut	1	adapter: detached runner argv
+call	shell/detached.go	unitName	strings.TrimSuffix	1	adapter: detached runner argv
+call	shell/procstat_linux.go	procStat	bytes.LastIndexByte	1	F12 /proc stat
+call	shell/procstat_linux.go	procStat	strings.Fields	1	F12 /proc stat
+call	shell/runtime.go	commandEnv	strings.Cut	1	seed, unclassified
+call	wf/adapters.go	Adapters.Register	strings.Cut	1	F14 op names
+call	wf/adapters.go	RunTool	strings.Cut	1	F14 op names
+call	wf/adapters.go	RunTool	strings.Join	2	F14 op names
+call	wf/adopt_bindings.go	cycle.adoptBindingProblems	strings.Join	3	F14 dotted lookup
+call	wf/adopt_bindings.go	scope.adoptionBuiltinOrParam	strings.HasPrefix	1	F14 dotted lookup
+call	wf/adopt_bindings.go	typeProducesBinding	strings.Split	1	F14 dotted lookup
+call	wf/artifact_alloc.go	cycle.artifactDir	strings.TrimPrefix	1	seed, unclassified
+call	wf/assets.go	-	regexp.MustCompile	1	F5/F14 asset references
+call	wf/assets.go	Def.lintServedAssetRoots	strings.Join	1	F5/F14 asset references
+call	wf/assets.go	assetRefs	strings.Cut	2	F5/F14 asset references
+call	wf/assets.go	assetRefs	strings.HasPrefix	2	F5/F14 asset references
+call	wf/assets.go	assetRefs	strings.TrimPrefix	1	F5/F14 asset references
+call	wf/assets_resolve.go	selectRun	strings.Join	1	seed, unclassified
+call	wf/bootstrap.go	wfLine	strings.Join	1	seed, unclassified
+call	wf/breakpoint.go	RunStartedData.renameBreakpoints	strings.TrimPrefix	1	F6 qualified state paths
+call	wf/breakpoint.go	renameBreakpoint	strings.LastIndex	1	F6 qualified state paths
+call	wf/breakpoint.go	resolveBreakpoints	strings.HasPrefix	1	F6 qualified state paths
+call	wf/breakpoint.go	resolveBreakpoints	strings.Join	1	F6 qualified state paths
+call	wf/breakpoint.go	resolveBreakpoints	strings.TrimPrefix	1	F6 qualified state paths
+call	wf/budget.go	Budget.String	strings.Join	1	seed, unclassified
+call	wf/budget_change.go	ParseBudget	strings.Cut	1	F8 CLI flag value, one parser
+call	wf/budget_change.go	ParseBudget	strings.SplitSeq	1	F8 CLI flag value, one parser
+call	wf/budget_change.go	RunBudget.String	strings.Join	1	seed, unclassified
+call	wf/build_stamp.go	BuildStamp.Exact	strings.Join	1	seed, unclassified
+call	wf/build_stamp.go	BuildStamp.differs	strings.Join	1	seed, unclassified
+call	wf/build_stamp.go	ModuleStamp.String	strings.Join	1	seed, unclassified
+call	wf/child_log.go	errLogExcerpt	strings.Split	1	F11 relative paths
+call	wf/child_log.go	errLogPathOK	strings.HasPrefix	1	F11 relative paths
+call	wf/child_log.go	errLogTail	bytes.IndexByte	1	F11 relative paths
+call	wf/child_log.go	makeChildLogDir	strings.HasPrefix	1	F11 relative paths
+call	wf/child_log.go	makeChildLogDir	strings.Split	1	F11 relative paths
+call	wf/cli_identity.go	callerEnv	strings.Cut	1	seed, unclassified
+call	wf/cli_identity.go	mismatchNoSession	strings.Join	1	seed, unclassified
+call	wf/cli_identity.go	mismatchOtherHarness	strings.Join	1	seed, unclassified
+call	wf/codex_project.go	-	regexp.MustCompile	2	F12 line-based TOML reader
+call	wf/codex_project.go	mainCheckout	strings.CutPrefix	1	F12 line-based TOML reader
+call	wf/codex_project.go	trustedProjects	strings.HasPrefix	1	F12 line-based TOML reader
+call	wf/codex_project.go	trustedProjects	strings.Split	1	F12 line-based TOML reader
+call	wf/codex_project.go	unquoteTOMLKey	strings.HasPrefix	1	F12 line-based TOML reader
+call	wf/coordinator_stop_native.go	-	regexp.MustCompile	1	seed, unclassified
+call	wf/coordinator_stop_native.go	coordinatorHookWithin	strings.HasPrefix	1	seed, unclassified
+call	wf/coordinator_stop_native.go	installCoordinatorStop	strings.Join	1	seed, unclassified
+call	wf/coordinator_turn_binding.go	cli.nativeTurnResult	strings.Join	1	seed, unclassified
+call	wf/dead_ends.go	FormatDeadEnds	strings.Join	2	seed, unclassified
+call	wf/dead_ends.go	deadEndsCommand	strings.HasPrefix	1	seed, unclassified
+call	wf/dead_ends.go	variantFlags.Set	strings.Cut	1	seed, unclassified
+call	wf/dispatch.go	DispatchHints.String	strings.Join	1	seed, unclassified
+call	wf/dispatch.go	familyProblem	strings.Join	1	seed, unclassified
+call	wf/dispatch.go	lintDispatch	strings.Join	1	seed, unclassified
+call	wf/effect_template.go	PathText	strings.TrimPrefix	1	F4 effect key template
+call	wf/effects.go	KeyOf	strings.Join	1	F4 effect key join, unescaped
+call	wf/engine.go	NewEngine	strings.Join	1	seed, unclassified
+call	wf/engine.go	cycle.noteExhausted	strings.Join	1	seed, unclassified
+call	wf/engine_agent.go	agentOps.decide	strings.Join	2	seed, unclassified
+call	wf/engine_agent.go	agentOps.render	strings.Cut	1	seed, unclassified
+call	wf/engine_agent.go	agentOps.render	strings.TrimPrefix	1	seed, unclassified
+call	wf/engine_agent.go	attemptNote	strings.Join	2	seed, unclassified
+call	wf/engine_bind.go	-	regexp.MustCompile	5	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	bracketBound	strings.CutPrefix	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	fenceLine	strings.TrimSuffix	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	openFence	strings.IndexByte	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	openFence	strings.LastIndexByte	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	promptText.closeWidened	strings.IndexByte	2	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	scope.bindArgv	strings.HasPrefix	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	scope.bindValueMode	strings.HasPrefix	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	scope.lookup	strings.CutPrefix	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	scope.lookup	strings.Join	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	substitute	strings.LastIndexAny	1	F14 template placeholders, dotted lookup
+call	wf/engine_bind.go	walkDoc	strings.Split	1	F14 template placeholders, dotted lookup
+call	wf/engine_cause.go	cycle.countsLine	strings.Cut	1	display
+call	wf/engine_cause.go	cycle.deciding	strings.Cut	1	display
+call	wf/engine_cause.go	cycle.deciding	strings.Join	1	display
+call	wf/engine_cause.go	cycle.instanceName	strings.Join	1	display
+call	wf/engine_children.go	cycle.ranAUnit	strings.HasPrefix	1	F1 instance ids
+call	wf/engine_children.go	globSegs	strings.Split	1	F1 instance ids
+call	wf/engine_children.go	mapOps.execute	strings.Join	1	F1 instance ids
+call	wf/engine_cleanup.go	cycle.worktreeRemovalBlocked	strings.HasPrefix	1	seed, unclassified
+call	wf/engine_command.go	commandOps.execute	strings.Join	1	seed, unclassified
+call	wf/engine_command.go	inlineProgress	strings.Join	1	seed, unclassified
+call	wf/engine_command.go	lastLine	strings.Split	1	seed, unclassified
+call	wf/engine_command.go	preflightDegraded	strings.HasPrefix	1	seed, unclassified
+call	wf/engine_effects.go	cycle.declaredOutside	strings.HasPrefix	1	F4 effect keys
+call	wf/engine_effects.go	cycle.declaredOutside	strings.HasSuffix	1	F4 effect keys
+call	wf/engine_gates.go	cycle.reservedCoordinatorInstruction	strings.HasSuffix	3	seed, unclassified
+call	wf/engine_gates.go	cycle.reservedCoordinatorInstruction	strings.Join	2	seed, unclassified
+call	wf/engine_gates.go	failureWhy	strings.Join	1	seed, unclassified
+call	wf/engine_gates.go	gateOps.present	strings.Join	1	seed, unclassified
+call	wf/engine_migrate.go	cycle.adoptWith	strings.Join	6	F9 shape map
+call	wf/engine_migrate.go	cycle.adoptWith	strings.LastIndex	1	F9 shape map
+call	wf/engine_migrate.go	cycle.legacyRenames	strings.Join	3	F9 shape map
+call	wf/engine_migrate.go	cycle.migrateAdopting	strings.Join	1	F9 shape map
+call	wf/engine_migrate.go	defShape	strings.Join	1	F9 shape map
+call	wf/engine_migrate.go	legacyRefusal	strings.Join	1	F9 shape map
+call	wf/engine_migrate.go	legacyRefusal	strings.LastIndex	1	F9 shape map
+call	wf/engine_migrate.go	typeShape	strings.Join	1	F9 shape map
+call	wf/engine_rewind.go	diedAt	strings.Join	1	seed, unclassified
+call	wf/engine_snapshot.go	Adapters.snapshotAdapters	strings.Cut	1	F14 op names; snapshots
+call	wf/engine_snapshot.go	Engine.forkPreflight	strings.HasPrefix	1	F14 op names; snapshots
+call	wf/engine_snapshot.go	Engine.forkSnapshot	strings.HasPrefix	1	F14 op names; snapshots
+call	wf/engine_snapshot.go	digestLine	strings.Join	1	F14 op names; snapshots
+call	wf/engine_snapshot.go	snapshotRelative	strings.HasPrefix	1	F14 op names; snapshots
+call	wf/engine_snapshot.go	storeMount.PutDir	strings.HasPrefix	1	F14 op names; snapshots
+call	wf/engine_state.go	instance.failed	strings.Join	2	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	instance.rename	strings.Cut	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	instance.statusReason	strings.Join	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	runState.apply	strings.HasPrefix	2	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	runState.qualified	strings.Join	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	runState.renamesFor	strings.CutPrefix	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	runState.renamesFor	strings.Join	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_state.go	runState.renamesFor	strings.LastIndex	1	F6/F9 qualified states, journal sub-structure
+call	wf/engine_status.go	cycle.firstAgentClass	strings.Join	1	seed, unclassified
+call	wf/engine_status.go	cycle.futureSteps	strings.Join	1	seed, unclassified
+call	wf/engine_status.go	cycle.statusUnits	strings.TrimPrefix	1	seed, unclassified
+call	wf/engine_status.go	cycle.unconditionalAgents	strings.Join	1	seed, unclassified
+call	wf/engine_unit.go	unitPath	strings.HasSuffix	1	F1 instance id parsed back (no decoder)
+call	wf/engine_unit.go	unitPath	strings.Index	1	F1 instance id parsed back (no decoder)
+call	wf/engine_unit.go	unitPath	strings.Join	1	F1 instance id parsed back (no decoder)
+call	wf/engine_unit.go	unitPath	strings.LastIndex	1	F1 instance id parsed back (no decoder)
+call	wf/engine_unit.go	unitPath	strings.Split	1	F1 instance id parsed back (no decoder)
+call	wf/engine_verbs.go	Engine.ChildVerbCheck	strings.Join	1	seed, unclassified
+call	wf/enum_json.go	validateEnumJSON	strings.Cut	1	seed, unclassified
+call	wf/enum_validation.go	embeddedEnums	strings.Cut	1	seed, unclassified
+call	wf/enum_validation.go	validateEnumValue	strings.Join	1	seed, unclassified
+call	wf/event.go	Event.Line	strings.Join	1	seed, unclassified
+call	wf/event.go	cycle.qualifiedState	strings.Join	1	seed, unclassified
+call	wf/family.go	qualifiedHarness	strings.Cut	1	F8 model-map keys
+call	wf/fanout_plan.go	Engine.PlanFanout	strings.Join	1	seed, unclassified
+call	wf/fanout_plan.go	Engine.checkFanoutSnapshot	strings.HasPrefix	1	seed, unclassified
+call	wf/fanout_plan.go	selectFanout	strings.Split	1	seed, unclassified
+call	wf/fanout_run.go	fanoutEnvironment	strings.Cut	1	seed, unclassified
+call	wf/fanout_run.go	fanoutEnvironment	strings.HasPrefix	5	seed, unclassified
+call	wf/fork_rebase.go	markedSegments	strings.Index	1	F11 substring root detection
+call	wf/fork_rebase.go	markedSegments	strings.IndexFunc	1	F11 substring root detection
+call	wf/handout.go	BriefCommand	strings.Cut	2	F7 brief
+call	wf/handout.go	BriefCommand	strings.CutPrefix	1	F7 brief
+call	wf/handout.go	BriefCommand	strings.CutSuffix	1	F7 brief
+call	wf/handout.go	BriefCommand	strings.HasPrefix	2	F7 brief
+call	wf/handout.go	cycle.legacyOutputPath	strings.Split	1	F7 brief
+call	wf/handout.go	cycle.segmentModelsNote	strings.Join	1	F7 brief
+call	wf/handout.go	relistEvidence	strings.Join	1	F7 brief
+call	wf/harness_defaults.go	checkEfforts	strings.HasSuffix	1	F8 model-map keys
+call	wf/harness_defaults.go	checkEfforts	strings.Join	1	F8 model-map keys
+call	wf/harness_defaults.go	checkModelMap	strings.CutSuffix	2	F8 model-map keys
+call	wf/harness_defaults.go	checkModelMap	strings.Join	2	F8 model-map keys
+call	wf/harness_defaults.go	checkModelValues	strings.HasSuffix	1	F8 model-map keys
+call	wf/harness_defaults.go	unresolvedTiersNote	strings.Join	2	F8 model-map keys
+call	wf/harvest.go	-	regexp.MustCompile	1	F11 run dir recovered from paths
+call	wf/harvest.go	Harvest	strings.HasPrefix	1	F11 run dir recovered from paths
+call	wf/harvest.go	LoadCorpus	strings.HasSuffix	1	F11 run dir recovered from paths
+call	wf/harvest.go	allocationRunDir	strings.Cut	1	F11 run dir recovered from paths
+call	wf/harvest.go	allocationRunDir	strings.LastIndex	1	F11 run dir recovered from paths
+call	wf/harvest.go	harvestRunDir	strings.LastIndex	1	F11 run dir recovered from paths
+call	wf/headless_live.go	errTailText	strings.Join	1	seed, unclassified
+call	wf/headless_proc_linux.go	groupMembers	strings.Fields	1	F12 /proc stat
+call	wf/headless_proc_linux.go	groupMembers	strings.LastIndexByte	1	F12 /proc stat
+call	wf/headless_proc_linux.go	procLive	strings.Fields	1	F12 /proc stat
+call	wf/headless_proc_linux.go	procLive	strings.LastIndexByte	1	F12 /proc stat
+call	wf/headless_proc_linux.go	procStart	strings.Fields	1	F12 /proc stat
+call	wf/headless_proc_linux.go	procStart	strings.LastIndexByte	1	F12 /proc stat
+call	wf/inspect.go	encodeArg	strings.Join	3	display (audit: skimmed)
+call	wf/journal.go	hasControlByte	strings.IndexFunc	1	seed, unclassified
+call	wf/journal_file.go	halve	strings.TrimSuffix	1	F12 /proc and lock files
+call	wf/journal_file.go	hostPid	strings.Fields	1	F12 /proc and lock files
+call	wf/journal_file.go	hostPid	strings.Split	1	F12 /proc and lock files
+call	wf/journal_file.go	lockTableHolder	strings.Fields	1	F12 /proc and lock files
+call	wf/journal_file.go	lockTableHolder	strings.Split	1	F12 /proc and lock files
+call	wf/journal_file.go	markReleased	bytes.Cut	1	F12 /proc and lock files
+call	wf/journal_file.go	parseCommitted	bytes.IndexByte	1	F12 /proc and lock files
+call	wf/journal_file.go	pidHoldsFlock	strings.Fields	1	F12 /proc and lock files
+call	wf/journal_file.go	pidHoldsFlock	strings.HasPrefix	1	F12 /proc and lock files
+call	wf/journal_file.go	pidHoldsFlock	strings.Split	1	F12 /proc and lock files
+call	wf/journal_file.go	pidHoldsFlock	strings.TrimPrefix	1	F12 /proc and lock files
+call	wf/journal_file.go	pidNamespace	fmt.Sscanf	1	F12 /proc and lock files
+call	wf/journal_file.go	readHolder	bytes.Cut	1	F12 /proc and lock files
+call	wf/journal_roots.go	mapPathField	strings.HasPrefix	1	journal root tokens (safe)
+call	wf/journal_roots.go	replaceRoot	strings.HasPrefix	1	journal root tokens (safe)
+call	wf/journal_roots.go	replaceRoot	strings.TrimPrefix	1	journal root tokens (safe)
+call	wf/journal_roots.go	replaceRoot	strings.TrimSuffix	2	journal root tokens (safe)
+call	wf/json_fields.go	jsonFields	strings.Cut	1	seed, unclassified
+call	wf/lint.go	lintDefInScope	strings.CutPrefix	1	lint of author names
+call	wf/lint.go	routeTo	strings.Join	1	lint of author names
+call	wf/lint.go	ruleSubRecursive	strings.Join	1	lint of author names
+call	wf/lint_exec.go	ruleExecArgv	strings.HasPrefix	1	F14 dotted lookup
+call	wf/lint_exec.go	ruleExecArgv	strings.Join	1	F14 dotted lookup
+call	wf/lint_exec.go	ruleExecArgv	strings.Split	1	F14 dotted lookup
+call	wf/lint_loud.go	typeBinds	strings.Split	1	seed, unclassified
+call	wf/lint_output_path.go	ruleAgentOutputPath	strings.HasPrefix	1	seed, unclassified
+call	wf/lint_sound.go	-	regexp.MustCompile	1	F14 author-script shell lexer
+call	wf/lint_sound.go	bdWrites	strings.HasPrefix	2	F14 author-script shell lexer
+call	wf/lint_sound.go	bdWrites	strings.HasSuffix	1	F14 author-script shell lexer
+call	wf/lint_sound.go	scriptCommands	strings.HasPrefix	1	F14 author-script shell lexer
+call	wf/lint_sound.go	scriptCommands	strings.IndexByte	2	F14 author-script shell lexer
+call	wf/lint_sound.go	soundGraph.names	strings.Join	1	F14 author-script shell lexer
+call	wf/main_headless.go	cli.codexRuleCheck	strings.Join	2	F7 headless spawn rules
+call	wf/main_headless.go	cli.codexRuleCheck	strings.SplitN	1	F7 headless spawn rules
+call	wf/main_headless.go	cli.headlessCheck	strings.Cut	1	F7 headless spawn rules
+call	wf/main_headless.go	cli.headlessCheck	strings.Join	1	F7 headless spawn rules
+call	wf/main_headless.go	cli.setupCodexRules	strings.Split	1	F7 headless spawn rules
+call	wf/main_headless.go	cli.setupCodexRules	strings.SplitN	1	F7 headless spawn rules
+call	wf/main_headless.go	defineHeadlessFlags	strings.Cut	2	F7 headless spawn rules
+call	wf/main_headless.go	defineHeadlessFlags	strings.Join	2	F7 headless spawn rules
+call	wf/main_manufacture.go	cli.manufacture	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	cli.manufactureStart	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	cli.manufactureSummary	strings.Join	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	confineCopy	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	gitConfigSafe	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	gitConfigSafe	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	gitConfigSafe	strings.LastIndex	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	localRemote	strings.CutPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	localRemote	strings.Index	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	relinkGitFile	strings.CutPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	sanitizeRepository	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	sanitizeRepository	strings.HasPrefix	3	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	sanitizeRepository	strings.HasSuffix	2	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	sanitizeRepository	strings.Split	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	sanitizeRepository	strings.TrimSuffix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_manufacture.go	scriptFlags.String	strings.Join	1	dev synthetic-run tool (audit: skimmed)
+call	wf/main_params.go	Registration.resolveParams	strings.HasPrefix	1	seed, unclassified
+call	wf/main_params.go	Registration.resolveParams	strings.Join	1	seed, unclassified
+call	wf/main_params.go	Registration.shape	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	-	strings.Split	1	seed, unclassified
+call	wf/main_run.go	ParseModelMap	strings.Cut	1	F8 CLI flag value
+call	wf/main_run.go	ParseModelMap	strings.Split	1	F8 CLI flag value
+call	wf/main_run.go	applyStateEnv	strings.Cut	1	F8 state env file
+call	wf/main_run.go	applyStateEnv	strings.CutPrefix	1	F8 state env file
+call	wf/main_run.go	applyStateEnv	strings.Split	1	F8 state env file
+call	wf/main_run.go	chainBase	strings.LastIndex	1	F3 run id successor parse
+call	wf/main_run.go	cli.bootstrap	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	cli.busy	strings.Join	2	seed, unclassified
+call	wf/main_run.go	cli.busy	strings.TrimPrefix	1	seed, unclassified
+call	wf/main_run.go	cli.drive	strings.HasPrefix	3	seed, unclassified
+call	wf/main_run.go	cli.drive	strings.HasSuffix	1	seed, unclassified
+call	wf/main_run.go	cli.drive	strings.TrimSuffix	1	seed, unclassified
+call	wf/main_run.go	cli.engine	strings.Join	4	seed, unclassified
+call	wf/main_run.go	cli.escalations	strings.Cut	1	seed, unclassified
+call	wf/main_run.go	cli.escalations	strings.LastIndex	1	seed, unclassified
+call	wf/main_run.go	cli.fromError	strings.TrimPrefix	3	seed, unclassified
+call	wf/main_run.go	cli.recordedPromptClaim	strings.HasPrefix	2	seed, unclassified
+call	wf/main_run.go	cli.resolveRun	strings.Join	1	seed, unclassified
+call	wf/main_run.go	cli.result	strings.Join	2	seed, unclassified
+call	wf/main_run.go	cli.splitCommon	strings.Cut	1	seed, unclassified
+call	wf/main_run.go	cli.splitCommon	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	cli.splitCommon	strings.TrimPrefix	1	seed, unclassified
+call	wf/main_run.go	cli.start	strings.Cut	2	seed, unclassified
+call	wf/main_run.go	cli.start	strings.TrimPrefix	2	seed, unclassified
+call	wf/main_run.go	cli.validated	strings.Join	1	seed, unclassified
+call	wf/main_run.go	cli.verbHelp	strings.TrimSuffix	1	seed, unclassified
+call	wf/main_run.go	cli.wfVerb	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	cli.wfVerb	strings.Join	1	seed, unclassified
+call	wf/main_run.go	lineArg	strings.Cut	1	seed, unclassified
+call	wf/main_run.go	multiFlag.String	strings.Join	1	seed, unclassified
+call	wf/main_run.go	multiVerbLine	strings.Join	1	seed, unclassified
+call	wf/main_run.go	namedCLI	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	parseDelegations	strings.Cut	1	seed, unclassified
+call	wf/main_run.go	parseUsage	strings.CutPrefix	1	F8 CLI flag value
+call	wf/main_run.go	unfenced	bytes.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	unfenced	bytes.Join	1	seed, unclassified
+call	wf/main_run.go	unfenced	bytes.Split	1	seed, unclassified
+call	wf/main_run.go	usage	strings.HasPrefix	1	seed, unclassified
+call	wf/main_run.go	usage	strings.Join	2	seed, unclassified
+call	wf/manufacture.go	-	regexp.MustCompile	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	briefClaim	strings.Cut	1	F7 claim recovered from the brief
+call	wf/manufacture.go	briefClaim	strings.Fields	1	F7 claim recovered from the brief
+call	wf/manufacture.go	commandWords	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	commandWords	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	commandWords	strings.IndexByte	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	firstLine	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	globMatch	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	globMatch	strings.HasSuffix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	globMatch	strings.Index	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	globMatch	strings.Split	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	localState	strings.LastIndex	1	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	manufactureDriver.render	strings.Join	3	dev synthetic-run tool (audit: skimmed)
+call	wf/manufacture.go	shellCall	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
+call	wf/mermaid.go	mermaidBody	strings.TrimSuffix	1	display (F10)
+call	wf/observed_blob.go	-	regexp.MustCompile	1	observed blob name: hex SHA-256 file name (sw-ta9r)
+call	wf/options.go	Pred.String	strings.Join	1	seed, unclassified
+call	wf/paged_delivery.go	cycle.buildPromptPacket	strings.Cut	1	seed, unclassified
+call	wf/paged_delivery.go	cycle.buildPromptPacket	strings.Join	1	seed, unclassified
+call	wf/paged_delivery.go	cycle.buildPromptPacket	strings.TrimPrefix	1	seed, unclassified
+call	wf/paged_delivery.go	isCommandLine	strings.HasPrefix	3	F7 model text prefix-tested
+call	wf/paged_delivery.go	pageFits	strings.Split	1	seed, unclassified
+call	wf/paged_delivery.go	pageText	strings.Join	3	seed, unclassified
+call	wf/paged_delivery.go	readableLines	strings.Split	1	seed, unclassified
+call	wf/paged_delivery.go	referenceSections	strings.Split	1	seed, unclassified
+call	wf/path_encoding.go	cycle.annotateReferencePaths	strings.Cut	1	F5 artifact ref fragment
+call	wf/path_params.go	pathParamRelative	strings.HasPrefix	1	seed, unclassified
+call	wf/path_params.go	validatePathParam	strings.HasPrefix	1	seed, unclassified
+call	wf/path_resolve.go	ResolvePath	strings.HasPrefix	1	seed, unclassified
+call	wf/path_template.go	ownedPath.validate	strings.HasPrefix	1	F5 path template, fragment after binding
+call	wf/path_template.go	scope.bindPathSource	strings.Cut	1	F5 path template, fragment after binding
+call	wf/path_template.go	scope.bindPathSource	strings.HasPrefix	1	F5 path template, fragment after binding
+call	wf/path_template.go	scope.bindPathSource	strings.TrimPrefix	1	F5 path template, fragment after binding
+call	wf/path_template.go	scope.bindPathTemplate	strings.HasPrefix	1	F5 path template, fragment after binding
+call	wf/path_template.go	scope.bindPathTemplate	strings.TrimPrefix	1	F5 path template, fragment after binding
+call	wf/pattern_validation.go	compiledPattern	regexp.Compile	1	seed, unclassified
+call	wf/preflight.go	modelTiersCheck	strings.TrimPrefix	1	seed, unclassified
+call	wf/prompt_hash.go	cycle.promptShapeHash	strings.Join	1	seed, unclassified
+call	wf/promptref.go	-	regexp.MustCompile	1	F5 PromptRef, one parser (safe)
+call	wf/promptref.go	ParsePromptRef	strings.Cut	1	F5 PromptRef, one parser (safe)
+call	wf/promptref.go	ParsePromptRef	strings.HasPrefix	1	F5 PromptRef, one parser (safe)
+call	wf/promptref.go	ParsePromptRef	strings.TrimPrefix	1	F5 PromptRef, one parser (safe)
+call	wf/promptref.go	jsonPointer	strings.Split	1	F5 PromptRef, one parser (safe)
+call	wf/recorded_context.go	resolveCheckContexts	strings.HasPrefix	1	seed, unclassified
+call	wf/recorded_probe.go	agentOps.probeRecorded	strings.Join	1	seed, unclassified
+call	wf/reject.go	RejectError.Error	strings.Join	1	F10 edge labels
+call	wf/reject.go	cycle.rejected	strings.Join	1	F10 edge labels
+call	wf/reject.go	rejectProducer	strings.Join	1	F10 edge labels
+call	wf/render.go	RetryView.backoffText	strings.Join	1	display (audit: skimmed)
+call	wf/render.go	edgeText	strings.Join	1	display (audit: skimmed)
+call	wf/render.go	kindLine	strings.Join	2	display (audit: skimmed)
+call	wf/render.go	renderView	strings.Join	11	display (audit: skimmed)
+call	wf/render.go	renderView	strings.Split	1	display (audit: skimmed)
+call	wf/replay.go	ReplayReport.String	strings.HasPrefix	2	F9 journal sub-structure; one site matches error text (sw-ta9r), class L
+call	wf/replay.go	ReplayReport.verdict	strings.HasSuffix	2	F9 journal sub-structure
+call	wf/replay.go	lastSegment	strings.LastIndex	1	F9 journal sub-structure
+call	wf/replay.go	recordedRunDir	strings.Index	1	F9 journal sub-structure
+call	wf/replay.go	replay.act	strings.Cut	2	F9 journal sub-structure
+call	wf/replay.go	replay.act	strings.TrimPrefix	1	F9 journal sub-structure
+call	wf/replay.go	replay.drive	strings.LastIndex	1	F9 journal sub-structure
+call	wf/replay.go	replay.fromSource	strings.HasPrefix	1	F9 journal sub-structure
+call	wf/replay.go	replay.index	strings.Join	3	F9 journal sub-structure
+call	wf/replay.go	replay.index	strings.TrimPrefix	1	F9 journal sub-structure
+call	wf/replay.go	summarize	strings.Cut	2	F9 journal sub-structure
+call	wf/replay.go	summarize	strings.SplitN	1	F9 journal sub-structure
+call	wf/result_run_paths.go	cycle.citationsMarked	strings.HasPrefix	1	seed, unclassified
+call	wf/result_run_paths.go	resultPathError.Error	strings.HasPrefix	1	seed, unclassified
+call	wf/result_run_paths.go	resultPathWalk.cites	strings.HasPrefix	1	seed, unclassified
+call	wf/result_run_paths.go	resultPathWalk.value	strings.HasPrefix	2	seed, unclassified
+call	wf/rewind_unchanged.go	Engine.RewindUnchanged	strings.Join	1	F9 state identity
+call	wf/rewind_unchanged.go	changedParts	strings.Cut	1	F9 state identity
+call	wf/rewind_unchanged.go	changedParts	strings.Fields	1	F9 state identity
+call	wf/rewind_unchanged.go	cli.rewindUnchanged	strings.Join	1	F9 state identity
+call	wf/rewind_unchanged.go	cli.rewindUnchanged	strings.Split	1	F9 state identity
+call	wf/rewind_unchanged.go	stateID	strings.Cut	1	F9 state identity
+call	wf/rewind_unchanged.go	stateID	strings.Join	1	F9 state identity
+call	wf/routing.go	promptWord	strings.HasPrefix	1	seed, unclassified
+call	wf/routing.go	quoteBound	strings.FieldsFunc	1	seed, unclassified
+call	wf/routing.go	quoteBound	strings.Join	1	seed, unclassified
+call	wf/routing.go	shellWordText	strings.IndexFunc	1	seed, unclassified
+call	wf/run_path.go	RunPath.validate	strings.HasPrefix	1	RunPath validation
+call	wf/run_path.go	confinedRunPath	strings.HasPrefix	1	RunPath validation
+call	wf/run_path.go	confinedRunPath	strings.Split	1	RunPath validation
+call	wf/sandbox_shim.go	SandboxEnv	strings.Cut	1	seed, unclassified
+call	wf/sandbox_shim.go	SandboxStorageOverride	strings.HasPrefix	3	seed, unclassified
+call	wf/segment_models.go	mapText	strings.Join	1	seed, unclassified
+call	wf/segment_models.go	tiersOf	strings.Join	1	seed, unclassified
+call	wf/snapshot_paths.go	commandAcceptances	strings.HasPrefix	1	F11 substring root detection
+call	wf/snapshot_paths.go	engineOutputFile	strings.HasPrefix	1	F11 substring root detection
+call	wf/snapshot_paths.go	engineOutputFile	strings.HasSuffix	1	F11 substring root detection
+call	wf/snapshot_paths.go	historyRecords	strings.HasPrefix	1	F11 substring root detection
+call	wf/snapshot_paths.go	mentionsSnapshotRoot	strings.FieldsFunc	1	F11 substring root detection
+call	wf/snapshot_paths.go	mentionsSnapshotRoot	strings.Index	1	F11 substring root detection
+call	wf/snapshot_paths.go	relocateParamRoots	strings.HasPrefix	1	F11 substring root detection
+call	wf/snapshot_store.go	isolatedGitEnv	strings.HasPrefix	1	F12 git object store
+call	wf/snapshot_store.go	objectReader.get	strings.Fields	1	F12 git object store
+call	wf/snapshot_store.go	openSnapshotAt	strings.Split	1	F12 git object store
+call	wf/snapshot_store.go	parentPath	strings.LastIndexByte	1	F12 git object store
+call	wf/snapshot_store.go	parseTree	bytes.Cut	1	F12 git object store
+call	wf/snapshot_store.go	parseTree	strings.Cut	1	F12 git object store
+call	wf/snapshot_store.go	snapshotStore.present	strings.Cut	1	F12 git object store
+call	wf/snapshot_store.go	snapshotStore.present	strings.Join	1	F12 git object store
+call	wf/snapshot_store.go	snapshotStore.present	strings.Split	1	F12 git object store
+call	wf/snapshot_store.go	snapshotStore.view	strings.HasPrefix	1	F12 git object store
+call	wf/snapshot_store.go	storeCapture.addTree	strings.HasPrefix	1	F12 git object store
+call	wf/snapshot_store.go	storeCapture.runDataDigest	strings.HasPrefix	2	F12 git object store
+call	wf/snapshot_store.go	storeCapture.runDataDigest	strings.TrimPrefix	2	F12 git object store
+call	wf/snapshot_trust.go	snapshotStore.packKey	strings.TrimSuffix	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustPacks	strings.TrimSuffix	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedObjects	strings.Join	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedObjects	strings.TrimSuffix	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedPacks	strings.Fields	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedPacks	strings.HasPrefix	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedPacks	strings.HasSuffix	1	F12 own trust file
+call	wf/snapshot_trust.go	snapshotStore.trustedPacks	strings.Split	1	F12 own trust file
+call	wf/spawn.go	Engine.Spawn	strings.TrimSuffix	1	F7 spawn prefix, shell words
+call	wf/spawn.go	ParseHeadlessCmd	strings.Cut	1	F7 spawn prefix, shell words
+call	wf/spawn.go	ParseHeadlessCmd	strings.Join	1	F7 spawn prefix, shell words
+call	wf/spawn.go	briefBinary	strings.Cut	2	F7 binary recovered from the brief
+call	wf/spawn.go	envValue	strings.Cut	1	F7 spawn prefix, shell words
+call	wf/spawn.go	shellWords	strings.IndexByte	1	F7 spawn prefix, shell words
+call	wf/states.go	agentKind.view	strings.Join	1	seed, unclassified
+call	wf/states.go	joinRaw	strings.Join	1	seed, unclassified
+call	wf/states.go	lintCases	strings.Join	1	seed, unclassified
+call	wf/stats.go	runState.classOf	strings.Join	1	seed, unclassified
+call	wf/status_view.go	OpenIntent.detachedNote	strings.Join	1	display (audit: skimmed)
+call	wf/status_view.go	RenderStatus	strings.Join	2	display (audit: skimmed)
+call	wf/status_view.go	StatusTotals	strings.Join	2	display (audit: skimmed)
+call	wf/status_view.go	segmentsLine	strings.Join	1	display (audit: skimmed)
+call	wf/types.go	-	regexp.MustCompile	1	F13 type names, legacy spellings
+call	wf/types.go	Def.Describe	strings.TrimSuffix	1	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.HasPrefix	2	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.HasSuffix	1	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.Index	1	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.IndexByte	1	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.Join	1	F13 type names, legacy spellings
+call	wf/types.go	cleanTypeName	strings.LastIndex	1	F13 type names, legacy spellings
+call	wf/types.go	legacyStateName	strings.HasSuffix	1	F13 type names, legacy spellings
+call	wf/types.go	legacyStateName	strings.Index	1	F13 type names, legacy spellings
+call	wf/types.go	legacyStateNameOf	strings.LastIndex	1	F13 type names, legacy spellings
+call	wf/types.go	typeName	strings.LastIndex	1	F13 type names, legacy spellings
+call	wftest/agent_steps.go	runner.writeArtifacts	strings.Cut	1	wftest: engine Artifacts block re-parser
+call	wftest/agent_steps.go	runner.writeArtifacts	strings.CutPrefix	1	wftest: engine Artifacts block re-parser
+call	wftest/agent_steps.go	runner.writeArtifacts	strings.LastIndex	1	wftest: engine Artifacts block re-parser
+call	wftest/agent_steps.go	runner.writeArtifacts	strings.Split	1	wftest: engine Artifacts block re-parser
+call	wftest/agent_steps.go	runner.writeArtifacts	strings.TrimSuffix	1	wftest: engine Artifacts block re-parser
+call	wftest/calibrate.go	calibrate	strings.TrimPrefix	3	seed, unclassified
+call	wftest/check.go	CheckReport.String	strings.Join	1	seed, unclassified
+call	wftest/check.go	CheckReport.simulate	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check.go	checkFaultTargets	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check_corpus_paths.go	checkAgentPaths	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check_corpus_paths.go	checkCorpusPaths	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check_gate_paths.go	checkGatePreludePaths	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check_repeated_faults.go	checkRepeatedFaultPaths	strings.TrimPrefix	1	seed, unclassified
+call	wftest/coordinator.go	coordinator.blockedNote	strings.Join	1	seed, unclassified
+call	wftest/coordinator.go	coordinator.describeHeld	strings.Join	1	seed, unclassified
+call	wftest/fuzz.go	FuzzResult.String	strings.Join	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.corpus	strings.LastIndex	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.definitionErrors	strings.TrimPrefix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.finish	strings.Join	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.gateAction	strings.LastIndex	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.namedHalt	strings.Join	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.reconcileUncertainRecord	strings.HasSuffix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.reservedTimeoutEnd	strings.TrimSuffix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.Cut	2	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.HasPrefix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.LastIndex	3	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.Split	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.TrimPrefix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	fuzzRun.writeArtifacts	strings.TrimSuffix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	runFuzz	strings.HasSuffix	1	wftest: engine format re-parsers
+call	wftest/fuzz.go	runFuzz	strings.TrimPrefix	2	wftest: engine format re-parsers
+call	wftest/fuzz_coverage.go	FuzzCoverage.byVariants	strings.Join	1	seed, unclassified
+call	wftest/fuzz_coverage.go	NewFuzzCoverage	strings.TrimPrefix	1	seed, unclassified
+call	wftest/fuzz_coverage.go	counts	strings.Join	1	seed, unclassified
+call	wftest/fuzz_liveness.go	fuzzRun.setupPhases	strings.HasPrefix	2	seed, unclassified
+call	wftest/fuzz_properties.go	fuzzRun.explainedStop	strings.Join	2	seed, unclassified
+call	wftest/fuzz_schema.go	fuzzPattern	regexp.Compile	1	seed, unclassified
+call	wftest/fuzz_step_progress.go	fuzzRun.progressingAtStepBound	strings.TrimPrefix	1	seed, unclassified
+call	wftest/hostile/markdown.go	ReadInline	strings.HasPrefix	3	seed, unclassified
+call	wftest/hostile/markdown.go	ReadInline	strings.HasSuffix	1	seed, unclassified
+call	wftest/hostile/markdown.go	ReadInline	strings.IndexByte	2	seed, unclassified
+call	wftest/hostile/markdown.go	ReadRow	strings.HasPrefix	1	seed, unclassified
+call	wftest/hostile/markdown.go	ReadRow	strings.HasSuffix	1	seed, unclassified
+call	wftest/hostile/markdown.go	isPunct	strings.IndexByte	1	seed, unclassified
+call	wftest/protocol.go	newProtocolCaseWithSession	regexp.MustCompile	1	wftest: own shell quoter
+call	wftest/protocol.go	protocolCase.writeChildRecord	strings.Split	1	wftest: own shell quoter
+call	wftest/protocol.go	protocolCase.writePiRecords	regexp.MustCompile	1	wftest: own shell quoter
+call	wftest/protocol.go	refusalWrite	bytes.CutPrefix	1	wftest: own shell quoter
+call	wftest/protocol.go	refusalWrite	bytes.Split	2	wftest: own shell quoter
+call	wftest/protocol.go	refusalWrite	bytes.TrimPrefix	1	wftest: own shell quoter
+call	wftest/protocol.go	refusalWrite	bytes.TrimSuffix	1	wftest: own shell quoter
+call	wftest/protocol.go	refusalWrite	strings.HasPrefix	1	wftest: own shell quoter
+call	wftest/protocol_gate.go	checkReservedGateCase	strings.TrimPrefix	1	wftest: own shell quoter
+call	wftest/protocol_gate.go	gateQuestionSentence	strings.HasSuffix	3	wftest: own shell quoter
+call	wftest/protocol_gate.go	protocolCommandArgs	strings.HasPrefix	1	wftest: own shell quoter
+call	wftest/protocol_gate.go	reservedGateText	strings.Join	1	wftest: own shell quoter
+call	wftest/runner.go	intentOfPath	strings.TrimSuffix	1	seed, unclassified
+call	wftest/wftest.go	describe	strings.Join	1	seed, unclassified
+call	wftest/wftest.go	pathMatches	strings.HasSuffix	1	seed, unclassified
+call	wftest/wftest.go	routeOf	strings.Join	1	seed, unclassified
+conv	bd/runtime.go	rawIssue.issue	bd.Status	1	conv: bd.Status has no constructor
+conv	examples/feature/def.go	Definition	wf.RunPath	2	conv: wf.RunPath has no constructor
+conv	wf/assets_resolve.go	ResolveAssets	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/assets_resolve.go	selectRun	wf.RunID	2	conv: wf.RunID has no constructor
+conv	wf/coordinator_turn_cli.go	turnAttachRow	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/engine.go	Engine.Run	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/engine.go	deriveRunID	wf.RunID	2	conv: wf.RunID has no constructor
+conv	wf/engine_bind.go	scope.bindArgv	wf.RunPath	1	conv: wf.RunPath has no constructor
+conv	wf/engine_rewind.go	Engine.writeRewind	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/journal_file.go	fileJournal.Runs	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/main_manufacture.go	cli.manufactureStart	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/main_run.go	chainBase	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.drive	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.resolveRun	wf.RunID	3	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.runChain	wf.RunID	2	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.start	wf.RunID	5	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.unitOwners	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/path_params.go	cycle.paramValue	wf.RunPath	1	conv: wf.RunPath has no constructor
+conv	wf/path_template.go	cycle.resolveOwnedPath	wf.RunPath	1	conv: wf.RunPath has no constructor

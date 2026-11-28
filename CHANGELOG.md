@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Package `form`: text with a format has one parser (sw-x7e1).** `form.Of[G]`
+  is a string that only `form.Parse[G]` makes: an opaque struct, so a
+  conversion cannot bypass the grammar. `MarshalText` and `UnmarshalText`
+  validate, so decoding an agent result validates its `Of` fields. Grammars
+  register themselves, and `Parse` panics for one that is not registered.
+  The minted-id kind (`CheckMinted`, `MintedPattern`, `Mint`) and the
+  vocabulary kind (`CheckWord`) are included; canonical values and composite
+  ids come with their first users. `formtest.CorpusTest` runs every
+  registered grammar against the hostile corpus: accepted values read back
+  unchanged, the rest are refused.
+- **The output schema shows a `form.Of` field's grammar.** It renders as a
+  string with the grammar's pattern or values and an example, not `{}`.
+  `StateView.OutputExample` returns a filled example of an agent's result;
+  it is not added to prompts.
+- **Parsing allowlist gate.** `TestParsingAllowlist` lists every split,
+  cut, prefix test, index search, regular expression and `Sscan` in the
+  module outside `form` and `sink`, plus conversions into `wf.RunID`,
+  `wf.RunPath` and `bd.Status` outside their defining files. Each permitted
+  site is a line of `parsing-allowlist.txt` with a reason; the counts must
+  match exactly, so the list only shrinks by reviewed edits. Seeded with
+  820 sites under 651 lines, 170 of them not yet classified.
+- Seven breaking inputs from the parsing audit are reproduced as skipped
+  tests carrying sw-8h7f, for that slice to unskip.
+
+### Upgrading
+
+- No behaviour, journal format, hash or lock change: no existing type
+  renders or decodes differently, and prompts are unchanged.
+- A change to engine code that adds a parsing call or a conversion into
+  `RunID`, `RunPath` or `bd.Status` now fails `TestParsingAllowlist` until
+  the allowlist has a line for it with a reason; one that removes a site
+  must lower or delete the line.
+- New API: package `form` (`Grammar`, `Patterned`, `Enumerated`, `Minted`,
+  `Of`, `Parse`, `MustParse`, `Register`, `Grammars`, `Mint`, `CheckMinted`,
+  `MintedPattern`, `CheckWord`, `Schema`, `Error`), package `form/formtest`,
+  and `wf.StateView.OutputExample`.
+
 ## v0.4.13
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
