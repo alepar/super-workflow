@@ -490,6 +490,24 @@ be absent `omitzero`. `formtest.CorpusTest(t)` runs every registered grammar
 against the hostile corpus. `StateView.OutputExample` is a filled example of
 an agent's result.
 
+Paths and revisions have one grammar per form. `form.RepoPath` is a clean
+path relative to a repository's top level (`*`, `[` and a leading `:` are part
+of the name) and `form.AbsPath` an absolute one; `form.RepoPathOf(root, p)` and
+`form.Join(root, p)` convert between them with the root given, so the two are
+never compared. `form.RepoGlob` is a git glob. `form.CommitID` is a full object
+name, `form.Rev` one revision (no leading `-`, no `..`, no `:`),
+`form.BranchName` a branch name as `git check-ref-format --branch` accepts it,
+and `form.ParseRevRange` reads `a..b` or `a...b` (`Symmetric`). The git
+adapter checks the values bound into its arguments when it runs: a branch is
+a `BranchName`, a base or ref a `Rev`, a task merge's commit a `CommitID`, and
+it refuses any other value instead of letting git read it as an option, a
+range or a revision. `git.DiffNames(worktree, base, head, specs...)` lists the
+files that differ between two full commit names as `[]form.Of[form.RepoPath]`
+(`-z`, so names arrive as git has them); a review resolves its range once into
+two recorded `CommitID`s and diffs those. `git.Literal`, `git.Glob`,
+`git.ExcludeLiteral` and `git.ExcludeGlob` make pathspecs anchored at the top
+level, so they mean the same from any directory.
+
 Agent instructions allocate an absolute `output` JSON file under
 `<state-dir>/runs/<run>/out/`. The brief and prompt name that same file; write
 it, then run `done <run> <unit>` without `--output`. An optional `--output`

@@ -45,6 +45,8 @@ docs/proposals/go-api/examples/unavailable/def.go
 docs/proposals/go-api/form/form.go
 docs/proposals/go-api/form/formtest/formtest.go
 docs/proposals/go-api/form/kinds.go
+docs/proposals/go-api/form/paths.go
+docs/proposals/go-api/form/revs.go
 docs/proposals/go-api/fsx/fsx.go
 docs/proposals/go-api/fsx/runtime.go
 docs/proposals/go-api/gh/gh.go

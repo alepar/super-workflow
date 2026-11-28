@@ -54,12 +54,11 @@ call	gh/runtime.go	pluginEndpoint	strings.Cut	1	adapter: gh; F4 marker search
 call	gh/runtime.go	repoComponent	strings.IndexFunc	1	adapter: gh; F4 marker search
 call	gh/runtime.go	runtime.Apply	strings.LastIndex	1	adapter: gh; F4 marker search
 call	gh/runtime.go	runtime.run	strings.Join	1	adapter: gh; F4 marker search
-call	git/headcheck.go	-	regexp.MustCompile	1	seed, unclassified
-call	git/runtime.go	mergeCommitErr	strings.HasPrefix	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.Check	strings.Split	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.RelocateWorkspace	strings.CutPrefix	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.RelocateWorkspace	strings.HasPrefix	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.git	strings.Join	1	adapter: git argv and porcelain
+call	git/runtime.go	runtime.diffNames	strings.Split	1	adapter: git diff --name-only -z, NUL-separated names, each parsed as form.RepoPath
 call	git/runtime.go	runtime.status	strings.Split	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.worktrees	strings.Cut	1	adapter: git argv and porcelain
 call	git/runtime.go	runtime.worktrees	strings.Split	2	adapter: git argv and porcelain

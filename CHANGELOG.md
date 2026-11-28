@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **Paths and revisions have one type per form (sw-tagk, parsing slice
+  4a).**
+  - *Paths.* `form.RepoPath` is a clean path relative to a repository's top
+    level; `*`, `[`, `#`, spaces and a leading `:` are part of the name.
+    `form.AbsPath` is a clean absolute path. `form.RepoPathOf(root, p)` and
+    `form.Join(root, p)` convert between them with the root given, so the
+    two are never compared. `form.RepoGlob` is a git glob.
+  - *Revisions.* `form.CommitID` is a full object name (git's own regex for
+    it is gone), `form.Rev` one revision (no leading `-` or `.`, no `..`, no
+    `:`), `form.BranchName` a branch name as `git check-ref-format --branch`
+    accepts it, and `form.ParseRevRange` reads `a..b` and `a...b`
+    (`Symmetric`).
+  - *The git adapter checks bound values.* When an effect or read runs, a
+    worktree branch must be a `BranchName`, so `main~1` no longer passes the
+    existence check and makes a detached worktree; a base, ref or merge
+    commit must be a `Rev`, so a value starting with `-` or a range is
+    refused; a task merge's commit is a `CommitID`, as before. `reset --hard`
+    and `worktree add` pass `--end-of-options`.
+  - *Snapshot restore reads names literally.* A declared file named
+    `:notes.md` was read as `notes.md` from the top level; `ls-tree` now runs
+    with `--literal-pathspecs`.
+  - *`git.DiffNames`* lists the files that differ between two full commit
+    names as `[]form.Of[form.RepoPath]`, read with `-z`, so a name with a
+    space or a non-ASCII byte arrives as git has it. It takes only commit
+    names: a review resolves its range once into a recorded pair and diffs
+    those. `git.Literal`, `git.Glob`, `git.ExcludeLiteral` and
+    `git.ExcludeGlob` make pathspecs anchored at the top level, so they mean
+    the same from any directory.
+
+### Upgrading
+
+- **Bound git values are checked.** A definition that binds a value that is
+  not one revision into `WorktreeAdd`/`WorktreeAddOrRecut` (branch, base),
+  `RevParse`, `ResolveCommit`, `IsAncestor`, `MergeBase` or `Merge` now gets
+  a typed refusal when the step runs, where git used to read the value as an
+  option, a range or a revision: a branch such as `main~1` or `main@{1}`, a
+  base starting with `-`, a range in `RevParse`, `HEAD:file`. A value git
+  resolved to one commit before is still accepted.
+- Journaled effect and observation arguments are unchanged strings, so
+  effect keys and recorded shapes do not move, and a held run resumes as it
+  was.
+- The new grammars register under `repo-path`, `repo-glob`, `abs-path`,
+  `commit-id`, `rev`, `branch-name` and `rev-range`. superpowers-wf's own
+  `superauto.repo-path` and `superauto.commit-id` do not collide; it adopts
+  these at the next pin bump.
+
 ## v0.4.18
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

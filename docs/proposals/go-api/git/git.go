@@ -5,7 +5,10 @@
 // whose idempotency Key is the first, positional parameter.
 package git
 
-import "github.com/alepar/super-workflow/docs/proposals/go-api/wf"
+import (
+	"github.com/alepar/super-workflow/docs/proposals/go-api/form"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
+)
 
 // StatusResult is the parsed working-tree status: Clean is true when Paths is
 // empty.
@@ -44,6 +47,52 @@ func ResolveCommit(worktree, rev string) wf.Observation[string] {
 func IsAncestor(worktree, a, b string) wf.Observation[bool] {
 	return wf.Observe[bool]("git", "is_ancestor", map[string]any{"worktree": worktree, "a": a, "b": b})
 }
+
+// DiffNames observes the files that differ between two commits, base and
+// head (`git diff --name-only -z --no-renames <base> <head>`), named from the
+// repository's top level, limited to specs when any are given. base and head
+// must bind to full commit object names (form.CommitID): a review resolves
+// its range once, base as the merge base, and every diff runs on that
+// recorded pair, so a moving branch never changes what was reviewed. A read
+// whose base or head is not a full SHA is refused.
+func DiffNames(worktree, base, head string, specs ...Pathspec) wf.Observation[[]form.Of[form.RepoPath]] {
+	texts := make([]string, len(specs))
+	for i, s := range specs {
+		texts[i] = s.String()
+	}
+	return wf.Observe[[]form.Of[form.RepoPath]]("git", "diff_names", map[string]any{"worktree": worktree, "a": base, "b": head, "specs": texts})
+}
+
+// Pathspec is one git pathspec, anchored at the repository's top level so it
+// means the same from any directory, and saying how it matches: a literal
+// file name or a glob, included or excluded. It is made only by its
+// constructors.
+type Pathspec struct{ s string }
+
+// Literal matches the file p exactly: * [ ? and a leading : are part of its
+// name.
+func Literal(p form.Of[form.RepoPath]) Pathspec { return pathspec("top,literal", p.String()) }
+
+// Glob matches the files g names (* within an element, ** across them).
+func Glob(g form.Of[form.RepoGlob]) Pathspec { return pathspec("top,glob", g.String()) }
+
+// ExcludeLiteral leaves out the file p.
+func ExcludeLiteral(p form.Of[form.RepoPath]) Pathspec {
+	return pathspec("top,exclude,literal", p.String())
+}
+
+// ExcludeGlob leaves out the files g names.
+func ExcludeGlob(g form.Of[form.RepoGlob]) Pathspec { return pathspec("top,exclude,glob", g.String()) }
+
+func pathspec(magic, p string) Pathspec {
+	if p == "" {
+		panic("git.Pathspec: absent path")
+	}
+	return Pathspec{":(" + magic + ")" + p}
+}
+
+// String is the pathspec as git reads it, for an argv or a script.
+func (p Pathspec) String() string { return p.s }
 
 // Status observes `git status --porcelain` in worktree.
 func Status(worktree string) wf.Observation[StatusResult] {

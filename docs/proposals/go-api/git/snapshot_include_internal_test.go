@@ -2,7 +2,9 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +68,42 @@ func TestReadIncludedRefusesLinkedParents(t *testing.T) {
 	}
 	if _, _, ok, err := readIncluded(dir, filepath.Join(".superpowers", "install-manifest.json")); err != nil || ok {
 		t.Errorf("read through a linked parent: ok %v, err %v", ok, err)
+	}
+}
+
+// A declared file whose name looks like pathspec magic is read by its name
+// (sw-tagk): ":notes.md" is not "notes.md" from the top level.
+func TestRestoreIncludedReadsTheNameLiterally(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@example.com"}, args...)...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-q")
+	for name, body := range map[string]string{":notes.md": "magic-looking\n", "notes.md": "plain\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", "--", "./:notes.md", "notes.md")
+	run("commit", "-q", "-m", "x")
+	wip := run("rev-parse", "HEAD")
+	if err := os.Remove(filepath.Join(dir, ":notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := (runtime{bin: "git"}).restoreIncluded(dir, wip, ":notes.md"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, ":notes.md")); string(got) != "magic-looking\n" {
+		t.Errorf(":notes.md restored as %q", got)
 	}
 }

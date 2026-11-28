@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alepar/super-workflow/docs/proposals/go-api/form"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -38,7 +39,7 @@ type runtime struct {
 
 func (runtime) Ops() []string {
 	return []string{
-		"git.head", "git.rev_parse", "git.resolve_commit", "git.is_ancestor", "git.merge_base", "git.status", "git.worktree_list",
+		"git.head", "git.rev_parse", "git.resolve_commit", "git.is_ancestor", "git.merge_base", "git.status", "git.worktree_list", "git.diff_names",
 		"git.worktree_add", "git.worktree_remove", "git.merge", "git.commit",
 	}
 }
@@ -54,6 +55,25 @@ type args struct {
 	Message                   string
 	Paths                     []string
 	Globs                     []string
+	Specs                     []string
+}
+
+// revArg refuses a bound value that is not one revision: a range, an
+// option-shaped value, a blob path. The definition binds these from params
+// and outputs, so the refusal is the run's, typed, never git's misreading.
+func revArg(op, name, s string) error {
+	if _, err := form.Parse[form.Rev](s); err != nil {
+		return fmt.Errorf("git.%s: %s: %w", op, name, err)
+	}
+	return nil
+}
+
+// commitArg refuses a bound value that is not a full commit object name.
+func commitArg(op, name, s string) error {
+	if _, err := form.Parse[form.CommitID](s); err != nil {
+		return fmt.Errorf("git.%s: %s: %w", op, name, err)
+	}
+	return nil
 }
 
 func decode(m map[string]any) (a args, err error) {
@@ -118,10 +138,17 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 	// A ref is a value from the definition or model output: --end-of-options
 	// makes git read it as a revision even when it starts with a dash.
 	case "rev_parse":
-		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref)
+		if err = revArg(d.Op, "ref", a.Ref); err == nil {
+			v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref)
+		}
 	case "resolve_commit":
-		v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref+"^{commit}")
+		if err = revArg(d.Op, "ref", a.Ref); err == nil {
+			v, err = r.must(resolve(workspace, a.Worktree), "rev-parse", "--verify", "--end-of-options", a.Ref+"^{commit}")
+		}
 	case "is_ancestor":
+		if err = errors.Join(revArg(d.Op, "a", a.A), revArg(d.Op, "b", a.B)); err != nil {
+			break
+		}
 		var exit int
 		_, exit, err = r.git(resolve(workspace, a.Worktree), "merge-base", "--is-ancestor", "--end-of-options", a.A, a.B)
 		v = err == nil
@@ -129,7 +156,13 @@ func (r runtime) Read(workspace string, d wf.ObservationDesc) (json.RawMessage, 
 			err = nil
 		}
 	case "merge_base":
-		v, err = r.must(resolve(workspace, a.Worktree), "merge-base", "--end-of-options", a.A, a.B)
+		if err = errors.Join(revArg(d.Op, "a", a.A), revArg(d.Op, "b", a.B)); err == nil {
+			v, err = r.must(resolve(workspace, a.Worktree), "merge-base", "--end-of-options", a.A, a.B)
+		}
+	case "diff_names":
+		if err = errors.Join(commitArg(d.Op, "base", a.A), commitArg(d.Op, "head", a.B)); err == nil {
+			v, err = r.diffNames(resolve(workspace, a.Worktree), a.A, a.B, a.Specs)
+		}
 	case "status":
 		v, err = r.status(resolve(workspace, a.Worktree))
 	case "worktree_list":
@@ -170,6 +203,30 @@ func (r runtime) status(dir string) (StatusResult, error) {
 	}
 	res.Clean = len(res.Paths) == 0
 	return res, nil
+}
+
+// diffNames is the files that differ between two commits, as git names them
+// from the top level. -z prints each name as it is; --no-renames lists both
+// sides of a rename. A name that is not a RepoPath (a control byte) is an
+// error, never dropped.
+func (r runtime) diffNames(dir, base, head string, specs []string) ([]form.Of[form.RepoPath], error) {
+	argv := append([]string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--end-of-options", base, head, "--"}, specs...)
+	out, _, err := r.git(dir, argv...)
+	if err != nil {
+		return nil, err
+	}
+	names := []form.Of[form.RepoPath]{}
+	for _, name := range strings.Split(out, "\x00") {
+		if name == "" {
+			continue
+		}
+		p, err := form.Parse[form.RepoPath](name)
+		if err != nil {
+			return nil, fmt.Errorf("git.diff_names: %w", err)
+		}
+		names = append(names, p)
+	}
+	return names, nil
 }
 
 func (r runtime) worktrees(dir string) ([]Worktree, error) {
@@ -229,6 +286,14 @@ func (r runtime) listed(workspace, path string) (Worktree, bool, error) {
 // addWorktree is the worktree_add effect. The integration worktree holds the
 // run's own work and is added without Recut: an existing one is never reset.
 func (r runtime) addWorktree(workspace, path string, a args) error {
+	// A branch is never read as a revision (main~1 would pass the existence
+	// check and give a detached worktree), and a base never as an option.
+	if _, err := form.Parse[form.BranchName](a.Branch); err != nil {
+		return fmt.Errorf("git.worktree_add: branch: %w", err)
+	}
+	if err := revArg("worktree_add", "base", a.Base); err != nil {
+		return err
+	}
 	// A removed directory's stale registration must not block the add.
 	if _, err := r.must(workspace, "worktree", "prune"); err != nil {
 		return err
@@ -253,7 +318,7 @@ func (r runtime) addWorktree(workspace, path string, a args) error {
 		}
 		// Partial work of an earlier attempt: start over from base. No -x:
 		// ignored build output is kept.
-		if _, err := r.must(path, "reset", "--hard", a.Base); err != nil {
+		if _, err := r.must(path, "reset", "--hard", "--end-of-options", a.Base); err != nil {
 			return err
 		}
 		_, err = r.must(path, "clean", "-fd")
@@ -278,11 +343,11 @@ func (r runtime) addWorktree(workspace, path string, a args) error {
 	}
 	switch {
 	case exit == 1:
-		_, err = r.must(workspace, "worktree", "add", "--relative-paths", "-b", a.Branch, path, a.Base)
+		_, err = r.must(workspace, "worktree", "add", "--relative-paths", "-b", a.Branch, "--end-of-options", path, a.Base)
 	case a.Recut:
-		_, err = r.must(workspace, "worktree", "add", "--relative-paths", "-B", a.Branch, path, a.Base)
+		_, err = r.must(workspace, "worktree", "add", "--relative-paths", "-B", a.Branch, "--end-of-options", path, a.Base)
 	default:
-		_, err = r.must(workspace, "worktree", "add", "--relative-paths", path, a.Branch)
+		_, err = r.must(workspace, "worktree", "add", "--relative-paths", "--end-of-options", path, a.Branch)
 	}
 	return err
 }
@@ -597,7 +662,7 @@ type mergeResult struct {
 // exactly the commit that was checked and never re-resolves a name.
 func mergeCommitErr(a args) error {
 	switch {
-	case a.Commit == "" || strings.HasPrefix(a.Commit, "-"):
+	case revArg("merge", "commit", a.Commit) != nil:
 		return fmt.Errorf("git.merge: commit %q is not a commit name", a.Commit)
 	case a.TaskRef != "" && !isFullSHA(a.Commit):
 		return fmt.Errorf("git.merge: commit %q is not a full commit SHA", a.Commit)

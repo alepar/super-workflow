@@ -1252,7 +1252,8 @@ func snapshotRealParents(root *os.Root, rel string) bool {
 // restored tree at dir, with the blob's mode, through no link: the restore
 // destination is fresh, so a link there is refused, not followed.
 func (r runtime) restoreIncluded(dir, wip, rel string) error {
-	entry, err := r.must(dir, "ls-tree", "-z", wip, "--", rel)
+	// The declared name is a file name, never pathspec magic (":notes.md").
+	entry, err := r.must(dir, "--literal-pathspecs", "ls-tree", "-z", wip, "--", rel)
 	if err != nil {
 		return err
 	}

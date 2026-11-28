@@ -3,8 +3,8 @@ package git
 import (
 	"errors"
 	"fmt"
-	"regexp"
 
+	"github.com/alepar/super-workflow/docs/proposals/go-api/form"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
@@ -49,9 +49,6 @@ func HeadCheck[O any](worktree string, head func(out O) string) wf.Check[O] {
 	})
 }
 
-// fullSHA matches a full SHA-1 or SHA-256 object name.
-var fullSHA = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
-
 // isFullSHA reports whether s is a full commit object name (40 or 64 lower
 // hex digits), the only commit form HeadCheck accepts and a task Merge takes.
-func isFullSHA(s string) bool { return fullSHA.MatchString(s) }
+func isFullSHA(s string) bool { return form.CommitID{}.Check(s) == nil }
