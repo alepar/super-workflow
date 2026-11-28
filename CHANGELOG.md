@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **The lock-yield tests no longer race the host (sw-dwh5).** Two test
+  timing faults, no engine change. A `next` here ran with no harness, so the
+  suite's 1 s cap on its own wait also bounded its lock waits, and it waited
+  behind a 1 s chain step: on a loaded host it ran out and exited busy (9) or
+  partial (6). These tests now give `next` a 30 s cap. And the tests' wait for
+  the done to hold the lock looked at the lock record, which names done
+  before done has accepted its result, so a call could get in before the
+  chain began; they now wait for the chain's first effect intent in the
+  journal.
+
 ## v0.4.17
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

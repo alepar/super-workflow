@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -118,6 +117,11 @@ func newChainRun(t *testing.T, step string, pair bool) *chainRun {
 	for _, k := range []string{"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "BASH_DEFAULT_TIMEOUT_MS", "HERMES_SESSION_ID", "TERMINAL_TIMEOUT", "CODEX_THREAD_ID", "CODEX_SESSION_ID"} {
 		t.Setenv(k, "")
 	}
+	// With no harness, next's own wait is capped by NextWaitCapEnv (1 s in
+	// this suite), and that budget also ends its lock waits. A next here
+	// waits for the lock behind a chain step of up to a second, so its budget
+	// must outlast a step on a loaded host.
+	t.Setenv(wf.NextWaitCapEnv, "30s")
 	d := chainDef("yield-chain", step, pair)
 	world := &countingWorld{count: map[string]int{}}
 	reg := wf.NewAdapters()
@@ -170,16 +174,20 @@ func (r *chainRun) doneAsync(i int) func() (int, string) {
 	return func() (int, string) { <-ch; return code, er }
 }
 
-// heldBy waits until the run's lock record names verb.
-func (r *chainRun) heldBy(verb string) {
+// midChain waits until unit 0's done holds the run lock inside its chain:
+// chFan[1]'s first step has journaled its effect intent and is applying it.
+// The lock file naming done is not enough: done takes the lock before it
+// accepts the result, and a call that gets in then runs before the chain.
+func (r *chainRun) midChain() {
 	r.t.Helper()
-	lock := r.e.state + "/runs/" + r.run + "/lock"
 	for start := time.Now(); ; time.Sleep(10 * time.Millisecond) {
-		if b, _ := os.ReadFile(lock); bytes.Contains(b, []byte(`"verb":"`+verb+`"`)) {
-			return
+		for _, rec := range r.journal() {
+			if rec.Kind == wf.JournalEffectIntent && rec.Instance == "chFan[1]" && rec.State == "yc1" {
+				return
+			}
 		}
 		if time.Since(start) > 10*time.Second {
-			r.t.Fatalf("%s never took the run lock", verb)
+			r.t.Fatal("done never started its chain")
 		}
 	}
 }
@@ -266,7 +274,7 @@ func TestYieldLetsAPromptInMidChain(t *testing.T) {
 	r := newChainRun(t, "1", false)
 	r.ready(0)
 	wait := r.doneAsync(0)
-	r.heldBy("done")
+	r.midChain()
 	start := time.Now()
 	code, _, er := r.call("prompt", r.run, r.units[1].Name, "--state-dir", r.e.state)
 	waited := time.Since(start)
@@ -292,7 +300,7 @@ func TestYieldFoldsAWaitersStopBeforeTheNextStep(t *testing.T) {
 	r := newChainRun(t, "1", false)
 	r.ready(0)
 	wait := r.doneAsync(0)
-	r.heldBy("done")
+	r.midChain()
 	if code, _, er := r.call("stop", r.run, "--reason", "test", "--state-dir", r.e.state); code != 0 {
 		t.Fatalf("stop: exit %d: %s", code, er)
 	}
@@ -340,7 +348,7 @@ func TestYieldNeverSplitsAStepsEffects(t *testing.T) {
 	r := newChainRun(t, "1", true)
 	r.ready(0)
 	wait := r.doneAsync(0)
-	r.heldBy("done")
+	r.midChain()
 	if code, _, er := r.call("prompt", r.run, r.units[1].Name, "--state-dir", r.e.state); code != 0 {
 		t.Fatalf("prompt: exit %d: %s", code, er)
 	}
@@ -379,7 +387,7 @@ func TestYieldCrashLeavesAJournalTheRunGoesOnFrom(t *testing.T) {
 		defer func() { done <- recover() }()
 		r.call("done", r.run, r.units[0].Name, "--state-dir", r.e.state)
 	}()
-	r.heldBy("done")
+	r.midChain()
 	if code, _, er := r.call("prompt", r.run, r.units[1].Name, "--state-dir", r.e.state); code != 0 {
 		t.Fatalf("prompt: exit %d: %s", code, er)
 	}
@@ -419,7 +427,7 @@ func TestYieldRedrivesUnderAnUntilUnitBoundMeanwhile(t *testing.T) {
 	r := newChainRun(t, "1", false)
 	r.ready(0)
 	wait := r.doneAsync(0)
-	r.heldBy("done")
+	r.midChain()
 	if code, _, er := r.call("next", r.run, "1", "--until-unit", r.units[1].Name, "--state-dir", r.e.state, "--json"); code != 0 {
 		t.Fatalf("next --until-unit: exit %d: %s", code, er)
 	}
@@ -441,7 +449,7 @@ func TestYieldRedrivesAfterAnAdoptionMeanwhile(t *testing.T) {
 	r := newChainRun(t, "1", false)
 	r.ready(0)
 	wait := r.doneAsync(0)
-	r.heldBy("done")
+	r.midChain()
 	changed := chainDef("yield-chain", "0.01", false)
 	reg := wf.NewAdapters()
 	if err := reg.Register(r.world); err != nil {
