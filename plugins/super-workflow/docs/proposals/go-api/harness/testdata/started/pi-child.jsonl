@@ -1,0 +1,3 @@
+{"type":"session","id":"wf-1011121314151617","cwd":"/test/work","timestamp":"2000-01-01T00:00:00.000Z"}
+{"type":"message","timestamp":"2000-01-01T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"workflow prompt example --claim 1011121314151617 --state-dir /test/state"}]}}
+{"type":"message","timestamp":"2000-01-01T00:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Fixture complete."}],"usage":{"input":2,"output":1},"stopReason":"stop"}}

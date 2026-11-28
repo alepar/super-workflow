@@ -1,0 +1,4 @@
+{"type":"session_meta","payload":{"id":"00000000-0000-7000-8000-000000000002","session_id":"00000000-0000-7000-8000-000000000002","timestamp":"2000-01-01T00:00:00.000Z","source":{"subagent":{"thread_spawn":{"parent_thread_id":"00000000-0000-7000-8000-000000000001"}}}}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fixture setup."}]}}
+{"type":"response_item","payload":{"type":"agent_message","author":"00000000-0000-7000-8000-000000000001","recipient":"00000000-0000-7000-8000-000000000002","content":[{"type":"input_text","text":"Write the example receipt."}]}}
+{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(await tools.exec_command({cmd:\"/test/bin/workflow prompt r1 --claim 0123456789abcdef --state-dir /test/state\",max_output_tokens:6000}));\n"}}
