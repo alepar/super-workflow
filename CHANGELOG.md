@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.14
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.14`. GitHub installs use the plugin tag
+`plugin-v0.4.14`. This release adds the `form` package (text with a format,
+made only through its parser), its corpus test helper, schema rendering for
+`form` fields, and a parsing allowlist gate for the engine module. No existing
+behavior, prompt or hash changes.
 
 ### What changed
 
