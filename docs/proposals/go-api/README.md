@@ -128,7 +128,16 @@ answers done is not applied again. Implement `wf.CheckResultRuntime` to return
 what the check found, such as the created issue; it is journaled on the
 `done` result, so later states read it as they would an applied result. A
 NonIdempotent effect has no check, so an effect in doubt goes to manual
-verification instead.
+verification instead. An Apply that finds the world neither done nor not done
+for its effect returns `wf.ErrUncertain`: nothing is applied, and the effect
+is journaled `uncertain`, like a timed-out call.
+
+A key of two or more parts (`wf.KeyOf("fix", id)`, `wf.KeyWith`) escapes each
+bound part's `/` as `%2F` and `%` as `%25` before joining them with `/`, so a
+part holding `/` never moves a part boundary. A key of one part is used as it
+is spelled. `ExternalEffect.KeyIDs` lists the key and, when it differs, its
+spelling before escaping; a runtime that finds earlier completions by key
+looks for each, so runs started on an earlier version find their effects.
 
 A run made by a rewind or a snapshot restore is sandboxed, and it never
 performs a remote effect. The engine tells a runtime through

@@ -278,6 +278,8 @@ these fields.
 - `class`: the unit's qualified state.
 - `brief`: the fixed one-line spawn brief (section 4). An agent unit carries no
   `token`, `prompt` or `submit`: its child fetches its prompt itself.
+- `claim`: the claim token the brief's command fetches with (agent units).
+  Read it here; never recover it from the brief's text.
 - `output`: the absolute allocated result JSON file under the run's `out/` directory.
 - `token`: identifies the attempt of a non-agent instruction.
 - `prompt`: the resolved text of a non-agent instruction: the gate's question,

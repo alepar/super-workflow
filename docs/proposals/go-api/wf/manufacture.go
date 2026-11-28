@@ -911,7 +911,7 @@ func (d *manufactureDriver) agent(in Instruction) error {
 	// and identity, as a child's CLI call would; the shared engine's caller
 	// is never changed.
 	caller := harness.Caller{Harness: d.co.Harness, Session: d.co.Session, Agent: fmt.Sprintf("manufacture-%d", d.n), Is: harness.IsChild, FromEnv: true}
-	claim := briefClaim(in.Brief)
+	claim := in.Claim
 	if _, err := d.e.PromptFetchWhole(d.run, in.Name, claim, caller); err != nil {
 		return fmt.Errorf("manufacture: claiming %s: %w", in.Name, err)
 	}
@@ -966,19 +966,6 @@ func (d *manufactureDriver) childEngine(caller harness.Caller, claim string) *En
 	o := d.e.opts
 	o.caller, o.childClaim = caller, claim
 	return NewEngine(d.e.j, d.e.reg, o).(*Engine)
-}
-
-// briefClaim is the claim token a spawn brief carries ("--claim <token>").
-func briefClaim(brief string) string {
-	_, rest, ok := strings.Cut(brief, " --claim ")
-	if !ok {
-		return ""
-	}
-	f := strings.Fields(rest)
-	if len(f) == 0 {
-		return ""
-	}
-	return strings.TrimRight(f[0], ",")
 }
 
 // render runs the step's world actions through the caller's boundary and

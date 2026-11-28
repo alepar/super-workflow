@@ -512,7 +512,7 @@ func renderUnit(a harness.Adapter, in Instruction) string {
 	if in.Spawn != "" {
 		return renderHeadless(in)
 	}
-	call := a.SpawnLine(harness.Spawn{Brief: briefSlot, Claim: briefClaim(in.Brief), Model: in.Dispatch.Model, Effort: in.Dispatch.Effort, AgentType: in.Dispatch.AgentType, ErrLog: in.ErrLog})
+	call := a.SpawnLine(harness.Spawn{Brief: briefSlot, Claim: in.Claim, Model: in.Dispatch.Model, Effort: in.Dispatch.Effort, AgentType: in.Dispatch.AgentType, ErrLog: in.ErrLog})
 	call = strings.ReplaceAll(call, strconv.Quote(briefSlot), briefSlotText) // a Go-quoted argument
 	call = strings.ReplaceAll(call, jsonQuoted(briefSlot), briefSlotText)    // a JSON string argument
 	call = strings.ReplaceAll(call, briefSlot, briefSlotText)                // a worded one

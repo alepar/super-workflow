@@ -12,6 +12,9 @@ type Plugin struct{ Name, Version string }
 type Issue struct {
 	Number             int
 	Title, Body, State string
+	// Author is the login of the gh identity that created it: the identity
+	// the effect ran as, recorded at Apply.
+	Author string `json:",omitempty"`
 }
 
 // PluginJSON observes plugin.json of repo at ref.

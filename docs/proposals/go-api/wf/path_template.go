@@ -206,14 +206,23 @@ func (s scope) bindPathSource(source string) (any, error) {
 	if strings.Contains(source, pathTemplatePrefix) {
 		return nil, fmt.Errorf("nested PathTemplate is invalid")
 	}
-	bound, err := s.bindPlaceholders(source)
+	// The fragment is the template's own: it starts at the template's first
+	// #, before any placeholder is bound, so a bound value holding # (a file
+	// named issue#12.md) stays part of the path.
+	pathSource, fragmentSource, hasFragment := strings.Cut(source, "#")
+	path, err := s.bindPlaceholders(pathSource)
 	if err != nil {
 		return nil, err
 	}
-	if strings.Contains(bound, pathTemplatePrefix) {
+	fragment := ""
+	if hasFragment {
+		if fragment, err = s.bindPlaceholders(fragmentSource); err != nil {
+			return nil, err
+		}
+	}
+	if strings.Contains(path, pathTemplatePrefix) || strings.Contains(fragment, pathTemplatePrefix) {
 		return nil, fmt.Errorf("nested PathTemplate is invalid")
 	}
-	path, fragment, hasFragment := strings.Cut(bound, "#")
 	// A directory template may append an empty filename. Preserve the root,
 	// but canonicalize trailing separators before validating interior components.
 	if path != "" {

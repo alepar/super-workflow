@@ -25,6 +25,14 @@ var ErrUnavailable = errors.New("adapter unavailable")
 // instead: it is checked by its Key before any re-apply.
 var ErrTimedOut = errors.New("adapter call timed out")
 
+// ErrUncertain marks an Apply that found the world in a state it cannot
+// read as done or not done (an object carrying the effect's key that differs
+// from what the effect would create). Nothing was applied; the Engine
+// journals the effect "uncertain", as for a timeout, and its Check decides
+// what follows (an EffectUnknown routes it to the state's Uncertain route or
+// manual verification).
+var ErrUncertain = errors.New("adapter cannot tell whether the effect took effect")
+
 // ErrSandboxRefused marks an effect, or the check of one, that a sandboxed
 // run (EffectContext.Sandboxed: a run made by a rewind or a snapshot
 // restore) refused rather than let reach a real remote: its runtime does not
@@ -163,6 +171,21 @@ func (e ExternalEffect) KeyID() string {
 		return ""
 	}
 	return e.Key.key()
+}
+
+// KeyIDs are the spellings the effect's key may have in the world: KeyID,
+// then, when it differs, the one a version before part escaping wrote for
+// the same parts (EffectData.LegacyKey). A runtime that finds a prior
+// completion by key looks for each.
+func (e ExternalEffect) KeyIDs() []string {
+	id := e.KeyID()
+	if id == "" {
+		return nil
+	}
+	if e.legacyKey == "" || e.legacyKey == id {
+		return []string{id}
+	}
+	return []string{id, e.legacyKey}
 }
 
 // AdapterRuntime performs one external tool's declared ops.

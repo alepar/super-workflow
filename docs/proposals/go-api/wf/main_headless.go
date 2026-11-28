@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -168,17 +169,13 @@ func (c *cli) spawnPrefix() []string {
 	return spawnPrefixFor(c.cfg, bin)
 }
 
-// spawnPrefixFor is spawnPrefix for the binary at bin wired by cfg.
+// spawnPrefixFor is spawnPrefix for the binary at bin wired by cfg: the
+// words multiVerbLine, or wfLine for a named binary, starts the line with.
 func spawnPrefixFor(cfg MainConfig, bin string) []string {
-	line := multiVerbLine(bin, "S", "R", "spawn")
 	if cfg.named() {
-		line = wfLine(bin, "S", "R", "spawn")
+		return []string{bin, "wf", "spawn"}
 	}
-	words := shellWords(line)
-	if i := slices.Index(words, "spawn"); i >= 0 {
-		return words[:i+1]
-	}
-	return nil
+	return []string{bin, "spawn"}
 }
 
 // setupCodexRulesRow prints, or with --write writes, the Codex rule that
@@ -270,7 +267,16 @@ func (c *cli) codexRuleCheck(spawn string) (why, fix string) {
 	for _, f := range files {
 		argv = append(argv, "--rules", f)
 	}
-	argv = append(argv, shellWords(spawn)...)
+	cmds, err := sink.SplitCommands(spawn)
+	if err != nil {
+		return fmt.Sprintf("the spawn line is not literal shell words (%v), so Codex's rules cannot be checked against it", err), fix
+	}
+	for i, words := range cmds {
+		if i > 0 {
+			argv = append(argv, "&&") // a line that runs another command first fails the check
+		}
+		argv = append(argv, words...)
+	}
 	out, code := runCheck(argv, os.Environ())
 	var res struct {
 		Decision string `json:"decision"`

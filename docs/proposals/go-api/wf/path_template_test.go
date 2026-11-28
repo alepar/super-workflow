@@ -19,6 +19,27 @@ func pathTemplateScope(t *testing.T) scope {
 	return s
 }
 
+// A bound value holding # is part of the path: the fragment is the
+// template's own, split before binding.
+func TestPathTemplateBoundHashStaysInThePath(t *testing.T) {
+	s := pathTemplateScope(t)
+	s.c.st.started.Params = map[string]string{"name": "issue#12.md"}
+	for _, test := range []struct{ template, path, fragment string }{
+		{"docs/{name}", "docs/issue#12.md", ""},
+		{"docs/{name}#L3", "docs/issue#12.md", "#L3"},
+		{"docs/x.md#{name}", "docs/x.md", "#issue#12.md"},
+	} {
+		value, marked, err := s.bindPathTemplate(PathTemplate(test.template))
+		if err != nil || !marked {
+			t.Fatalf("bind %q: %v %v", test.template, marked, err)
+		}
+		p, _, err := markedOwnedPath(value)
+		if err != nil || p.Path != test.path || p.Fragment != test.fragment {
+			t.Errorf("%q: path %q fragment %q (%v), want %q %q", test.template, p.Path, p.Fragment, err, test.path, test.fragment)
+		}
+	}
+}
+
 func TestPathTemplateOwnershipFragmentsAndForkRoots(t *testing.T) {
 	s := pathTemplateScope(t)
 	outside := filepath.Join(t.TempDir(), "driver with spaces")

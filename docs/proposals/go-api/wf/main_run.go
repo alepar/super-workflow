@@ -2039,7 +2039,7 @@ func (c *cli) engine(stateDir string, opts EngineOptions) (Executor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("locating the running binary: %w", err)
 	}
-	opts.caller.Executable = bin
+	opts.caller.Executable, opts.Binary = bin, bin
 	if opts.HeadlessCheck == nil {
 		opts.HeadlessCheck = c.headlessCheck
 	}

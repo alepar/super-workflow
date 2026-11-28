@@ -682,7 +682,7 @@ func (c *cycle) handOut(in *instance) (Instruction, bool, error) {
 	}
 	return Instruction{
 		Run: c.run, State: c.st.qualified(in), Kind: InstructionAgent, Attempt: in.Attempt,
-		Name: name, Output: output, Class: c.st.qualified(in), Brief: brief, Child: in.ID,
+		Name: name, Output: output, Class: c.st.qualified(in), Brief: brief, Claim: claim, Child: in.ID,
 		Dispatch: dispatch, Spawn: c.spawnCommand(claim, dispatch), ErrLog: errLog, GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
 		PreviousRefusal: previousRefusal(in),
 	}, true, nil
@@ -1292,7 +1292,7 @@ func (c *cycle) sameOffer(in *instance) (Instruction, bool, error) {
 	}
 	return Instruction{
 		Run: c.run, State: c.st.qualified(in), Kind: InstructionAgent, Attempt: in.Attempt,
-		Name: u.Name, Output: output, Class: c.st.qualified(in), Brief: c.brief(claim), Child: in.ID,
+		Name: u.Name, Output: output, Class: c.st.qualified(in), Brief: c.brief(claim), Claim: claim, Child: in.ID,
 		Dispatch: c.callerDispatch(in), Spawn: c.spawnCommand(claim, c.callerDispatch(in)), ErrLog: u.errLogOf(claim), GitAuthority: in.Issued.GitAuthority, Workspace: in.Issued.Workspace, Context: ContextFresh,
 		PreviousRefusal: previousRefusal(in),
 	}, true, nil
@@ -1348,7 +1348,8 @@ func (c *cycle) unitsThatFit(order []*instance, others []Instruction, co Coordin
 		return co.OutBytes > 0 && bytes > co.OutBytes || co.OutLines > 0 && lines > co.OutLines
 	}
 	size := func(in *instance) (int, int) {
-		ins := Instruction{Kind: InstructionAgent, Name: c.offerName(in), Brief: c.brief(strings.Repeat("0", 16)), Dispatch: c.callerDispatch(in), NotStarted: relist || c.passedOver(in, co), SameClaim: relist}
+		zero := strings.Repeat("0", 16)
+		ins := Instruction{Kind: InstructionAgent, Name: c.offerName(in), Brief: c.brief(zero), Claim: zero, Dispatch: c.callerDispatch(in), NotStarted: relist || c.passedOver(in, co), SameClaim: relist}
 		if startLogOf(a) != nil {
 			worst := c.childErrLog(strings.Repeat("0", 16))
 			ins.ErrLog = worst

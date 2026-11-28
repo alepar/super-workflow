@@ -90,6 +90,31 @@ func TestTimedOutKeyedEffectIsCheckedBeforeReapply(t *testing.T) {
 	})
 }
 
+// An Apply that finds the world neither done nor not done (gh: its marker on
+// an issue of its own under another title) applies nothing and is uncertain:
+// its retry checks, and a check that cannot tell routes to verification,
+// never to a second create and never to a run stop.
+func TestUncertainApplyIsCheckedNotReapplied(t *testing.T) {
+	d := edgeDef(false, mergeEffect(wf.KeyOf("merge", "feat")))
+	w := newWorld()
+	w.applyErr = fmt.Errorf("%w: synthetic: an object with this key differs", wf.ErrUncertain)
+	h := newHarness(t, d, w)
+	run := h.run(d, nil)
+	h.submit(run, h.next(run)[0], `{}`)
+	if rs := effectResults(t, h, run); len(rs) != 1 || rs[0].Outcome != "uncertain" {
+		t.Fatalf("effect results = %+v, want one uncertain", rs)
+	}
+	w.applyErr = nil
+	h.now = h.now.Add(time.Hour)
+	ins := h.next(run)
+	if w.appliedCount() != 1 || w.checks == 0 || len(ins) != 1 || ins[0].Kind != wf.InstructionManualVerification {
+		t.Fatalf("applied = %d, checks = %d, instructions = %+v; want the first apply only, a check, then manual verification", w.appliedCount(), w.checks, ins)
+	}
+	if st := h.status(run); st.Phase == wf.RunEnded {
+		t.Fatalf("the run ended on an uncertain effect: %+v", st)
+	}
+}
+
 // A NonIdempotent effect whose call timed out is Uncertain on its retry: it
 // has no check, so it is never applied blind a second time.
 func TestTimedOutNonIdempotentEffectIsNeverReappliedBlind(t *testing.T) {
@@ -136,6 +161,58 @@ func TestFailedKeyedEffectIsCheckedBeforeReapply(t *testing.T) {
 	h.submit(run, h.next(run)[0], `{}`)
 	if w.appliedCount() != 1 || w.checks != 1 {
 		t.Fatalf("applied = %d, checks = %d; want one check instead of a second apply", w.appliedCount(), w.checks)
+	}
+	statusOf(t, h.status(run), wf.RunEnded, "eDone")
+}
+
+// A run held across the change to escaped key parts keeps its effects
+// found: a keyed effect whose part holds "/" (a branch super-auto/x) failed
+// under the earlier spelling, the unescaped join, which is what an earlier
+// version journaled and stamped in the world. On the new code its retry binds
+// the escaped key, finds the earlier result under the legacy spelling, checks
+// the world by both, and applies nothing when it is there.
+func TestKeyedEffectFoundUnderItsSpellingBeforeEscaping(t *testing.T) {
+	d := failLoopDef(mergeEffect(wf.KeyOf("finish-pr", "{branch}")))
+	d.Param("branch")
+	dir := t.TempDir()
+	w := newWorld()
+	w.failOp["git.merge"] = true
+	h := newHarness(t, d, w)
+	h.j = wf.FileJournal(dir)
+	h.e = wf.NewEngine(h.j, h.reg, wf.EngineOptions{Clock: func() time.Time { return h.now }, Defs: []*wf.Def{d}})
+	run := h.run(d, map[string]string{"branch": "super-auto/x"})
+	h.submit(run, h.next(run)[0], `{}`)
+	rs := effectResults(t, h, run)
+	if len(rs) != 1 || rs[0].Outcome != "failed" {
+		t.Fatalf("effect results = %+v, want one failed", rs)
+	}
+	// Rewrite the journal as the earlier version wrote it: the intent's key
+	// unescaped, with no legacy spelling beside it.
+	path := filepath.Join(dir, "runs", string(run), "journal.jsonl")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte(`"Key":"finish-pr/super-auto%2Fx"`)) || !bytes.Contains(raw, []byte(`"LegacyKey":"finish-pr/super-auto/x"`)) {
+		t.Fatalf("the intent does not journal the escaped key and its legacy spelling:\n%s", raw)
+	}
+	raw = bytes.ReplaceAll(raw, []byte(`"Key":"finish-pr/super-auto%2Fx","LegacyKey":"finish-pr/super-auto/x"`), []byte(`"Key":"finish-pr/super-auto/x"`))
+	raw = bytes.ReplaceAll(raw, []byte(`"Key":"finish-pr/super-auto%2Fx"`), []byte(`"Key":"finish-pr/super-auto/x"`))
+	if bytes.Contains(raw, []byte("%2F")) {
+		t.Fatalf("the rewrite left an escaped key:\n%s", raw)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The earlier attempt landed after all, as the world records it under
+	// the earlier spelling.
+	w.failOp["git.merge"] = false
+	w.status["finish-pr/super-auto/x"] = wf.EffectDone
+	h.e = wf.NewEngine(wf.FileJournal(dir), h.reg, wf.EngineOptions{Clock: func() time.Time { return h.now }, Defs: []*wf.Def{d}})
+	h.j = wf.FileJournal(dir)
+	h.submit(run, h.next(run)[0], `{}`)
+	if w.appliedCount() != 1 || w.checks != 1 {
+		t.Fatalf("applied = %d, checks = %d; want the first apply only, then one check", w.appliedCount(), w.checks)
 	}
 	statusOf(t, h.status(run), wf.RunEnded, "eDone")
 }
@@ -289,7 +366,7 @@ func TestRewoundRunNeverCreatesAGitHubIssue(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	stub := filepath.Join(dir, "gh")
-	script := "#!/bin/sh\necho \"$1 $2\" >> '" + log + "'\nif [ \"$2\" = list ]; then echo '[]'; else echo https://example.invalid/o/r/issues/7; fi\n"
+	script := "#!/bin/sh\necho \"$1 $2\" >> '" + log + "'\nif [ \"$1 $2\" = 'api user' ]; then echo '{\"login\":\"me\"}'; exit 0; fi\nif [ \"$2\" = list ]; then echo '[]'; else echo https://example.invalid/o/r/issues/7; fi\n"
 	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

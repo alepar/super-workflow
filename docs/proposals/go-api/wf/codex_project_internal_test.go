@@ -144,7 +144,7 @@ func TestCodexRuleCheckFindsTrustedProjectRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printed := multiVerbLine(exe, filepath.Join(top, "state"), "r1", "spawn", "--claim", "<claim>")
+	printed := multiVerbLine(exe, filepath.Join(top, "state"), "r1", "spawn", "--claim", strings.Repeat("0", 16))
 
 	why, fix := c.codexRuleCheck(printed)
 	if !strings.Contains(why, "does not trust the project "+repo) || !strings.Contains(fix, "trust "+repo) {

@@ -163,7 +163,7 @@ func agyPaired(calls []agyCall, results []agyStep, at time.Time) []agyLaunch {
 
 // agyChild is the child session started for token since after: conditions
 // 1-5 and 7 of spec §4.5. (1) a launch in session's own log, at or after the
-// hand-out, whose Prompt names token as its one claim (onlyClaim); (7) its
+// hand-out, whose Prompt names token as its first claim (firstClaimIs); (7) its
 // result names C; (2) session's listing names C; (3) C's step 0 is the
 // delivery from session with body byte-equal to the Prompt; (4) that step is
 // not older than the launch, at one-second resolution; (5) exactly one such
@@ -176,7 +176,7 @@ func agyChild(root, session, token string, after time.Time) (Child, bool) {
 	}
 	matched := map[string]bool{}
 	for _, l := range agyLaunches(root, session, after) {
-		if l.child == session || !onlyClaim([]byte(l.prompt), token) || !agyListed(root, session, l.child) {
+		if l.child == session || !firstClaimIs([]byte(l.prompt), token) || !agyListed(root, session, l.child) {
 			continue
 		}
 		d, at, ok := agyFirstFrom(root, session, l.child)

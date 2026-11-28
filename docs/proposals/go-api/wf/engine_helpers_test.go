@@ -274,8 +274,10 @@ func (f *scriptedRuntime) Apply(_ string, e wf.ExternalEffect) (json.RawMessage,
 func (f *scriptedRuntime) Check(_ string, e wf.ExternalEffect) (wf.EffectStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if s, ok := f.status[e.KeyID()]; ok {
-		return s, nil
+	for _, k := range e.KeyIDs() { // as a real adapter looks: each spelling
+		if s, ok := f.status[k]; ok {
+			return s, nil
+		}
 	}
 	return wf.EffectUnknown, nil
 }

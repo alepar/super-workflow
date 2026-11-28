@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -308,5 +309,78 @@ func TestHostileCommand(t *testing.T) {
 				t.Errorf("Command(%q) block holds %q", in.Value, got)
 			}
 		})
+	}
+}
+
+// Split reads back every Argv.Line: each hostile value as one word between
+// two others, and the whole corpus as one line.
+func TestHostileSplitInvertsLine(t *testing.T) {
+	all := sink.Argv{}
+	for _, in := range hostile.Corpus() {
+		if strings.IndexByte(in.Value, 0) >= 0 {
+			if _, err := sink.Split(in.Value); !errors.Is(err, sink.ErrNUL) {
+				t.Errorf("%s: Split with NUL: err %v, want ErrNUL", in.Name, err)
+			}
+			continue
+		}
+		a := sink.Argv{"wf", in.Value, "-x"}
+		got, err := sink.Split(a.Line())
+		if err != nil || !slices.Equal(got, a) {
+			t.Errorf("%s: Split(%q) = %q, %v; want %q", in.Name, a.Line(), got, err, a)
+		}
+		all = append(all, in.Value)
+	}
+	if got, err := sink.Split(all.Line()); err != nil || !slices.Equal(got, all) {
+		t.Errorf("Split of the whole corpus line: %v", err)
+	}
+}
+
+// Split reads a literal line as the shells do: each accepted line's words
+// are the argv sh and bash give printf in its place. (A glob or a leading ~
+// is left out here: Split keeps them literal on purpose.)
+func TestSplitAgreesWithTheShell(t *testing.T) {
+	for _, line := range []string{
+		`wf prompt --claim T`,
+		"wf \\\nprompt --claim T",
+		`a"b c"d 'e f'g\ h`,
+		`"x\"y" "p\q" "a\\b" "line\` + "\n" + `cont"`,
+		`'/w/a && b' x`,
+		`wf x # a comment`,
+		`a#b`,
+		`'' ""`,
+		"tab\tsep  arated",
+	} {
+		words, err := sink.Split(line)
+		if err != nil {
+			t.Fatalf("Split(%q): %v", line, err)
+		}
+		for _, sh := range shells(t) {
+			script := "printf '%s\\0' " + line
+			out, err := exec.Command(sh[0], append(sh[1:], "-c", script)...).Output()
+			if err != nil {
+				t.Fatalf("%s -c %q: %v", sh, script, err)
+			}
+			got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+			if !slices.Equal(got, words) {
+				t.Errorf("%s: line %q: shell %q, Split %q", sh, line, got, words)
+			}
+		}
+	}
+}
+
+func TestSplitRefuses(t *testing.T) {
+	for _, line := range []string{
+		"a; b", "a | b", "a > f", "a < f", "a & b", "$(x)", "`x`", "a $HOME", `"$x"`, "\"`x`\"",
+		"a\nb", "a\rb", "'open", `"open`, `trail\`, "&& a", "a &&", "a && && b", "(a)",
+	} {
+		if got, err := sink.SplitCommands(line); !errors.Is(err, sink.ErrNotLiteral) {
+			t.Errorf("SplitCommands(%q) = %q, %v; want ErrNotLiteral", line, got, err)
+		}
+	}
+	if _, err := sink.Split("a && b"); !errors.Is(err, sink.ErrNotLiteral) {
+		t.Errorf("Split of a chain: %v, want ErrNotLiteral", err)
+	}
+	if got, err := sink.SplitCommands("cd /w && wf prompt"); err != nil || len(got) != 2 || !slices.Equal(got[1], []string{"wf", "prompt"}) {
+		t.Errorf("SplitCommands chain = %q, %v", got, err)
 	}
 }

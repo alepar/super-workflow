@@ -92,8 +92,9 @@ type EngineOptions struct {
 	// HeadlessCheck is the preflight of a child harness for a coordinator
 	// harness, run once per segment at its binding (harness_checked); nil
 	// checks nothing. The CLI's checks its PATH, login and launch route.
-	// spawn is the spawn verb's command exactly as next prints it, its claim
-	// the slot <claim>.
+	// spawn is the spawn verb's command exactly as next prints it, with the
+	// stand-in claim 0000000000000000 (a literal shell word, so the check
+	// can read the line's words; a harness rule matches its prefix).
 	HeadlessCheck func(child, coordinator string, cfg *HeadlessConfig, spawn string) HarnessCheckedData
 	// HeadlessProcess starts and checks headless children; nil is the host's.
 	HeadlessProcess HeadlessProcess
@@ -111,6 +112,9 @@ type EngineOptions struct {
 	// budget in force from this resume on; nil leaves it as it is.
 	ResumeBudget *BudgetChange
 	VerbLine     func(run RunID, verb string, args ...string) string // default "workflow <verb> <run> <args...>"
+	// Binary is the workflow binary VerbLine's commands run, as a headless
+	// child is allowed to run it; default "workflow", as the default VerbLine.
+	Binary string
 	// ResumeLine is the command that starts a successor of the ended run
 	// started as started (run on an ended run starts one); "" leaves it unsaid.
 	ResumeLine func(started RunStartedData) string
@@ -258,6 +262,9 @@ func NewEngine(j Journal, reg *Adapters, opts EngineOptions) Executor {
 			}
 			return hex.EncodeToString(b)
 		}
+	}
+	if opts.Binary == "" {
+		opts.Binary = "workflow"
 	}
 	if opts.VerbLine == nil {
 		opts.VerbLine = func(run RunID, verb string, args ...string) string {
@@ -2088,6 +2095,16 @@ func (c *cycle) stepOf(in *instance, u edgeUse) (EdgeStep, error) {
 			d.NonIdempotent, d.Reason = true, string(k)
 		case textKey:
 			d.Key, d.KeyTemplate = k.key(), k.text.spans
+			if len(k.parts) > 1 {
+				for _, p := range k.parts {
+					d.KeyPartTemplates = append(d.KeyPartTemplates, p.spans)
+				}
+			}
+		case idemKey:
+			d.Key = k.key()
+			if parts := k.parts(); len(parts) > 1 {
+				d.KeyParts = parts
+			}
 		default:
 			d.Key = k.key()
 		}

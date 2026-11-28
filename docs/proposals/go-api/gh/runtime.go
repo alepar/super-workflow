@@ -118,10 +118,19 @@ func repoComponent(s string) bool {
 	}) < 0
 }
 
+// keyedBody is the whole body a keyed effect's issue is created with: the
+// body, a blank line, then its marker.
+func keyedBody(e wf.ExternalEffect) string { return str(e.Args, "body") + "\n\n" + marker(e) }
+
+// searchLimit is the most issues one marker search lists: GitHub's search
+// returns no more than 1000 results.
+const searchLimit = 1000
+
 // marker is the body text that lets Check find an issue created for a key.
-func marker(e wf.ExternalEffect) string {
-	return "<!-- effect-key: " + markerKey(e.KeyID()) + " -->"
-}
+func marker(e wf.ExternalEffect) string { return markerOf(e.KeyID()) }
+
+// markerOf is the marker of the key spelled key.
+func markerOf(key string) string { return "<!-- effect-key: " + markerKey(key) + " -->" }
 
 // markerKey is key as it is written in the marker. The marker must stay one
 // HTML comment ('>' could close it) and one quoted search phrase ('"' or '\'
@@ -154,15 +163,22 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 		return nil, fmt.Errorf("gh: unknown effect %q", e.Op)
 	}
 	body := str(e.Args, "body")
+	login := "" // a keyed create is found again by its creator (find)
 	if e.KeyID() != "" {
-		found, err := r.find(workspace, e)
-		if err != nil {
+		var err error
+		if login, err = r.login(workspace); err != nil {
 			return nil, err
 		}
-		if found != nil {
+		st, found, err := r.find(workspace, e, login)
+		switch {
+		case err != nil:
+			return nil, err
+		case st == wf.EffectDone:
 			return json.Marshal(found)
+		case st == wf.EffectUnknown:
+			return nil, fmt.Errorf("%w: gh issue_create: issue #%d by %s carries this effect's marker under another title, %q", wf.ErrUncertain, found.Number, login, found.Title)
 		}
-		body += "\n\n" + marker(e)
+		body = keyedBody(e)
 	}
 	out, err := r.run(workspace, "issue", "create", "--repo", str(e.Args, "repo"),
 		"--title", str(e.Args, "title"), "--body", body)
@@ -174,7 +190,7 @@ func (r runtime) Apply(workspace string, e wf.ExternalEffect) (json.RawMessage, 
 	if err != nil {
 		return nil, fmt.Errorf("gh issue_create: no issue number in %q", url)
 	}
-	return json.Marshal(Issue{Number: n, Title: str(e.Args, "title"), Body: body, State: "OPEN"})
+	return json.Marshal(Issue{Number: n, Title: str(e.Args, "title"), Body: body, State: "OPEN", Author: login})
 }
 
 // Check reports whether the effect's issue exists (CheckResultAt).
@@ -218,12 +234,13 @@ func (r runtime) check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 	if e.KeyID() == "" {
 		return wf.EffectUnknown, nil, fmt.Errorf("gh issue_create: effect has no idempotency key to search for")
 	}
-	found, err := r.find(workspace, e)
+	login, err := r.login(workspace)
 	if err != nil {
 		return wf.EffectUnknown, nil, err
 	}
-	if found == nil {
-		return wf.EffectNotDone, nil, nil
+	st, found, err := r.find(workspace, e, login)
+	if err != nil || st != wf.EffectDone {
+		return st, nil, err
 	}
 	res, err := json.Marshal(found)
 	if err != nil {
@@ -232,26 +249,83 @@ func (r runtime) check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 	return wf.EffectDone, res, nil
 }
 
-// find searches the repo's issues, open or closed, for the effect's marker.
-// GitHub's search matches terms, not the exact text, so a hit counts only when
-// its body holds the exact marker: another key whose terms overlap this one's
-// (run tag 2026-11-04-foo against 2026-11-04-foo-bar) is not a match. nil
-// means no issue holds it.
-func (r runtime) find(workspace string, e wf.ExternalEffect) (*Issue, error) {
-	m := marker(e)
-	out, err := r.run(workspace, "issue", "list", "--repo", str(e.Args, "repo"),
-		"--search", `"`+m+`" in:body`, "--json", "number,title,body,state", "--state", "all")
-	if err != nil {
-		return nil, err
-	}
-	var found []Issue
-	if err := json.Unmarshal(out, &found); err != nil {
-		return nil, fmt.Errorf("gh issue_create: decode search: %w", err)
-	}
-	for _, f := range found {
-		if strings.Contains(f.Body, m) {
-			return &f, nil
+// find searches the repo's issues, open or closed, created by login (the
+// authenticated identity the effect runs as), for the effect's marker under
+// each spelling of its key (KeyIDs). An issue is the effect's when its body
+// holds the exact marker and login created it: a marker in anyone else's
+// issue is not a match, and GitHub's term search can return another key
+// whose terms overlap this one's (run tag 2026-11-04-foo against
+// 2026-11-04-foo-bar). Such an issue with the effect's title is done; one
+// with another title is unknown (EffectUnknown, found holds it), since it
+// is neither this create nor proof there was none. A search that fills its
+// limit without a match is an error, since the issue may be past it.
+func (r runtime) find(workspace string, e wf.ExternalEffect, login string) (wf.EffectStatus, *Issue, error) {
+	var other *Issue
+	for _, key := range e.KeyIDs() { // the key, then its spelling before part escaping
+		st, found, err := r.findKey(workspace, e, login, key)
+		switch {
+		case err != nil || st == wf.EffectDone:
+			return st, found, err
+		case st == wf.EffectUnknown && other == nil:
+			other = found
 		}
 	}
-	return nil, nil
+	if other != nil {
+		return wf.EffectUnknown, other, nil
+	}
+	return wf.EffectNotDone, nil, nil
+}
+
+// findKey is find for the effect's key spelled key.
+func (r runtime) findKey(workspace string, e wf.ExternalEffect, login, key string) (wf.EffectStatus, *Issue, error) {
+	m := markerOf(key)
+	out, err := r.run(workspace, "issue", "list", "--repo", str(e.Args, "repo"),
+		"--search", `"`+m+`" in:body`, "--author", login, "--json", "number,title,body,state,author", "--state", "all", "--limit", strconv.Itoa(searchLimit))
+	if err != nil {
+		return wf.EffectUnknown, nil, err
+	}
+	var hits []struct {
+		Number             int
+		Title, Body, State string
+		Author             struct{ Login string }
+	}
+	if err := json.Unmarshal(out, &hits); err != nil {
+		return wf.EffectUnknown, nil, fmt.Errorf("gh issue_create: decode search: %w", err)
+	}
+	var other *Issue
+	for _, h := range hits {
+		if h.Author.Login != login || !strings.Contains(h.Body, m) {
+			continue
+		}
+		is := &Issue{Number: h.Number, Title: h.Title, Body: h.Body, State: h.State, Author: login}
+		if h.Title == str(e.Args, "title") {
+			return wf.EffectDone, is, nil
+		}
+		if other == nil {
+			other = is
+		}
+	}
+	if other != nil {
+		return wf.EffectUnknown, other, nil
+	}
+	if len(hits) >= searchLimit {
+		return wf.EffectUnknown, nil, fmt.Errorf("gh issue_create: the marker search listed %d issues, its limit, without this effect's: it may be past the limit", len(hits))
+	}
+	return wf.EffectNotDone, nil, nil
+}
+
+// login is the login of the identity gh is authenticated as.
+func (r runtime) login(workspace string) (string, error) {
+	out, err := r.run(workspace, "api", "user")
+	if err != nil {
+		return "", err
+	}
+	var u struct{ Login string }
+	if err := json.Unmarshal(out, &u); err != nil {
+		return "", fmt.Errorf("gh: decode the authenticated user: %w", err)
+	}
+	if u.Login == "" {
+		return "", fmt.Errorf("gh: the authenticated user has no login")
+	}
+	return u.Login, nil
 }

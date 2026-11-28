@@ -232,7 +232,8 @@ call	wf/dispatch.go	DispatchHints.String	strings.Join	1	seed, unclassified
 call	wf/dispatch.go	familyProblem	strings.Join	1	seed, unclassified
 call	wf/dispatch.go	lintDispatch	strings.Join	1	seed, unclassified
 call	wf/effect_template.go	PathText	strings.TrimPrefix	1	F4 effect key template
-call	wf/effects.go	KeyOf	strings.Join	1	F4 effect key join, unescaped
+call	wf/effects.go	joinKeyParts	strings.Join	1	F4 effect key grammar: the formatter of escaped parts, splitKeyParts its parser
+call	wf/effects.go	legacyKeyJoin	strings.Join	1	F4 effect key: the spelling before escaping, kept so held runs find their effects (sw-8h7f)
 call	wf/engine.go	NewEngine	strings.Join	1	seed, unclassified
 call	wf/engine.go	cycle.noteExhausted	strings.Join	1	seed, unclassified
 call	wf/engine_agent.go	agentOps.decide	strings.Join	2	seed, unclassified
@@ -259,7 +260,6 @@ call	wf/engine_children.go	cycle.ranAUnit	strings.HasPrefix	1	F1 instance ids
 call	wf/engine_children.go	globSegs	strings.Split	1	F1 instance ids
 call	wf/engine_children.go	mapOps.execute	strings.Join	1	F1 instance ids
 call	wf/engine_cleanup.go	cycle.worktreeRemovalBlocked	strings.HasPrefix	1	seed, unclassified
-call	wf/engine_command.go	commandOps.execute	strings.Join	1	seed, unclassified
 call	wf/engine_command.go	inlineProgress	strings.Join	1	seed, unclassified
 call	wf/engine_command.go	lastLine	strings.Split	1	seed, unclassified
 call	wf/engine_command.go	preflightDegraded	strings.HasPrefix	1	seed, unclassified
@@ -443,8 +443,6 @@ call	wf/main_run.go	unfenced	bytes.Split	1	seed, unclassified
 call	wf/main_run.go	usage	strings.HasPrefix	1	seed, unclassified
 call	wf/main_run.go	usage	strings.Join	2	seed, unclassified
 call	wf/manufacture.go	-	regexp.MustCompile	1	dev synthetic-run tool (audit: skimmed)
-call	wf/manufacture.go	briefClaim	strings.Cut	1	F7 claim recovered from the brief
-call	wf/manufacture.go	briefClaim	strings.Fields	1	F7 claim recovered from the brief
 call	wf/manufacture.go	commandWords	strings.Cut	1	dev synthetic-run tool (audit: skimmed)
 call	wf/manufacture.go	commandWords	strings.HasPrefix	1	dev synthetic-run tool (audit: skimmed)
 call	wf/manufacture.go	commandWords	strings.IndexByte	1	dev synthetic-run tool (audit: skimmed)
@@ -560,9 +558,7 @@ call	wf/snapshot_trust.go	snapshotStore.trustedPacks	strings.Split	1	F12 own tru
 call	wf/spawn.go	Engine.Spawn	strings.TrimSuffix	1	F7 spawn prefix, shell words
 call	wf/spawn.go	ParseHeadlessCmd	strings.Cut	1	F7 spawn prefix, shell words
 call	wf/spawn.go	ParseHeadlessCmd	strings.Join	1	F7 spawn prefix, shell words
-call	wf/spawn.go	briefBinary	strings.Cut	2	F7 binary recovered from the brief
 call	wf/spawn.go	envValue	strings.Cut	1	F7 spawn prefix, shell words
-call	wf/spawn.go	shellWords	strings.IndexByte	1	F7 spawn prefix, shell words
 call	wf/states.go	agentKind.view	strings.Join	1	seed, unclassified
 call	wf/states.go	joinRaw	strings.Join	1	seed, unclassified
 call	wf/states.go	lintCases	strings.Join	1	seed, unclassified

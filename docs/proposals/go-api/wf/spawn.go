@@ -228,7 +228,7 @@ func (e *Engine) Spawn(run RunID, claim string, co Coordinator, environ []string
 			return fmt.Errorf("spawn: write the brief: %w", err)
 		}
 		session := hl.HeadlessSession(claim)
-		hs := harness.HeadlessSpawn{Model: d.Model, Effort: d.Effort, Session: session, Workspace: c.workspace(), StateDir: c.e.opts.StateRoot, WF: briefBinary(brief)}
+		hs := harness.HeadlessSpawn{Model: d.Model, Effort: d.Effort, Session: session, Workspace: c.workspace(), StateDir: c.e.opts.StateRoot, WF: c.e.opts.Binary}
 		argv, err := headlessArgv(c.headless(), target, hl, hs, c.run, u.Name)
 		if err != nil {
 			return err
@@ -307,66 +307,6 @@ func ParseHeadlessCmd(v string) (string, []string, error) {
 		return "", nil, fmt.Errorf("%s: want a nonempty JSON argv array; placeholders: %s", h, strings.Join(headlessPlaceholders, ", "))
 	}
 	return h, argv, nil
-}
-
-// briefBinary is the workflow binary the brief's first command runs: the
-// first word after "&& " of its first line, unquoted; "" when it has none.
-func briefBinary(brief string) string {
-	line, _, _ := strings.Cut(brief, "\n")
-	if _, rest, ok := strings.Cut(line, "&& "); ok {
-		line = rest
-	}
-	return firstShellWord(line)
-}
-
-// firstShellWord is the first word of a POSIX shell line in the forms
-// sink.Quote writes, "" when it has none.
-func firstShellWord(line string) string {
-	if w := shellWords(line); len(w) > 0 {
-		return w[0]
-	}
-	return ""
-}
-
-// shellWords splits a POSIX shell line in the forms sink.Quote writes: bare
-// characters, single-quoted runs and backslash escapes, separated by
-// unquoted blanks. An operator (&&, |, ;) stays a word of its own when
-// blanks surround it, as the engine prints them. An unterminated quote ends
-// the words before it.
-func shellWords(line string) []string {
-	var words []string
-	var b strings.Builder
-	in := false
-	for i := 0; i < len(line); i++ {
-		switch ch := line[i]; ch {
-		case ' ', '\t':
-			if in {
-				words, in = append(words, b.String()), false
-				b.Reset()
-			}
-		case '\'':
-			j := strings.IndexByte(line[i+1:], '\'')
-			if j < 0 {
-				return words
-			}
-			b.WriteString(line[i+1 : i+1+j])
-			i += j + 1
-			in = true
-		case '\\':
-			if i+1 < len(line) {
-				i++
-				b.WriteByte(line[i])
-			}
-			in = true
-		default:
-			b.WriteByte(ch)
-			in = true
-		}
-	}
-	if in {
-		words = append(words, b.String())
-	}
-	return words
 }
 
 // envValue is the value of name in environ, "" when unset.

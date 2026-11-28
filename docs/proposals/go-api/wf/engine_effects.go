@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -119,13 +120,14 @@ func (c *cycle) applyAs(in *instance, intent int64, idx int, e EffectData, edge 
 	if err != nil {
 		return err
 	}
-	res, aerr := c.e.reg.ApplyAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args.(map[string]any), Key: keyOfData(e)})
+	res, aerr := c.e.reg.ApplyAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, externalOf(e, args.(map[string]any)))
 	rd := EffectResultData{Intent: intent, Index: idx, OK: aerr == nil, Outcome: "applied"}
 	switch {
 	case errors.Is(aerr, ErrSandboxRefused):
 		rd.Outcome, rd.Error = "refused", aerr.Error()
-	case errors.Is(aerr, ErrTimedOut):
-		// The request may have reached the remote before the kill.
+	case errors.Is(aerr, ErrTimedOut), errors.Is(aerr, ErrUncertain):
+		// The request may have reached the remote before the kill, or the
+		// adapter found an object it cannot read as this effect's or not.
 		rd.Outcome, rd.Error = "uncertain", aerr.Error()
 	case errors.Is(aerr, ErrUnavailable):
 		rd.Outcome, rd.Error = "unavailable", aerr.Error()
@@ -202,7 +204,7 @@ func (c *cycle) checkThenApply(in *instance, intent int64, idx int, e EffectData
 	if resolveErr != nil {
 		return false, resolveErr
 	}
-	st, res, cerr := c.e.reg.CheckResultAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args.(map[string]any), Key: keyOfData(e)})
+	st, res, cerr := c.e.reg.CheckResultAt(c.workspace(), EffectContext{Run: c.run, Instance: in.ID, State: c.st.qualified(in), Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, externalOf(e, args.(map[string]any)))
 	if errors.Is(cerr, ErrSandboxRefused) {
 		return false, c.uncertain(in, fmt.Sprintf("effect %d (%s.%s): %s, and its check was refused: %v", intent, e.Adapter, e.Op, why, cerr))
 	}
@@ -267,7 +269,13 @@ func (c *cycle) lastKeyedOutcome(in *instance, e EffectData) string {
 		if ir.Kind != JournalEffectIntent || json.Unmarshal(ir.Data, &id) != nil {
 			continue
 		}
-		if id.Effect.Adapter != e.Adapter || id.Effect.Op != e.Op || id.Effect.Key != e.Key || id.Effect.NonIdempotent != e.NonIdempotent {
+		// A key matches under either spelling (LegacyKey): a result an
+		// earlier version journaled is this effect's.
+		sameKey := e.Key == "" && id.Effect.Key == ""
+		for _, k := range keySpellings(e) {
+			sameKey = sameKey || slices.Contains(keySpellings(id.Effect), k)
+		}
+		if id.Effect.Adapter != e.Adapter || id.Effect.Op != e.Op || !sameKey || id.Effect.NonIdempotent != e.NonIdempotent {
 			continue
 		}
 		if e.NonIdempotent {
@@ -297,9 +305,25 @@ func keyOfData(e EffectData) Key {
 	case e.NonIdempotent:
 		return NonIdempotent(e.Reason)
 	case e.Key != "":
-		return KeyOf(e.Key)
+		return boundKey(e.Key)
 	}
 	return nil
+}
+
+// externalOf is the bound effect e as its adapter receives it.
+func externalOf(e EffectData, args map[string]any) ExternalEffect {
+	return ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: args, Key: keyOfData(e), legacyKey: e.LegacyKey}
+}
+
+// keySpellings are e's key as Key and, when set, LegacyKey.
+func keySpellings(e EffectData) []string {
+	var out []string
+	for _, k := range []string{e.Key, e.LegacyKey} {
+		if k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // openIntent is the instance's effect intent that has no result, if any.

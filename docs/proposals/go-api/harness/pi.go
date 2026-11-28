@@ -692,7 +692,7 @@ func piChild(root, session, token, errLog string, after time.Time) (Child, bool)
 	}
 	matched := map[string]bool{}
 	for _, l := range piLaunches(coord, after) {
-		if l.session != want || !onlyClaim([]byte(l.brief), token) || errLog != "" && l.errLog != errLog {
+		if l.session != want || !firstClaimIs([]byte(l.brief), token) || errLog != "" && l.errLog != errLog {
 			continue
 		}
 		for _, f := range piFiles(root, want) {

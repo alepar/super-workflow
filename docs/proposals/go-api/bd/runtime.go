@@ -784,13 +784,20 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 		if err != nil {
 			return wf.EffectUnknown, err
 		}
-		l, err := keyLabel(e)
-		if err != nil {
-			return wf.EffectUnknown, err
-		}
-		labels := []string{l.String()}
-		if legacy, ok := legacyKeyLookup(e, l.String()); ok {
-			labels = append(labels, legacy)
+		// Each spelling the key may have been stamped with (KeyIDs: before
+		// part escaping too), each with its label and legacy label.
+		var labels []string
+		for _, id := range e.KeyIDs() {
+			ek := e
+			ek.Key = wf.KeyOf(id) // one part: the key as it is spelled
+			l, err := keyLabel(ek)
+			if err != nil {
+				return wf.EffectUnknown, err
+			}
+			labels = append(labels, l.String())
+			if legacy, ok := legacyKeyLookup(ek, l.String()); ok {
+				labels = append(labels, legacy)
+			}
 		}
 		for _, l := range labels {
 			out, err := r.run(workspace, "list", "--label", l, "--all", "--limit", "0", "--json")

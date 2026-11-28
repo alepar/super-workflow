@@ -413,13 +413,13 @@ func TestHeadlessPrimitiveCodexToClaude(t *testing.T) {
 	e.must("run", "family-claude", "--run-id", "r1", "--workspace", e.ws)
 	claim, line := e.offer("claude")
 	// The preflight asked Codex about the command exactly as next printed
-	// it, with the claim still a slot: a form the rule does not match
-	// would have failed it.
+	// it, with a stand-in claim: a form the rule does not match would have
+	// failed it.
 	var checked []string
 	if b, err := os.ReadFile(filepath.Join(e.fakes, "execpolicy.json")); err != nil || json.Unmarshal(b, &checked) != nil {
 		t.Fatalf("the preflight never ran codex execpolicy check: %v", err)
 	}
-	if want := strings.Fields(strings.Replace(line, claim, "<claim>", 1)); !slices.Equal(checked, want) {
+	if want := strings.Fields(strings.Replace(line, claim, strings.Repeat("0", 16), 1)); !slices.Equal(checked, want) {
 		t.Errorf("the preflight checked %q, not the printed command %q", checked, want)
 	}
 	// Run as printed from another directory: the child still starts in the
@@ -436,6 +436,11 @@ func TestHeadlessPrimitiveCodexToClaude(t *testing.T) {
 		t.Errorf("the child started in %s, not the run's workspace %s", cwd, e.ws)
 	}
 	got := strings.Join(argv, " ")
+	// The child may run the workflow binary: the rule names the binary the
+	// engine runs as (EngineOptions.Binary), never one read off the brief.
+	if self, err := os.Executable(); err != nil || !slices.Contains(argv, "Bash("+self+" *)") {
+		t.Errorf("claude argv does not allow the workflow binary %s (%v): %s", self, err, got)
+	}
 	for _, want := range []string{"-p", "--model fable", "--effort high", "--session-id ", "--permission-mode dontAsk", "--add-dir " + e.state, "Write(/" + e.state + "/**)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("claude argv lacks %q: %s", want, got)
@@ -777,7 +782,7 @@ func TestHeadlessFetchBoundAndNoReofferWhileStarting(t *testing.T) {
 		Defs: []*wf.Def{d}, RunID: "r1", Clock: func() time.Time { return now }, StateRoot: t.TempDir(),
 		HeadlessProcess: p, Harness: "claude",
 		HeadlessCheck: func(_, _ string, _ *wf.HeadlessConfig, spawn string) wf.HarnessCheckedData {
-			if !strings.Contains(spawn, " spawn ") || !strings.Contains(spawn, "--claim <claim>") || strings.Contains(spawn, "&&") {
+			if !strings.Contains(spawn, " spawn ") || !strings.Contains(spawn, "--claim 0000000000000000") || strings.Contains(spawn, "&&") {
 				t.Errorf("the preflight was not given the spawn command as next prints it: %q", spawn)
 			}
 			return wf.HarnessCheckedData{Available: true}

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"text/scanner"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 )
 
 // codexExecArgv reads literal exec_command arguments, never arbitrary text
@@ -352,84 +354,20 @@ func execBatch(tokens []string) (calls []map[string]json.RawMessage, ok bool) {
 // the operator distinct preserves quoting and leaves direct argv arrays literal.
 const shellAnd = "\x00&&"
 
-// literalShellArgv handles the quoting used by printed workflow commands.
-// Operators and expansions need shell evaluation and are not accepted here.
+// literalShellArgv is a model-written command as argv when it is literal
+// shell words (sink.SplitCommands), its && operators kept as shellAnd. A
+// line it would need a shell to read is not literal.
 func literalShellArgv(command string) ([]string, bool) {
-	if strings.ContainsRune(command, 0) {
+	cmds, err := sink.SplitCommands(command)
+	if err != nil {
 		return nil, false
 	}
-	command = strings.TrimSpace(command)
 	var argv []string
-	var word strings.Builder
-	var quote rune
-	started := false
-	chars := []rune(command)
-	for i := 0; i < len(chars); i++ {
-		c := chars[i]
-		if c == '\\' && quote != '\'' {
-			i++
-			if i == len(chars) {
-				return nil, false
-			}
-			if quote == '"' && !strings.ContainsRune("$`\"\\\n", chars[i]) {
-				word.WriteRune('\\')
-			}
-			word.WriteRune(chars[i])
-			started = true
-			continue
-		}
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			} else {
-				if quote == '"' && (c == '$' || c == '`') {
-					return nil, false
-				}
-				word.WriteRune(c)
-			}
-			continue
-		}
-		switch c {
-		case '\'', '"':
-			quote = c
-			started = true
-		case '\n', '\r':
-			return nil, false
-		case ' ', '\t':
-			if started {
-				argv = append(argv, word.String())
-				word.Reset()
-				started = false
-			}
-		case '#':
-			if !started {
-				i = len(chars)
-				continue
-			}
-			word.WriteRune(c)
-		case '&':
-			if i+1 >= len(chars) || chars[i+1] != '&' {
-				return nil, false
-			}
-			if started {
-				argv = append(argv, word.String())
-				word.Reset()
-				started = false
-			}
+	for i, words := range cmds {
+		if i > 0 {
 			argv = append(argv, shellAnd)
-			i++
-		case ';', '|', '<', '>', '(', ')', '$', '`':
-			return nil, false
-		default:
-			word.WriteRune(c)
-			started = true
 		}
-	}
-	if quote != 0 {
-		return nil, false
-	}
-	if started {
-		argv = append(argv, word.String())
+		argv = append(argv, words...)
 	}
 	return argv, true
 }

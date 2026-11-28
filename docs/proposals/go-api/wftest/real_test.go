@@ -26,8 +26,10 @@ func stubGitHub(t *testing.T, marker string) (bin, log string) {
 	dir := t.TempDir()
 	bin, log = filepath.Join(dir, "gh"), filepath.Join(dir, "calls")
 	created := filepath.Join(dir, "created")
-	found, _ := json.Marshal([]gh.Issue{{Number: 7, Title: "t", Body: "b\n\n" + marker, State: "OPEN"}})
+	// gh issue list --json …,author spells the author as an object.
+	found, _ := json.Marshal([]map[string]any{{"number": 7, "title": "t", "body": "b\n\n" + marker, "state": "OPEN", "author": map[string]string{"login": "me"}}})
 	script := "#!/bin/sh\necho \"$1 $2\" >> '" + log + "'\n" +
+		"if [ \"$1 $2\" = 'api user' ]; then echo '{\"login\":\"me\"}'; exit 0; fi\n" +
 		"if [ \"$2\" = list ]; then if [ -e '" + created + "' ]; then cat <<'EOF'\n" + string(found) + "\nEOF\nelse echo '[]'; fi; exit 0; fi\n" +
 		"touch '" + created + "'\necho https://example.invalid/o/r/issues/7\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {

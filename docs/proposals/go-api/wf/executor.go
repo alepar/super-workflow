@@ -208,6 +208,7 @@ type Instruction struct {
 	Class           string             `json:"class,omitempty"`  // the unit's class: child definition names, then the state
 	Brief           string             `json:"brief,omitempty"`  // the fixed spawn brief the coordinator passes verbatim
 	Token           string             `json:"token,omitempty"`  // token to echo in the submission; a paged unit has none
+	Claim           string             `json:"claim,omitempty"`  // agent: the claim token the brief's command fetches with
 	Prompt          string             `json:"prompt,omitempty"` // resolved prompt, Inputs block and Submission block; a paged unit fetches it
 	Inputs          map[string]string  `json:"inputs,omitempty"`
 	Submit          string             `json:"submit,omitempty"` // how to submit
@@ -702,6 +703,19 @@ type EffectData struct {
 	Literal        bool                `json:",omitempty"` // versioned runtime edge: only explicit templates bind
 	ArgTemplates   []EffectArgTemplate `json:",omitempty"`
 	KeyTemplate    []TextSpan          `json:",omitempty"`
+	// KeyParts (KeyOf) or KeyPartTemplates (KeyWith), on a planned effect
+	// whose key has two or more parts: the parts before binding. Each is
+	// bound, then escaped, and Key becomes their join (joinKeyParts); Key on
+	// the plan is their unescaped join, as the definition shows it. A plan
+	// without them (one part, or one an earlier version wrote) binds Key as
+	// one string.
+	KeyParts         []string     `json:",omitempty"`
+	KeyPartTemplates [][]TextSpan `json:",omitempty"`
+	// LegacyKey, on a bound effect, is its key as a version before part
+	// escaping spelled it (the bound parts joined unescaped), when that
+	// differs from Key. A world object or a result made under it is this
+	// effect's too.
+	LegacyKey string `json:",omitempty"`
 }
 
 // EdgeStep is one traversed edge: the source state, the edge's index among the

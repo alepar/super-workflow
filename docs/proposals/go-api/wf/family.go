@@ -270,7 +270,9 @@ func (c *cycle) checkChildHarnesses(coord string) error {
 	targets := childTargets(c.st.def, coord, c.headless())
 	names := slices.Sorted(maps.Keys(targets))
 	for _, t := range names {
-		d := check(t, coord, c.headless(), c.spawnLine("<claim>"))
+		// A literal stand-in claim, as the hand-out sizes its offers: the
+		// check reads the line's words, and a Codex rule matches its prefix.
+		d := check(t, coord, c.headless(), c.spawnLine(strings.Repeat("0", 16)))
 		d.Harness, d.Coordinator = t, coord
 		if err := c.emitAs("", "", 0, JournalHarnessChecked, 0, d); err != nil {
 			return err

@@ -72,7 +72,11 @@ func (o commandOps[S]) execute(c *cycle, in *instance, n *node) error {
 				return c.failErr(in, n, err)
 			}
 		}
-		eff.Key = strings.Join(bound, "/")
+		if len(bound) > 1 {
+			eff.Key, eff.LegacyKey = escapedKey(bound)
+		} else {
+			eff.Key = bound[0]
+		}
 	}
 	intent := EffectIntentData{Command: true, Effect: eff}
 	if o.detachedOn(c) {

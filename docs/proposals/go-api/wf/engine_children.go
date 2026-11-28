@@ -135,7 +135,7 @@ func (c *cycle) checkOpen(ch *instance) (resolved bool, err error) {
 	if !ok || e.NonIdempotent {
 		return false, nil
 	}
-	st, cerr := c.e.reg.CheckAt(c.workspace(), EffectContext{Run: c.run, Instance: ch.ID, Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, ExternalEffect{Adapter: e.Adapter, Op: e.Op, Args: e.Args, Key: keyOfData(e)})
+	st, cerr := c.e.reg.CheckAt(c.workspace(), EffectContext{Run: c.run, Instance: ch.ID, Sandboxed: c.st.forked, SandboxBin: c.sandboxBin()}, externalOf(e, e.Args))
 	if cerr != nil || st != EffectDone {
 		return false, nil
 	}

@@ -1448,8 +1448,7 @@ var hermesKickoff = regexp.MustCompile(`^\d{2}:\d{2}:\d{2}\s+user\s+\|\s+kickoff
 var hermesClaims = regexp.MustCompile(`--claim(?:=|[ \t]+)(\S+)`)
 
 // hermesNamesClaim reports whether the log head's goal or kickoff text names
-// token as its claim, and names no other: a brief that names two claims
-// vouches for neither. Only the brief is evidence. Hermes logs a goal and
+// token as its first claim (firstClaimIs). Only the brief is evidence. Hermes logs a goal and
 // kickoff cut at about 500 characters and records neither the child's
 // session nor its parent's, so nothing past the cut, and nothing the child
 // did later, can bind the log to a caller. A coordinator
@@ -1475,20 +1474,15 @@ func hermesNamesClaim(head []byte, token string) bool {
 			brief = append(append(brief, line...), '\n')
 		}
 	}
-	return onlyClaim(brief, token)
+	return firstClaimIs(brief, token)
 }
 
-// onlyClaim reports whether brief names token as a claim and names no other
-// claim: a brief that names two vouches for neither.
-func onlyClaim(brief []byte, token string) bool {
-	found := false
-	for _, m := range hermesClaims.FindAllSubmatch(brief, -1) {
-		if string(m[1]) != token {
-			return false // a claim that is not this one
-		}
-		found = true
-	}
-	return found
+// firstClaimIs reports whether the first claim brief names is token. A brief
+// starts with its command, which the child runs first; a claim the work text
+// after it mentions (a task about stale claims) is not the brief's.
+func firstClaimIs(brief []byte, token string) bool {
+	m := hermesClaims.FindSubmatch(brief)
+	return m != nil && string(m[1]) == token
 }
 
 // Resolve: the one delegation log, written no earlier than the hand-out,

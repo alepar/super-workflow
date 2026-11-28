@@ -46,29 +46,13 @@ if cat $rules | grep -qF "pattern = [\"$1\",\"$2\"]"; then echo '{"decision":"al
 		t.Fatal(err)
 	}
 	ws := filepath.Join(root, "ws")
-	printed := multiVerbLine(exe, filepath.Join(root, "state"), "r1", "spawn", "--claim", "<claim>")
+	printed := multiVerbLine(exe, filepath.Join(root, "state"), "r1", "spawn", "--claim", strings.Repeat("0", 16))
 	if why, fix := c.codexRuleCheck(printed); why != "" {
 		t.Fatalf("the printed spawn command failed the rule check: %s (fix: %s)", why, fix)
 	}
 	for _, altered := range []string{"cd " + ws + " && " + printed, "env " + printed} {
 		if why, _ := c.codexRuleCheck(altered); !strings.Contains(why, "no Codex rule lets the spawn verb run outside") {
 			t.Errorf("a form the rule does not match passed the check (why %q): %s", why, altered)
-		}
-	}
-}
-
-// shellWords splits the forms sink.Quote writes, keeping an operator a word
-// of its own.
-func TestShellWords(t *testing.T) {
-	for in, want := range map[string][]string{
-		`a 'b c' d\ e`:              {"a", "b c", "d e"},
-		`cd '/w s' && /bin/x spawn`: {"cd", "/w s", "&&", "/bin/x", "spawn"},
-		`'' x`:                      {"", "x"},
-		`  `:                        nil,
-		`a 'open`:                   {"a"},
-	} {
-		if got := shellWords(in); strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(want) {
-			t.Errorf("shellWords(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

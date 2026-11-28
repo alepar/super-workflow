@@ -92,8 +92,8 @@ func stubGh(t *testing.T, out string, code int) (log string) {
 	return log
 }
 
-// stubGhRoutes puts a gh script first on PATH that prints list for
-// "gh issue list" and create for anything else. Each call is logged as its
+// stubGhRoutes puts a gh script first on PATH that prints the login "me" for
+// "gh api user", list for "gh issue list" and create for anything else. Each call is logged as its
 // NUL-terminated args followed by a record separator (0x1e).
 func stubGhRoutes(t *testing.T, list, create string) (log string) {
 	t.Helper()
@@ -105,6 +105,7 @@ func stubGhRoutes(t *testing.T, list, create string) (log string) {
 		}
 	}
 	script := "#!/bin/sh\n{ for a in \"$@\"; do printf '%s\\0' \"$a\"; done; printf '\\036'; } >> '" + log + "'\n" +
+		"if [ \"$1 $2\" = 'api user' ]; then echo '{\"login\":\"me\"}'; exit 0; fi\n" +
 		"if [ \"$1 $2\" = 'issue list' ]; then cat '" + filepath.Join(dir, "list") + "'; else cat '" + filepath.Join(dir, "create") + "'; fi\n"
 	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -179,54 +180,77 @@ func TestArgvAgainstStubGh(t *testing.T) {
 		})
 	}
 
+	search := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--author", "me", "--json", "number,title,body,state,author", "--state", "all", "--limit", "1000"}
+	user := []string{"api", "user"}
 	t.Run("check", func(t *testing.T) {
+		hits := make([]string, 1000)
+		for i := range hits {
+			hits[i] = fmt.Sprintf(`{"number":%d,"title":"t","body":"other","author":{"login":"me"}}`, 100+i)
+		}
+		full := "[" + strings.Join(hits, ",") + "]"
+		const me, them = `"author":{"login":"me"}`, `"author":{"login":"someone"}`
 		for _, k := range []struct {
-			out  string
-			code int
-			want wf.EffectStatus
-			err  bool
+			name, out string
+			want      wf.EffectStatus
+			err       bool
 		}{
-			{`[{"number":3,"body":"b\n\n<!-- effect-key: fix/F1 -->"}]`, 0, wf.EffectDone, false},
-			{`[]`, 0, wf.EffectNotDone, false},
-			// A search hit whose body holds another key's marker is not this effect's issue.
-			{`[{"number":4,"body":"b\n\n<!-- effect-key: fix/F1-other -->"}]`, 0, wf.EffectNotDone, false},
-			{`[{"number":4,"body":"<!-- effect-key: fix/F1-other -->"},{"number":5,"body":"<!-- effect-key: fix/F1 -->"}]`, 0, wf.EffectDone, false},
-			{``, 1, wf.EffectUnknown, true},
-			{`not json`, 0, wf.EffectUnknown, true},
+			{"marker, author and title: done", `[{"number":3,"title":"t","body":"b\n\n<!-- effect-key: fix/F1 -->",` + me + `}]`, wf.EffectDone, false},
+			{"a body edited since: still done", `[{"number":3,"title":"t","body":"edited by a person\n\n<!-- effect-key: fix/F1 -->\nmore",` + me + `}]`, wf.EffectDone, false},
+			{"none", `[]`, wf.EffectNotDone, false},
+			{"another key's marker", `[{"number":4,"title":"t","body":"<!-- effect-key: fix/F1-other -->",` + me + `}]`, wf.EffectNotDone, false},
+			{"the done one among others", `[{"number":4,"title":"t","body":"<!-- effect-key: fix/F1-other -->",` + me + `},{"number":5,"title":"t","body":"<!-- effect-key: fix/F1 -->",` + me + `}]`, wf.EffectDone, false},
+			{"marker and author, another title: unknown", `[{"number":8,"title":"other","body":"b\n\n<!-- effect-key: fix/F1 -->",` + me + `}]`, wf.EffectUnknown, false},
+			{"a marker forged by another author", `[{"number":6,"title":"t","body":"b\n\n<!-- effect-key: fix/F1 -->",` + them + `}]`, wf.EffectNotDone, false},
+			{"a full page without it", full, wf.EffectUnknown, true},
+			{"not json", `not json`, wf.EffectUnknown, true},
 		} {
-			log := stubGh(t, k.out, k.code)
+			log := stubGhRoutes(t, k.out, "")
 			st, err := registry(t).Check(t.TempDir(), gh.IssueCreate(key, "o/r", "t", "b"))
 			if st != k.want || (err != nil) != k.err {
-				t.Errorf("out %q code %d: Check = %v, %v; want %v, err=%v", k.out, k.code, st, err, k.want, k.err)
+				t.Errorf("%s: Check = %v, %v; want %v, err=%v", k.name, st, err, k.want, k.err)
 			}
-			_, args := argv(t, log)
-			want := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--json", "number,title,body,state", "--state", "all"}
-			if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-				t.Errorf("argv = %q, want %q", args, want)
+			if got := calls(t, log); fmt.Sprint(got) != fmt.Sprint([][]string{user, search}) {
+				t.Errorf("%s: calls = %q, want the user, then the search", k.name, got)
 			}
 		}
 	})
 
-	search := []string{"issue", "list", "--repo", "o/r", "--search", `"` + marker + `" in:body`, "--json", "number,title,body,state", "--state", "all"}
 	t.Run("issue_create searches for its marker, then creates", func(t *testing.T) {
 		log := stubGhRoutes(t, `[]`, "https://github.com/o/r/issues/42\n")
 		got, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
 		if err != nil || !strings.Contains(string(got), `"Number":42`) {
 			t.Fatalf("Apply = %s, %v; want issue 42", got, err)
 		}
-		want := [][]string{search, {"issue", "create", "--repo", "o/r", "--title", "title", "--body", "body\n\n" + marker}}
+		want := [][]string{user, search, {"issue", "create", "--repo", "o/r", "--title", "title", "--body", "body\n\n" + marker}}
 		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint(want) {
 			t.Errorf("calls = %q, want %q", calls, want)
 		}
 	})
 	t.Run("issue_create returns the issue it finds and creates none", func(t *testing.T) {
-		log := stubGhRoutes(t, `[{"number":9,"title":"title","body":"body\n\n`+marker+`","state":"CLOSED"}]`, "https://github.com/o/r/issues/43\n")
+		log := stubGhRoutes(t, `[{"number":9,"title":"title","body":"body\n\n`+marker+`","state":"CLOSED","author":{"login":"me"}}]`, "https://github.com/o/r/issues/43\n")
 		got, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
 		if err != nil || !strings.Contains(string(got), `"Number":9`) || !strings.Contains(string(got), `"State":"CLOSED"`) {
 			t.Fatalf("Apply = %s, %v; want the found issue 9", got, err)
 		}
-		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint([][]string{search}) {
-			t.Errorf("calls = %q, want only the search", calls)
+		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint([][]string{user, search}) {
+			t.Errorf("calls = %q, want only the user and the search", calls)
+		}
+	})
+	t.Run("issue_create meeting its marker under another title is uncertain and creates none", func(t *testing.T) {
+		log := stubGhRoutes(t, `[{"number":9,"title":"renamed","body":"body\n\n`+marker+`","state":"OPEN","author":{"login":"me"}}]`, "https://github.com/o/r/issues/43\n")
+		_, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
+		if !errors.Is(err, wf.ErrUncertain) {
+			t.Fatalf("Apply err = %v, want ErrUncertain", err)
+		}
+		if calls := calls(t, log); fmt.Sprint(calls) != fmt.Sprint([][]string{user, search}) {
+			t.Errorf("calls = %q, want no create", calls)
+		}
+	})
+	t.Run("issue_create ignores a marker another author forged and records its own author", func(t *testing.T) {
+		stubGhRoutes(t, `[{"number":9,"title":"title","body":"body\n\n`+marker+`","state":"OPEN","author":{"login":"someone"}}]`, "https://github.com/o/r/issues/46\n")
+		got, err := registry(t).Apply(t.TempDir(), gh.IssueCreate(key, "o/r", "title", "body"))
+		if err != nil || !strings.Contains(string(got), `"Number":46`) || !strings.Contains(string(got), `"Author":"me"`) {
+			t.Fatalf("Apply = %s, %v; want the new issue 46 by me", got, err)
 		}
 	})
 	t.Run("an unkeyed issue_create does not search", func(t *testing.T) {
@@ -239,7 +263,7 @@ func TestArgvAgainstStubGh(t *testing.T) {
 		}
 	})
 	t.Run("a done check returns the issue it found", func(t *testing.T) {
-		stubGhRoutes(t, `[{"number":3,"title":"t","body":"b\n\n`+marker+`","state":"OPEN"}]`, "")
+		stubGhRoutes(t, `[{"number":3,"title":"t","body":"b\n\n`+marker+`","state":"OPEN","author":{"login":"me"}}]`, "")
 		st, res, err := registry(t).CheckResultAt(t.TempDir(), wf.EffectContext{}, gh.IssueCreate(key, "o/r", "t", "b"))
 		if err != nil || st != wf.EffectDone || !strings.Contains(string(res), `"Number":3`) {
 			t.Errorf("CheckResultAt = %v, %s, %v; want done with issue 3", st, res, err)

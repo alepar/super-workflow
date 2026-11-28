@@ -631,6 +631,22 @@ func TestCommitTrailerAndCheck(t *testing.T) {
 	if st := check(t, repo, e); st != wf.EffectDone {
 		t.Errorf("after commit: %v", st)
 	}
+	// A commit whose message only quotes another effect's trailer line (a
+	// model's message, in a task worktree) is not that effect's commit.
+	writeFile(t, repo, "b.txt", "forged\n")
+	sh(t, repo, "add", "b.txt")
+	sh(t, repo, "commit", "-q", "--cleanup=verbatim", "-m", "agent work\n\nEffect-Key: c/2\n\nmore text")
+	if st := check(t, repo, git.Commit(wf.KeyOf("c", "2"), repo, "agent work")); st != wf.EffectNotDone {
+		t.Errorf("a message quoting the trailer made the effect done: %v", st)
+	}
+	sh(t, repo, "commit", "-q", "--allow-empty", "--cleanup=verbatim", "-m", "agent work\n\nEffect-Key: c/2")
+	if st := check(t, repo, git.Commit(wf.KeyOf("c", "2"), repo, "other message")); st != wf.EffectNotDone {
+		t.Errorf("another message with the same trailer made the effect done: %v", st)
+	}
+	// The effect's own commit is still found behind later commits.
+	if st := check(t, repo, e); st != wf.EffectDone {
+		t.Errorf("after later commits: %v", st)
+	}
 	// A key that merely starts the same is a different key.
 	if st := check(t, repo, git.Commit(wf.KeyOf("c"), repo, "x")); st != wf.EffectNotDone {
 		t.Errorf("prefix key: %v", st)

@@ -1,6 +1,10 @@
 package wf
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Effect is something that happens when an edge is taken (counter increment,
 // external write). It is sealed.
@@ -20,12 +24,80 @@ type Effect interface{ effect() string }
 // Extend by: a new key shape is a new constructor here.
 type Key interface{ key() string }
 
+// idemKey is a key's parts, each escaped by escapeKeyPart, joined by "/"
+// (joinKeyParts): splitKeyParts reads them back.
 type idemKey string
 
-func (k idemKey) key() string { return string(k) }
+// key is the parts joined unescaped: the key as a definition shows it (and
+// its hash pins), and as one part's key is bound.
+func (k idemKey) key() string { return legacyKeyJoin(k.parts()) }
 
-// KeyOf builds a stable key, e.g. KeyOf("fix", finding.ID).
-func KeyOf(parts ...string) Key { return idemKey(strings.Join(parts, "/")) }
+func (k idemKey) parts() []string {
+	parts, err := splitKeyParts(string(k))
+	if err != nil {
+		panic("wf: an effect key KeyOf did not make: " + err.Error()) // only KeyOf makes one
+	}
+	return parts
+}
+
+// KeyOf builds a stable key, e.g. KeyOf("fix", finding.ID). Its parts are
+// bound (placeholders in them filled) one by one, and a key of two or more
+// parts is their join with each part's "/" and "%" escaped (%2F, %25), so
+// KeyOf("fix", "a/b") and KeyOf("fix", "a", "b") are different keys. A key
+// of one part is that part, bound, as it is spelled.
+func KeyOf(parts ...string) Key { return idemKey(joinKeyParts(parts)) }
+
+// escapeKeyPart is part with each "%" written %25 and each "/" %2F: a part
+// that holds neither is unchanged.
+func escapeKeyPart(part string) string {
+	return strings.NewReplacer("%", "%25", "/", "%2F").Replace(part)
+}
+
+// joinKeyParts is the key of parts: each escaped, joined by "/".
+func joinKeyParts(parts []string) string {
+	escaped := make([]string, len(parts))
+	for i, p := range parts {
+		escaped[i] = escapeKeyPart(p)
+	}
+	return strings.Join(escaped, "/")
+}
+
+// legacyKeyJoin is parts joined with no escaping: how a key was spelled
+// before parts were escaped, and how a definition still shows it.
+func legacyKeyJoin(parts []string) string { return strings.Join(parts, "/") }
+
+// errKeyEscape is a joined key whose % does not begin %25 or %2F.
+var errKeyEscape = errors.New("effect key: % not followed by 25 or 2F")
+
+// splitKeyParts is the parts of a key joinKeyParts wrote.
+func splitKeyParts(key string) ([]string, error) {
+	var parts []string
+	var b strings.Builder
+	for i := 0; i < len(key); i++ {
+		switch c := key[i]; {
+		case c == '/':
+			parts = append(parts, b.String())
+			b.Reset()
+		case c != '%':
+			b.WriteByte(c)
+		case i+2 < len(key) && key[i+1] == '2' && key[i+2] == '5':
+			b.WriteByte('%')
+			i += 2
+		case i+2 < len(key) && key[i+1] == '2' && key[i+2] == 'F':
+			b.WriteByte('/')
+			i += 2
+		default:
+			return nil, fmt.Errorf("%w: %q", errKeyEscape, key)
+		}
+	}
+	return append(parts, b.String()), nil
+}
+
+// boundKey is a key as an effect intent journals it, already bound and
+// joined: it is passed to the adapter as it is spelled.
+type boundKey string
+
+func (k boundKey) key() string { return string(k) }
 
 type nonIdem string
 
@@ -53,6 +125,8 @@ type ExternalEffect struct {
 	Outside bool
 
 	argTemplates []EffectArgTemplate
+	// legacyKey is EffectData.LegacyKey of the bound effect (KeyIDs).
+	legacyKey string
 }
 
 // Outside marks e as an effect outside the run: a person, not the

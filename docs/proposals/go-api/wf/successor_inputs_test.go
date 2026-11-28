@@ -8,41 +8,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alepar/super-workflow/docs/proposals/go-api/sink"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
 )
 
-// shellWords splits a line the engine printed with sink.Quote: words
-// separated by spaces, each bare or single-quoted ('\” inside quotes).
+// shellWords splits a line the engine printed with sink.Quote.
 func shellWords(t *testing.T, line string) []string {
 	t.Helper()
+	cmds, err := sink.SplitCommands(line)
+	if err != nil {
+		t.Fatalf("split %q: %v", line, err)
+	}
 	var words []string
-	var cur strings.Builder
-	in, has := false, false
-	for i := 0; i < len(line); i++ {
-		ch := line[i]
-		switch {
-		case ch == '\'':
-			in, has = !in, true
-		case ch == '\\' && !in && i+1 < len(line):
-			i++
-			cur.WriteByte(line[i])
-			has = true
-		case ch == ' ' && !in:
-			if has {
-				words = append(words, cur.String())
-				cur.Reset()
-				has = false
-			}
-		default:
-			cur.WriteByte(ch)
-			has = true
+	for i, c := range cmds {
+		if i > 0 {
+			words = append(words, "&&")
 		}
-	}
-	if in {
-		t.Fatalf("unbalanced quote in %q", line)
-	}
-	if has {
-		words = append(words, cur.String())
+		words = append(words, c...)
 	}
 	return words
 }

@@ -8,6 +8,7 @@
     "output": "<state>/runs/golden/out/clAsk-1-3eb0461c2ec5.md",
     "class": "clAsk",
     "brief": "cd <ws> && <bin> prompt golden --claim <token> --state-dir <state>\nYou are a child agent for one unit of work. Run the command above, then do what it prints.\nThis unit runs the commands its prompt prints (prompt, validate, done, failed), by default as printed, one per line, with no loops, $(...), variable expansion or bash -c.\nFor workflow commands, set the shell tool working-directory (workdir/cwd) to <ws>; never inherit a removable task directory.\nRules for this run: do your assigned task with ordinary tools, and change workflow state only through the workflow commands you are given for this run. Never edit the lock, journal or state files of the workflow, bypass a sandbox or approvals, or start another agent CLI except through the child dispatch of the engine. If you are blocked, run your failed command with --reason saying what blocked you and what you need.\n",
+    "claim": "<token>",
     "dispatch": {
       "model": "opus",
       "effort": "high",

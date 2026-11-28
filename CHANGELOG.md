@@ -13,6 +13,77 @@
   before done has accepted its result, so a call could get in before the
   chain began; they now wait for the chain's first effect intent in the
   journal.
+- **Engine identifiers are typed, not recovered from text (sw-8h7f, parsing
+  slice 3).**
+  - *Effect keys escape their parts.* `KeyOf("fix", "a/b")` and
+    `KeyOf("fix", "a", "b")` were one key, so the second effect read as
+    done and was skipped. A key of two or more parts (`KeyOf`, `KeyWith`, a
+    shell command's key) now binds each part and escapes its `/` (`%2F`) and
+    `%` (`%25`) before the join. A key of one part, and any part with
+    neither character, is spelled as before, and so is the key a
+    definition shows: no definition hash changes.
+  - *Claim and binary are fields.* `Instruction.Claim` (`claim` in
+    `next --json`) carries an agent unit's claim token, and
+    `EngineOptions.Binary` (default `workflow`; the CLI sets the running
+    binary) is the binary a headless Claude child may run. Neither is read
+    off the brief any more, where a workspace such as `/home/u/x --claim y`
+    or `/w/a && b` gave the wrong claim or binary.
+  - *A harness log names the brief's first claim.* pi, agy and Hermes
+    children are bound by the first `--claim` their brief names, the one
+    its command runs. A later mention in the work text (a task about stale
+    claims) no longer stops the child resolving.
+  - *Path template fragments are the template's own.* A `PathTemplate`'s
+    fragment starts at the template's first `#` before binding, so a bound
+    value such as `issue#12.md` stays in the path.
+  - *git and gh find an effect by what it wrote, not by a quoted marker.* A
+    keyed `git.Commit` is done when a commit's whole message is the one the
+    effect writes; a commit message that only quotes an `Effect-Key:` line
+    is not it. A keyed `gh.IssueCreate` matches an issue that holds its
+    marker *and* was created by the gh identity the effect runs as
+    (`gh api user`; recorded at Apply as `Issue.Author`): a marker in anyone
+    else's issue is no match. Marker, author and title: done. Marker and
+    author under another title: uncertain (Check answers unknown; Apply
+    creates nothing and returns the new `wf.ErrUncertain`, journaled
+    `uncertain` like a timeout), so the workflow routes it. The marker search
+    lists up to 1000 issues, and a search that fills the limit without the
+    issue is an error, not "absent".
+  - *One shell lexer.* `sink.Split` and `sink.SplitCommands` read literal
+    shell words, the inverse of `sink.Argv.Line`. They replace the engine's
+    spawn-line splitter and the harness's reader of model-written commands,
+    where a backslash-newline continuation was kept as a literal newline.
+
+### Upgrading
+
+- **Effect keys.** A held run keeps finding its effects: a bound key whose
+  escaped spelling differs from the earlier one journals both (`LegacyKey`),
+  the engine matches an earlier result under either, and git, gh and bd
+  look for both in the world (`ExternalEffect.KeyIDs`). A runtime of your
+  own that finds completions by key should look for each of `KeyIDs()`.
+  Accepted: the legacy match also matches the one collision escaping ends
+  (`"a/b"`+`"c"` against `"a"`+`"b/c"`), and only for results made before
+  the upgrade.
+- **git commit Check** now also requires the message to match. A keyed
+  commit effect whose bound message differs from the earlier commit under
+  the same key is no longer done; commits written by earlier versions keep
+  their form and are found.
+- **gh issue Check** now also requires the issue's author to be the gh
+  identity the effect runs as, and a keyed create first asks gh for that
+  identity (`gh api user`). An issue an earlier run created under another
+  identity is not found. A body edited after creation is still found; a
+  changed title is uncertain, not a new create.
+- **`wf.ErrUncertain`** is new: an adapter's Apply returns it when the world
+  is neither done nor not done for the effect. The engine journals it
+  `uncertain`, like a timed-out call.
+- **`EngineOptions.HeadlessCheck`** now receives the spawn line with the
+  stand-in claim `0000000000000000` in place of the slot `<claim>`, so the
+  check can read the line's words.
+- **`next --json`** gains `claim` on agent units. Callers that read the
+  claim from `brief` should read `claim`.
+- superpowers-wf needs no code change at the next pin bump. Its branch keys
+  (`finish-merge`, `finish-push`, `finish-pr` over `{branch}`) and
+  `KeyOf("design", "dep", "{work.title}", "{blocker.title}")` get escaped
+  spellings for values holding `/`, and held runs match them by the legacy
+  spelling.
 
 ## v0.4.17
 

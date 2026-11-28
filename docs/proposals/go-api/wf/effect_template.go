@@ -52,20 +52,30 @@ func (t Text) Raw() string {
 	return b.String()
 }
 
-type textKey struct{ text Text }
+// textKey is a KeyWith key: text is its parts joined by "/" spans, as the
+// definition shows it, and parts the parts themselves.
+type textKey struct {
+	text  Text
+	parts []Text
+}
 
 func (k textKey) key() string { return k.text.Raw() }
 
 // KeyWith joins literal and template key parts, separated by slash.
+//
+// As with KeyOf, a key of two or more parts escapes each bound part's "/"
+// and "%" before the join.
 func KeyWith(parts ...any) Key {
 	joined := make([]any, 0, len(parts)*2)
+	texts := make([]Text, len(parts))
 	for i, part := range parts {
 		if i > 0 {
 			joined = append(joined, "/")
 		}
 		joined = append(joined, part)
+		texts[i] = TextOf(part)
 	}
-	return textKey{TextOf(joined...)}
+	return textKey{text: TextOf(joined...), parts: texts}
 }
 
 // EffectArgTemplate replaces one field's source string with these typed spans.

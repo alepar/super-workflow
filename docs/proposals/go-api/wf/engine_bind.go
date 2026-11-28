@@ -646,7 +646,31 @@ func (s scope) bindEffect(e EffectData) (EffectData, error) {
 		}
 	}
 	e.Args = args
+	var parts []string
 	switch {
+	case len(e.KeyPartTemplates) > 1 && keyTemplate != nil:
+		for _, part := range e.KeyPartTemplates {
+			bound, bindErr := s.bindText(part)
+			if bindErr != nil {
+				return e, bindErr
+			}
+			parts = append(parts, bound)
+		}
+	case len(e.KeyParts) > 1:
+		for _, part := range e.KeyParts {
+			bound := part
+			switch {
+			case literal:
+			case e.BindingVersion == 0:
+				bound, err = s.bindString(part)
+			default:
+				bound, err = s.bindPlaceholders(part)
+			}
+			if err != nil {
+				return e, err
+			}
+			parts = append(parts, bound)
+		}
 	case keyTemplate != nil:
 		e.Key, err = s.bindText(keyTemplate)
 	case !literal && e.Key != "" && e.BindingVersion == 0:
@@ -654,8 +678,21 @@ func (s scope) bindEffect(e EffectData) (EffectData, error) {
 	case !literal && e.Key != "":
 		e.Key, err = s.bindPlaceholders(e.Key)
 	}
-	e.BindingVersion, e.Literal, e.ArgTemplates, e.KeyTemplate = 0, false, nil, nil
+	if parts != nil {
+		e.Key, e.LegacyKey = escapedKey(parts)
+	}
+	e.BindingVersion, e.Literal, e.ArgTemplates, e.KeyTemplate, e.KeyParts, e.KeyPartTemplates = 0, false, nil, nil, nil, nil
 	return e, err
+}
+
+// escapedKey is the key of bound parts (joinKeyParts) and, when it differs,
+// the unescaped join a version before part escaping bound them to.
+func escapedKey(parts []string) (key, legacy string) {
+	key = joinKeyParts(parts)
+	if legacy = legacyKeyJoin(parts); legacy == key {
+		legacy = ""
+	}
+	return key, legacy
 }
 
 // canonDesc is the canonical JSON of a resolved descriptor.

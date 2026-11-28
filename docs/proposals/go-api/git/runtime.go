@@ -482,17 +482,22 @@ func (r runtime) commit(dir, key string, a args) (string, error) {
 	if exit != 1 {
 		return "", err
 	}
-	msg := a.Message
-	if key != "" {
-		msg += "\n\n" + trailer + key
-	}
-	if _, err := r.must(dir, append([]string{"commit", "-q", "--cleanup=verbatim", "-m", msg}, only...)...); err != nil {
+	if _, err := r.must(dir, append([]string{"commit", "-q", "--cleanup=verbatim", "-m", commitMessage(a.Message, key)}, only...)...); err != nil {
 		return "", err
 	}
 	return r.must(dir, "rev-parse", "HEAD")
 }
 
 const trailer = "Effect-Key: "
+
+// commitMessage is the message a commit effect writes: the message, then,
+// for a keyed effect, a blank line and its key trailer.
+func commitMessage(message, key string) string {
+	if key == "" {
+		return message
+	}
+	return message + "\n\n" + trailer + key
+}
 
 // Check implements each effect's already_done from its descriptor comment:
 //   - worktree_add: path is already listed by `git worktree list` on branch.
@@ -503,8 +508,10 @@ const trailer = "Effect-Key: "
 //     between merge and abort) is aborted and answers not done; any other
 //     merge in progress, even of the same branch, is left alone and answers
 //     not done (Apply refuses).
-//   - commit: a commit on HEAD (within the last 50) whose message carries the
-//     key trailer; an effect with no key cannot be found, so it is unknown.
+//   - commit: a commit on HEAD (within the last 50) whose whole message is
+//     the one this effect writes (commitMessage), so a message that only
+//     quotes the trailer line is not it; an effect with no key cannot be
+//     found, so it is unknown.
 func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, error) {
 	a, err := decode(e.Args)
 	if err != nil {
@@ -550,13 +557,17 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 		if e.KeyID() == "" {
 			return wf.EffectUnknown, nil
 		}
-		out, err := r.must(resolve(workspace, a.Worktree), "log", "--format=%B", "-n", "50")
+		// -z ends each raw message with a NUL; git stores a -m message
+		// with one newline added.
+		out, _, err := r.git(resolve(workspace, a.Worktree), "log", "-z", "--format=%B", "-n", "50")
 		if err != nil {
 			return wf.EffectUnknown, err
 		}
-		for _, line := range strings.Split(out, "\n") {
-			if line == trailer+e.KeyID() {
-				return wf.EffectDone, nil
+		for _, body := range strings.Split(out, "\x00") {
+			for _, key := range e.KeyIDs() { // before part escaping too
+				if body == commitMessage(a.Message, key)+"\n" {
+					return wf.EffectDone, nil
+				}
 			}
 		}
 		return wf.EffectNotDone, nil
