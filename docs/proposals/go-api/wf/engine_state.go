@@ -256,8 +256,12 @@ type instance struct {
 	// the budget stopped something below it. LastFail is the class of the
 	// instance's last failed attempt. SourceReads counts a Map's journaled
 	// source reads per entry ("<state>#<entry>").
-	Entry         int          `json:",omitempty"`
-	Key           string       `json:",omitempty"`
+	Entry int    `json:",omitempty"`
+	Key   string `json:",omitempty"`
+	// gen is a Map child's generation within its entry (mapChildID): 1, and
+	// 2 and on for a key a Requery Map re-admitted. It is folded from the
+	// spawns, never journaled, and unexported, so it stays out of the digest.
+	gen           int
 	Settled       bool         `json:",omitempty"`
 	Cancelled     bool         `json:",omitempty"` // settled by its parent's cancel: outside every join count
 	Class         OutcomeClass `json:",omitempty"`
@@ -764,6 +768,12 @@ func (st *runState) apply(r JournalRecord) error {
 		}
 		ci := newInstance(d.ID, r.Instance, child)
 		ci.Spawner, ci.Entry, ci.Key = d.State, parent.Visits[d.State], d.Key
+		ci.gen = 1
+		for _, id := range st.order {
+			if sib := st.insts[id]; sib.Parent == ci.Parent && sib.Spawner == ci.Spawner && sib.Entry == ci.Entry && sib.Key == ci.Key {
+				ci.gen++
+			}
+		}
 		ci.Input = d.Input
 		ci.arrived, ci.arrivalSeq = r.At, r.Seq
 		st.insts[d.ID] = ci

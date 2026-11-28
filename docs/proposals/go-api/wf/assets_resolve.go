@@ -46,7 +46,13 @@ func ResolveAssets(cfg MainConfig, args []string) (Assets, []string, error) {
 	if err != nil {
 		return Assets{}, nil, err
 	}
-	a, err := c.resolveAssets(stateDir, RunID(runID))
+	var run RunID
+	if runID != "" {
+		if run, err = ParseRunID(runID); err != nil {
+			return Assets{}, nil, err
+		}
+	}
+	a, err := c.resolveAssets(stateDir, run)
 	if err != nil {
 		return Assets{}, nil, err
 	}
@@ -149,7 +155,7 @@ func selectRun(stateDir string) (RunID, error) {
 			if _, err := os.Stat(filepath.Join(stateDir, "runs", id)); err != nil {
 				return "", fmt.Errorf("%s names run %s, which has no journal in %s; pass --run-id or --assets", runIDFile, id, stateDir)
 			}
-			return RunID(id), nil
+			return ParseRunID(id)
 		}
 	case !errors.Is(err, fs.ErrNotExist):
 		return "", fmt.Errorf("reading %s: %w; pass --run-id or --assets", runIDFile, err)
@@ -168,7 +174,7 @@ func selectRun(stateDir string) (RunID, error) {
 	case 0:
 		return "", nil
 	case 1:
-		return RunID(runs[0]), nil
+		return ParseRunID(runs[0])
 	}
 	return "", fmt.Errorf("several runs in %s (%s); pass --run-id or --assets", stateDir, strings.Join(runs, ", "))
 }

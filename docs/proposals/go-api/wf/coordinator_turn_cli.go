@@ -16,8 +16,8 @@ func turnAttachRow() Subcommand {
 		define: func(fs *flag.FlagSet, f *flags) {
 			fs.BoolVar(&f.turnAttach.initial, "initial", false, "assert this native session has never been attached")
 			fs.Func("previous-run", "previous run ID after loss of the local selection", func(value string) error {
-				run := RunID(value)
-				if err := validRunID(run); err != nil {
+				run, err := ParseRunID(value)
+				if err != nil {
 					return err
 				}
 				f.turnAttach.previousRun = run

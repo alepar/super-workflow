@@ -687,8 +687,9 @@ func (j *fileJournal) Runs() ([]RunID, error) {
 	}
 	var out []RunID
 	for _, e := range entries { // os.ReadDir sorts by name
-		if committedFirst(filepath.Join(j.dir, "runs", e.Name(), journalFile)) {
-			out = append(out, RunID(e.Name()))
+		run, err := ParseRunID(e.Name())
+		if err == nil && committedFirst(filepath.Join(j.dir, "runs", e.Name(), journalFile)) {
+			out = append(out, run)
 		}
 	}
 	return out, nil

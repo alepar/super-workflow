@@ -162,9 +162,10 @@ func (o agentOps[S, O]) render(c *cycle, in *instance, n *node, submit string) (
 		if name == "" {
 			name = c.st.unitName(in)
 		}
-		base, k, _ := strings.Cut(name, "#")
-		fmt.Fprintf(&b, "attempt %s of %s; attempt %s was lost while running; its workspace %s may hold partial work\n\n",
-			k, base, strings.TrimPrefix(pred.Predecessor, base+"#"), c.workdir(in))
+		// The two units are named whole: a name is a handle, and a Map key
+		// in it may hold any character, so nothing is cut out of it.
+		fmt.Fprintf(&b, "this is unit %s; the attempt before it, unit %s, was lost while running; its workspace %s may hold partial work\n\n",
+			name, pred.Predecessor, c.workdir(in))
 	}
 	if why := previousRefusal(in); why != nil {
 		b.WriteString(attemptNote("Your predecessor's output was refused", why, "Avoid this."))

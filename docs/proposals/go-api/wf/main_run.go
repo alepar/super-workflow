@@ -350,11 +350,11 @@ var Subcommands = []Subcommand{
 			fs.Var(&f.params, "param", "run parameter k=v (repeatable)")
 			fs.StringVar(&f.options, "options", "", "JSON file holding the definition's options")
 			fs.StringVar(&f.workspace, "workspace", "", "workspace directory (default: the current directory)")
-			fs.StringVar(&f.runID, "run-id", "", "run id (resumes when its journal exists)")
+			fs.Func("run-id", "run id (resumes when its journal exists)", runIDFlag(&f.runID))
 			fs.StringVar(&f.modelMap, "model-map", "", "tier, all or model = model[,...]: the models the run spawns with")
 			fs.StringVar(&f.budget, "budget", "", "turns=N,tokens=N,wall=D: the run budget, each named limit over the definition's default (0: no limit); journaled at creation")
 			fs.Var(&f.delegates, "delegate", "delegate a gate's answer to the coordinator, gate=value (repeatable)")
-			fs.StringVar(&f.cont, "continue", "", "the ended run this call continues as its successor (status's resume command names it): params derive from its recorded assets, and a run key outside its chain is refused")
+			fs.Func("continue", "the ended run this call continues as its successor (status's resume command names it): params derive from its recorded assets, and a run key outside its chain is refused", runIDFlag(&f.cont))
 			defineHeadlessFlags(fs, f)
 		},
 	},
@@ -1457,21 +1457,24 @@ type flags struct {
 	assets                                                            string
 	args                                                              []string // the row's positional arguments, in Subcommand.Args order
 	stateDir, child, token, output, usage, reason, gate, value, class string
-	harness, session, agent, transcript, claim, note, cont            string
+	harness, session, agent, transcript, claim, note                  string
 	context                                                           ContextMode
-	workspace, options, runID, modelMap, budget                       string
-	headless                                                          HeadlessConfig  // run's --family, --family-home, --child-env-drop, --headless-cmd
-	optionsJSON                                                       json.RawMessage // the options themselves, as a manufacture script gives them
-	effect                                                            int64
-	children                                                          int
-	since                                                             int64
-	timeout                                                           time.Duration
-	exit                                                              int
-	stdoutFile, to, observe, operator, evidence                       string
-	sameKey                                                           bool
-	applied, notApplied, json, stop, wait, adopt, full                bool
-	params, delegates, escalated                                      multiFlag
-	visit                                                             int
+	workspace, options, modelMap, budget                              string
+	// runID (--run-id) and cont (--continue) are run ids, parsed when the
+	// flag is read (ParseRunID).
+	runID, cont                                        RunID
+	headless                                           HeadlessConfig  // run's --family, --family-home, --child-env-drop, --headless-cmd
+	optionsJSON                                        json.RawMessage // the options themselves, as a manufacture script gives them
+	effect                                             int64
+	children                                           int
+	since                                              int64
+	timeout                                            time.Duration
+	exit                                               int
+	stdoutFile, to, observe, operator, evidence        string
+	sameKey                                            bool
+	applied, notApplied, json, stop, wait, adopt, full bool
+	params, delegates, escalated                       multiFlag
+	visit                                              int
 }
 
 // flagSet is the common flags, then the row's own.
@@ -1558,9 +1561,9 @@ func (c *cli) drive(row Subcommand, args []string) int {
 	if row.act == nil {
 		return c.start(subject, stateDir, &f)
 	}
-	run := RunID(subject)
+	run, perr := ParseRunID(subject)
 	c.run = run
-	if validRunID(run) != nil || !journalExists(stateDir, run) {
+	if perr != nil || !journalExists(stateDir, run) {
 		return c.failf(exitUnknown, "%s: unknown run %q in %s", cmd, subject, stateDir)
 	}
 	if cmd == "next" {
@@ -1687,8 +1690,8 @@ func (c *cli) unitOwners(stateDir, name string) []RunID {
 	entries, _ := os.ReadDir(filepath.Join(stateDir, "runs"))
 	var owners []RunID
 	for _, e := range entries {
-		run := RunID(e.Name())
-		if !e.IsDir() || validRunID(run) != nil {
+		run, err := ParseRunID(e.Name())
+		if !e.IsDir() || err != nil {
 			continue
 		}
 		recs := peekRecords(filepath.Join(stateDir, "runs", string(run), journalFile))
@@ -2290,7 +2293,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		if f.runID != "" {
 			return c.failf(exitUsage, "run: --continue and --run-id are exclusive: --continue finds the successor's id from the run it continues")
 		}
-		started, ended, err := c.journalEnded(stateDir, RunID(f.cont))
+		started, ended, err := c.journalEnded(stateDir, f.cont)
 		if err != nil {
 			return c.fromError("run", err)
 		}
@@ -2300,7 +2303,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		if started.Def != d.name {
 			return c.failf(exitUsage, "run: --continue %s: that run is of %s, not %s", f.cont, started.Def, d.name)
 		}
-		started.self = RunID(f.cont)
+		started.self = f.cont
 		cont = started
 	}
 	deriveAssets := effectiveAssets(d, c.assets)
@@ -2352,11 +2355,15 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	// they leave out keeps its base value.
 	var liveOptions json.RawMessage
 	if cont != nil {
-		if key, err := deriveRunID(d, params, "", nil); err == nil && key != chainBase(cont.self) {
-			return c.failf(exitUsage, "run: --continue %s: these params give run key %s, another chain than %s's (%s); nothing was started. Run the resume command status prints for %s unchanged, or drop --continue to start run %s", f.cont, key, f.cont, chainBase(cont.self), f.cont, key)
+		// The params must key the run --continue names: compared with the
+		// key its own recorded params give, never read off its id.
+		key, kerr := deriveRunID(d, params, "", nil)
+		recorded, rerr := deriveRunID(d, cont.Params, "", nil)
+		if kerr == nil && rerr == nil && key != recorded {
+			return c.failf(exitUsage, "run: --continue %s: these params give run key %s, another chain than %s's (%s); nothing was started. Run the resume command status prints for %s unchanged, or drop --continue to start run %s", f.cont, key, f.cont, recorded, f.cont, key)
 		}
 	}
-	live, pred, err := c.runChain(d, params, stateDir, f)
+	live, pred, err := c.runChain(d, params, stateDir, f, cont)
 	if err != nil {
 		return c.fromError("run", err)
 	}
@@ -2487,9 +2494,6 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 		}
 		budget = budgetFlag.Over(budget)
 	}
-	if f.runID != "" && validRunID(RunID(f.runID)) != nil {
-		return c.failf(exitUsage, "run: invalid --run-id %q", f.runID)
-	}
 	delegations, err := parseDelegations(f.delegates)
 	if err != nil {
 		return c.failf(exitUsage, "run: %v", err)
@@ -2534,7 +2538,7 @@ func (c *cli) start(name, stateDir string, f *flags) int {
 	if !f.pagedPromptsSet {
 		paged = reg.PagedPrompts
 	}
-	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: paged, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: RunID(f.runID), RunBudget: budget, Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
+	x, err := c.engine(stateDir, EngineOptions{PagedPrompts: paged, HaltBefore: f.haltBefore, Snapshots: f.snapshots, Workspace: workspace, ModelMap: modelMap, RunID: f.runID, RunBudget: budget, Delegations: delegations, Harness: runHarness, HarnessFromEnv: fromEnv, GivenParams: givenNames, HarnessHints: hints,
 		Headless: f.headless.orNil()})
 	if err != nil {
 		return c.failf(exitInfra, "run: %v", err)
@@ -2619,39 +2623,117 @@ func DefaultBudget(d *Def, fn func(options any) RunBudget, options any) RunBudge
 // has ended, the run_started of the last one, whose successor this call
 // starts. A run with no explicit id and no run key is always new (both
 // empty). An explicit id is the chain's only member and is never succeeded.
-func (c *cli) runChain(d *Def, params map[string]string, stateDir string, f *flags) (live RunID, pred *RunStartedData, err error) {
+// cont, for run --continue, is the ended run continued: the chain walked is
+// its own (chainStart), so a fork's successors follow the fork, never its
+// source's chain. A run at a chain's id that records another predecessor
+// is refused (chainMember).
+func (c *cli) runChain(d *Def, params map[string]string, stateDir string, f *flags, cont *RunStartedData) (live RunID, pred *RunStartedData, err error) {
 	if f.runID == "" && len(d.runKey) == 0 {
 		return "", nil, nil
 	}
-	base, err := deriveRunID(d, params, RunID(f.runID), nil)
+	base, err := deriveRunID(d, params, f.runID, nil)
 	if err != nil {
 		return "", nil, nil
 	}
+	if cont != nil {
+		if base, err = c.chainStart(stateDir, d, cont.self); err != nil {
+			return "", nil, err
+		}
+	}
 	id := base
+	var prev RunID
 	for n := 2; journalExists(stateDir, id); n++ {
-		started, ended, err := c.journalEnded(stateDir, id)
+		started, ended, err := c.chainEntry(stateDir, id)
 		if err != nil {
 			return "", nil, err
+		}
+		if prev != "" {
+			if err := chainMember(id, started, prev); err != nil {
+				return "", nil, err
+			}
 		}
 		if !ended || f.runID != "" {
 			return id, nil, nil
 		}
 		started.self = id
-		pred, id = started, RunID(fmt.Sprintf("%s.%d", base, n))
+		pred, prev, id = started, id, successorRunID(base, n)
 	}
 	return "", pred, nil
 }
 
-// chainBase is the run id a successor chain starts from: id without its
-// ".<n>" successor suffix (n >= 2).
-func chainBase(id RunID) RunID {
-	s := string(id)
-	if i := strings.LastIndex(s, "."); i > 0 {
-		if n, err := strconv.Atoi(s[i+1:]); err == nil && n >= 2 && strconv.Itoa(n) == s[i+1:] {
-			return RunID(s[:i])
+// chainStart is the first run of run's chain, by what the runs recorded: a
+// fork (its journal holds its rewound record) starts its own chain;
+// otherwise the chain goes back through each run_started's Predecessor; a
+// run that records none starts the chain its recorded params key, as
+// before Predecessor was recorded.
+func (c *cli) chainStart(stateDir string, d *Def, run RunID) (RunID, error) {
+	for seen := map[RunID]bool{}; !seen[run]; {
+		seen[run] = true
+		recs, err := c.runRecords(stateDir, run)
+		if err != nil {
+			return "", err
 		}
+		if slices.ContainsFunc(recs, func(r JournalRecord) bool { return r.Kind == JournalRewound }) {
+			return run, nil
+		}
+		started, err := firstStarted(recs)
+		if err != nil {
+			return "", err
+		}
+		if started.Predecessor == "" {
+			if len(d.runKey) == 0 {
+				return run, nil
+			}
+			return deriveRunID(d, started.Params, "", nil)
+		}
+		run = started.Predecessor
 	}
-	return id
+	return "", fmt.Errorf("%w: run %s: its predecessors form a loop", ErrCorruptJournal, run)
+}
+
+// chainEntry is run id's run_started and whether it ended. A journal that
+// cannot be read is no run there; a run whose lock stays held past the
+// invocation's budget is an error.
+func (c *cli) chainEntry(stateDir string, id RunID) (*RunStartedData, bool, error) {
+	recs, err := c.runRecords(stateDir, id)
+	if errors.Is(err, ErrRunLocked) {
+		return nil, false, err
+	}
+	if err != nil {
+		return nil, false, nil
+	}
+	started, err := firstStarted(recs)
+	if err != nil {
+		return nil, false, nil
+	}
+	return started, slices.ContainsFunc(recs, func(r JournalRecord) bool { return r.Kind == JournalRunEnded }), nil
+}
+
+// runRecords is run id's records, read under its lock.
+func (c *cli) runRecords(stateDir string, id RunID) ([]JournalRecord, error) {
+	j := c.budgeted(rootedFileJournal(stateDir, ""))
+	unlock, err := j.Lock(id)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	return j.Records(id)
+}
+
+// firstStarted is the run_started a journal begins with.
+func firstStarted(recs []JournalRecord) (*RunStartedData, error) {
+	if len(recs) == 0 {
+		return nil, ErrUnknownRun
+	}
+	d, err := decodeData(recs[0])
+	if err != nil {
+		return nil, err
+	}
+	started, ok := d.(*RunStartedData)
+	if !ok {
+		return nil, fmt.Errorf("%w: run %s: its first record is not run_started", ErrCorruptJournal, recs[0].Run)
+	}
+	return started, nil
 }
 
 // journalEnded reports whether run id's journal records that it ended, with
@@ -3006,15 +3088,33 @@ func (c *cli) splitCommon(args []string) (rest []string, stateDir, runID string,
 	return rest, stateDir, runID, nil
 }
 
+// runIDFlag parses a run-id flag's value into dst.
+func runIDFlag(dst *RunID) func(string) error {
+	return func(v string) error {
+		run, err := ParseRunID(v)
+		if err == nil {
+			*dst = run
+		}
+		return err
+	}
+}
+
 // resolveRun is the run a named binary drives: --run-id, else
 // <state-dir>/run-id, else the only run under <state-dir>/runs.
 func (c *cli) resolveRun(verb, stateDir, runID string) (RunID, int) {
+	parse := func(from, s string) (RunID, int) {
+		run, err := ParseRunID(s)
+		if err != nil {
+			return "", c.failf(exitUsage, "%s: %s: %v", verb, from, err)
+		}
+		return run, exitOK
+	}
 	if runID != "" {
-		return RunID(runID), exitOK
+		return parse("--run-id", runID)
 	}
 	if raw, err := os.ReadFile(filepath.Join(stateDir, runIDFile)); err == nil {
 		if id := strings.TrimSpace(string(raw)); id != "" {
-			return RunID(id), exitOK
+			return parse(runIDFile, id)
 		}
 	}
 	entries, _ := os.ReadDir(filepath.Join(stateDir, "runs"))
@@ -3026,7 +3126,7 @@ func (c *cli) resolveRun(verb, stateDir, runID string) (RunID, int) {
 	}
 	switch len(runs) {
 	case 1:
-		return RunID(runs[0]), exitOK
+		return parse("the only run directory", runs[0])
 	case 0:
 		return "", c.failf(exitUsage, "%s: no run in %s; start one with `%s run` or pass --run-id", verb, stateDir, c.cfg.Binary)
 	}

@@ -163,7 +163,7 @@ func (c *cycle) applyAs(in *instance, intent int64, idx int, e EffectData, edge 
 	}
 	if pm := postDoneMutationOf(res); pm != nil {
 		pm.Unit = in.Cur
-		if p := unitPath(in.ID); p != "" {
+		if p := c.st.unitPath(in); p != "" {
 			pm.Unit = p + "/" + in.Cur
 		}
 		return c.emit(in, JournalPostDoneMutation, 0, *pm)

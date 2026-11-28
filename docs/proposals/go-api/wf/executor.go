@@ -4,11 +4,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
+
+	"github.com/alepar/super-workflow/docs/proposals/go-api/form"
 )
 
 // RunID identifies one run of a definition.
 type RunID string
+
+// ParseRunID is s as a run id, refused when it is not one (validRunID): the
+// one way a run id given as text (a command-line argument, a flag) enters.
+func ParseRunID(s string) (RunID, error) {
+	if err := validRunID(RunID(s)); err != nil {
+		return "", err
+	}
+	return RunID(s), nil
+}
+
+// runIDGrammar is the run id as a form grammar, so the corpus test holds
+// validRunID to every hostile input.
+type runIDGrammar struct{}
+
+func (runIDGrammar) Name() string         { return "run-id" }
+func (runIDGrammar) Check(s string) error { return validRunID(RunID(s)) }
+func (runIDGrammar) Samples() []string {
+	return []string{"feature-0123456789ab", "feature-0123456789ab.2", "feature-0123456789ab.rw1", "my-run"}
+}
+
+func init() { form.Register[runIDGrammar]() }
+
+// successorRunID is the n-th run (n >= 2) of the chain that starts at base:
+// <base>.<n>.
+func successorRunID(base RunID, n int) RunID { return RunID(string(base) + "." + strconv.Itoa(n)) }
+
+// forkRunID is run's k-th rewind fork: <run>.rw<k>.
+func forkRunID(run RunID, k int) RunID { return RunID(string(run) + ".rw" + strconv.Itoa(k)) }
 
 // Executor is the Run/Next/Submit boundary.
 //

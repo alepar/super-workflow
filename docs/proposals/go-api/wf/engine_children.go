@@ -53,7 +53,24 @@ func childPrefix(parent *instance) string {
 
 // subChildID names the Sub entry of the parent's current arrival at n.
 func subChildID(parent *instance, n *node) string {
-	return fmt.Sprintf("%s%s#%d", childPrefix(parent), n.name, parent.Visits[n.name])
+	return childPrefix(parent) + subSegment(n.name, parent.Visits[n.name])
+}
+
+// subSegment is a Sub child's segment of its id: "<state>#<entry>".
+func subSegment(state string, entry int) string { return state + "#" + strconv.Itoa(entry) }
+
+// mapSegment is a Map child's segment of its id: "<state>[<idKey(key)>]",
+// then "~<gen>" from the second generation and "#<entry>" from the second
+// entry on.
+func mapSegment(state, key string, gen, entry int) string {
+	seg := state + "[" + idKey(key) + "]"
+	if gen > 1 {
+		seg += "~" + strconv.Itoa(gen)
+	}
+	if entry > 1 {
+		seg += "#" + strconv.Itoa(entry)
+	}
+	return seg
 }
 
 // mapChildID names the Map item key of the parent's current arrival at n; the
@@ -66,14 +83,7 @@ func subChildID(parent *instance, n *node) string {
 // escaped (idKey), so two keys never share an id and no key spells a deeper
 // instance's id (sw-ivuk).
 func mapChildID(parent *instance, n *node, key string, gen int) string {
-	id := childPrefix(parent) + n.name + "[" + idKey(key) + "]"
-	if gen > 1 {
-		id += fmt.Sprintf("~%d", gen)
-	}
-	if v := parent.Visits[n.name]; v > 1 {
-		id += fmt.Sprintf("#%d", v)
-	}
-	return id
+	return childPrefix(parent) + mapSegment(n.name, key, gen, parent.Visits[n.name])
 }
 
 // idKey is a Map item key as it stands between the brackets of an instance id:
@@ -865,7 +875,7 @@ func (o mapOps[S, I, K, R]) withdraw(c *cycle, in *instance, kids []*instance, i
 // was started, fetched its prompt or submitted a result.
 func (c *cycle) ranAUnit(ch *instance) bool {
 	for _, r := range c.recs {
-		if r.Instance != ch.ID && !strings.HasPrefix(r.Instance, ch.ID+"/") {
+		if !c.st.within(r.Instance, ch.ID) {
 			continue
 		}
 		switch r.Kind {

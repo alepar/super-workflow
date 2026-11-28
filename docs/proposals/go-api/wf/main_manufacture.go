@@ -268,7 +268,14 @@ func (c *cli) manufactureStart(name, ws, state, assets string, s *ManufactureScr
 	cc.env = func(string) string { return "" }
 	cc.workspace, cc.assets = ws, assets
 	cc.manufactured = &ManufacturedData{Edge: s.Edge, Until: s.Until, Hash: s.Hash, Script: ScriptDigest(s)}
-	f := flags{workspace: ws, runID: s.RunID, snapshots: true, optionsJSON: s.Options}
+	f := flags{workspace: ws, snapshots: true, optionsJSON: s.Options}
+	if s.RunID != "" {
+		run, err := ParseRunID(s.RunID)
+		if err != nil {
+			return "", c.failf(exitUsage, "manufacture: run_id: %v", err)
+		}
+		f.runID = run
+	}
 	for k, v := range s.Params {
 		f.params = append(f.params, k+"="+v)
 	}
@@ -286,8 +293,8 @@ func (c *cli) manufactureStart(name, ws, state, assets string, s *ManufactureScr
 		return "", code
 	}
 	id, _, _ := strings.Cut(stdout.String(), "\n")
-	run := RunID(strings.TrimSpace(id))
-	if validRunID(run) != nil {
+	run, err := ParseRunID(strings.TrimSpace(id))
+	if err != nil {
 		return "", c.failf(exitInfra, "manufacture: run start printed no run id: %q", stdout.String())
 	}
 	if before[string(run)] {

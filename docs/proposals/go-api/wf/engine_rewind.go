@@ -103,7 +103,7 @@ func (e *Engine) Rewind(run RunID, to string) (RewindReport, error) {
 // (<run>.rw<k>) and carries the source's run dir to it.
 func (e *Engine) writeRewind(run RunID, kept []JournalRecord, d RewoundData) (RewindReport, error) {
 	for k := 1; k <= rewindLimit; k++ {
-		fork := RunID(fmt.Sprintf("%s.rw%d", run, k))
+		fork := forkRunID(run, k)
 		done, err := e.writeFork(fork, kept, d)
 		if err != nil {
 			return RewindReport{}, err

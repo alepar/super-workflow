@@ -305,31 +305,74 @@ func (st *runState) addUnitTokens(name string, n int) {
 	st.unitTokens[name] += n
 }
 
-// unitPath is the instance's name segments below the root: a Map child's
-// "<state>[<key>]" becomes "<state>/<key>", a Sub child's "<state>#<n>" becomes
-// "<state>" (n == 1) or "<state>.<n>".
-func unitPath(id string) string {
-	if id == "" {
-		return ""
+// unitPath is the instance's name segments below the root, built from what
+// each instance on the way down recorded (its spawning state, entry, key and
+// generation), never read back out of its id. A Sub child is "<state>" on
+// the first entry and "<state>.<entry>" after; a Map child is
+// "<state>/<key>" (the key escaped as in its id, idKey) on the first entry
+// and generation, and "<state>[<key>]" with "~<gen>" and ".<entry>" after,
+// the spellings unit names have always had.
+func (st *runState) unitPath(in *instance) string {
+	var segs []string
+	for x := in; x != nil && x.ID != ""; x = st.insts[x.Parent] {
+		parent := st.insts[x.Parent]
+		if parent == nil {
+			break
+		}
+		segs = append(segs, unitSegment(parent, parent.def.find(x.Spawner), x))
 	}
-	var parts []string
-	for _, seg := range strings.Split(id, "/") {
-		switch {
-		case strings.HasSuffix(seg, "]") && strings.Contains(seg, "["):
-			i := strings.Index(seg, "[")
-			parts = append(parts, seg[:i], seg[i+1:len(seg)-1])
-		case strings.Contains(seg, "#"):
-			i := strings.LastIndex(seg, "#")
-			if n, err := strconv.Atoi(seg[i+1:]); err == nil && n != 1 {
-				parts = append(parts, seg[:i]+"."+seg[i+1:])
-			} else {
-				parts = append(parts, seg[:i])
-			}
-		default:
-			parts = append(parts, seg)
+	slices.Reverse(segs)
+	return strings.Join(segs, "/")
+}
+
+// within reports whether instance id is ancestor or below it, by the
+// recorded parents (an unknown id is within nothing).
+func (st *runState) within(id, ancestor string) bool {
+	for x := st.insts[id]; x != nil; x = st.insts[x.Parent] {
+		if x.ID == ancestor {
+			return true
+		}
+		if x.ID == "" {
+			return false
 		}
 	}
-	return strings.Join(parts, "/")
+	return false
+}
+
+// unitSegment is x's segment of a unit path, x spawned by parent's state n.
+// An id the current constructors did not mint (a journal from before them:
+// "kid-1") is its own segment, as it always was.
+func unitSegment(parent *instance, n *node, x *instance) string {
+	isMap := false
+	if n != nil {
+		_, isMap = n.kind.(*mapKind)
+	}
+	minted := subSegment(x.Spawner, x.Entry)
+	if isMap {
+		minted = mapSegment(x.Spawner, x.Key, x.gen, x.Entry)
+	}
+	if prefix := childPrefix(parent); x.ID != prefix+minted {
+		if seg, ok := strings.CutPrefix(x.ID, prefix); ok {
+			return seg
+		}
+		return x.ID
+	}
+	switch {
+	case !isMap && x.Entry > 1:
+		return x.Spawner + "." + strconv.Itoa(x.Entry)
+	case !isMap:
+		return x.Spawner
+	case x.gen <= 1 && x.Entry <= 1:
+		return x.Spawner + "/" + idKey(x.Key)
+	}
+	seg := x.Spawner + "[" + idKey(x.Key) + "]"
+	if x.gen > 1 {
+		seg += "~" + strconv.Itoa(x.gen)
+	}
+	if x.Entry > 1 {
+		seg += "." + strconv.Itoa(x.Entry)
+	}
+	return seg
 }
 
 // unitName is the stable name of the next unit of in at its current state:
@@ -340,7 +383,7 @@ func unitPath(id string) string {
 // (n == 1) or "<state>.<n>".
 func (st *runState) unitName(in *instance) string {
 	base := in.Cur
-	if p := unitPath(in.ID); p != "" {
+	if p := st.unitPath(in); p != "" {
 		base = p + "/" + in.Cur
 	}
 	for k := 1; ; k++ {

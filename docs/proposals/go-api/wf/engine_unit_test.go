@@ -203,17 +203,31 @@ func TestClaimMetadataFoldPreservesTimingAndOwnership(t *testing.T) {
 	}
 }
 
+// A unit path segment is built from what the instance recorded and keeps the
+// spellings unit names have always had; an id from before the current
+// constructors is its own segment.
 func TestUnitPathAndNames(t *testing.T) {
-	for id, want := range map[string]string{
-		"":                    "",
-		"kid-1":               "kid-1",
-		"Judges[f17]":         "Judges/f17",
-		"Outer#1":             "Outer",
-		"Outer#2":             "Outer.2",
-		"Outer#2/Judges[f17]": "Outer.2/Judges/f17",
+	root, outer := &instance{ID: ""}, &instance{ID: "Outer#2"}
+	sub, fan := &node{name: "Outer", kind: &subKind{}}, &node{name: "Judges", kind: &mapKind{}}
+	for _, c := range []struct {
+		parent *instance
+		n      *node
+		x      instance
+		want   string
+	}{
+		{root, sub, instance{ID: "Outer#1", Spawner: "Outer", Entry: 1}, "Outer"},
+		{root, sub, instance{ID: "Outer#2", Spawner: "Outer", Entry: 2}, "Outer.2"},
+		{root, fan, instance{ID: "Judges[f17]", Spawner: "Judges", Entry: 1, Key: "f17", gen: 1}, "Judges/f17"},
+		{outer, fan, instance{ID: "Outer#2/Judges[f17]", Spawner: "Judges", Entry: 1, Key: "f17", gen: 1}, "Judges/f17"},
+		{root, fan, instance{ID: "Judges[a%2Fb]", Spawner: "Judges", Entry: 1, Key: "a/b", gen: 1}, "Judges/a%2Fb"},
+		{root, fan, instance{ID: "Judges[k]~2", Spawner: "Judges", Entry: 1, Key: "k", gen: 2}, "Judges[k]~2"},
+		{root, fan, instance{ID: "Judges[k]#2", Spawner: "Judges", Entry: 2, Key: "k", gen: 1}, "Judges[k].2"},
+		{root, fan, instance{ID: "Judges[k]~2#3", Spawner: "Judges", Entry: 3, Key: "k", gen: 2}, "Judges[k]~2.3"},
+		{root, fan, instance{ID: "Judges[a#b]#2", Spawner: "Judges", Entry: 2, Key: "a#b", gen: 1}, "Judges[a#b].2"},
+		{root, fan, instance{ID: "kid-1", Spawner: "Judges", Entry: 1, Key: "x", gen: 1}, "kid-1"},
 	} {
-		if got := unitPath(id); got != want {
-			t.Errorf("unitPath(%q) = %q, want %q", id, got, want)
+		if got := unitSegment(c.parent, c.n, &c.x); got != c.want {
+			t.Errorf("unitSegment(%q) = %q, want %q", c.x.ID, got, c.want)
 		}
 	}
 }
@@ -226,8 +240,8 @@ func TestUnitNamesStableAndUnique(t *testing.T) {
 		t.Fatalf("unitName not stable: %q then %q", a, b)
 	}
 	// A revisit: another instance state resolves to its own ordinal.
-	child := &instance{ID: "Judges[f17]", Cur: "Refute"}
-	if got := st.unitName(child); got != "Judges/f17/Refute#1" {
+	child := &instance{ID: "kid-1", Cur: "Refute"}
+	if got := st.unitName(child); got != "kid-1/Refute#1" {
 		t.Fatalf("map child name = %q", got)
 	}
 	name := r.handOut()

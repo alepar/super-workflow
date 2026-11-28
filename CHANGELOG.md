@@ -32,6 +32,31 @@
     those. `git.Literal`, `git.Glob`, `git.ExcludeLiteral` and
     `git.ExcludeGlob` make pathspecs anchored at the top level, so they mean
     the same from any directory.
+- **Instance ids, unit names and run ids are no longer read back out of
+  their text (sw-5l5n, parsing slice 3b).**
+  - *Unit paths come from what instances recorded.* A unit name's path is
+    built from each instance's spawning state, entry, key and generation,
+    not parsed out of its id. Every existing spelling is kept, except a Map
+    child of a generic state: `G[X][k]` is now `G[X]/k`, not `G/X][k`. An
+    instance id from before the current constructors (`kid-1`) keeps its
+    own segment.
+  - *The lost-predecessor prompt line names both units whole* ("this is
+    unit `<name>`; the attempt before it, unit `<name>`, was lost while
+    running…"), so a Map key holding `#` no longer garbles it.
+  - *`run --continue` checks the key the continued run's recorded params
+    give*, not a suffix read off its id: the resume line status prints for
+    an ended rewind fork is no longer refused. A fork continues its own
+    chain (`<fork>.2`, `<fork>.3`, with the fork as predecessor), never its
+    source's.
+  - *A chain refuses a run that is not its member.* A run at a chain's next
+    id whose run_started records another predecessor (an explicit
+    `--run-id x.2`) is neither resumed nor succeeded; the refusal names the
+    recorded and the expected predecessor. A run recorded before
+    `Predecessor` existed stays a member.
+  - *`wf.ParseRunID`* is the one way a run id given as text enters: flags
+    (`--run-id`, `--continue`, `--previous-run`), the run argument, the
+    run-id file and run directories. A `form` grammar `run-id` puts
+    `validRunID` through the corpus test.
 
 ### Upgrading
 
@@ -49,6 +74,15 @@
   `commit-id`, `rev`, `branch-name` and `rev-range`. superpowers-wf's own
   `superauto.repo-path` and `superauto.commit-id` do not collide; it adopts
   these at the next pin bump.
+- `run --continue <fork>` now starts `<fork>.2` from the fork's records;
+  it used to be refused.
+- A key chain that meets a foreign run at one of its ids now refuses
+  instead of attaching or succeeding it.
+- Generic-state Map children get unit names `G[X]/k/…`; units already
+  handed out keep the names they were given.
+- An invalid run id in `--continue`, `--previous-run` or the state dir's
+  `run-id` file is a usage error where it used to pass through.
+- No journal, run_started or definition hash change.
 
 ## v0.4.18
 

@@ -650,7 +650,7 @@ func (e *Engine) Run(d *Def, params map[string]string, options any) (RunID, erro
 			return got, err
 		}
 		ended.self = id
-		pred, id = ended, RunID(fmt.Sprintf("%s.%d", base, n))
+		pred, id = ended, successorRunID(base, n)
 	}
 }
 
@@ -698,6 +698,17 @@ func (e *Engine) runAt(d *Def, params map[string]string, opts json.RawMessage, i
 	recs, err := e.j.Records(id)
 	switch {
 	case err == nil:
+		if pred != nil && len(recs) > 0 {
+			// id is pred's successor by its spelling: a run there that
+			// records another predecessor is not this chain's.
+			if d, derr := decodeData(recs[0]); derr == nil {
+				if started, ok := d.(*RunStartedData); ok {
+					if err := chainMember(id, started, pred.self); err != nil {
+						return "", nil, err
+					}
+				}
+			}
+		}
 		if len(recs) > 0 && recs[0].Roots != nil && e.opts.Workspace != "" {
 			if original := recs[0].Roots.Workspace; original != "" && !sameRealPath(original, e.opts.Workspace) {
 				return "", nil, fmt.Errorf("%w: run %s uses workspace %s; continue with next or resume to relocate", ErrRejected, id, original)

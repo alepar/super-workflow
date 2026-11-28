@@ -58,8 +58,7 @@ func TestReissuedPromptNamesPredecessor(t *testing.T) {
 
 	text := afterRules(t, fetchPrompt(t, h, run, second, "b"))
 	line, _, _ := strings.Cut(text, "\n")
-	base := strings.TrimSuffix(first.Name, "#1")
-	pre := "attempt 2 of " + base + "; attempt 1 was lost while running; its workspace "
+	pre := "this is unit " + second.Name + "; the attempt before it, unit " + first.Name + ", was lost while running; its workspace "
 	if !strings.HasPrefix(line, pre) || !strings.HasSuffix(line, " may hold partial work") {
 		t.Fatalf("first line = %q, want %q<dir> may hold partial work", line, pre)
 	}

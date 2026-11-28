@@ -236,8 +236,6 @@ call	wf/effects.go	legacyKeyJoin	strings.Join	1	F4 effect key: the spelling befo
 call	wf/engine.go	NewEngine	strings.Join	1	seed, unclassified
 call	wf/engine.go	cycle.noteExhausted	strings.Join	1	seed, unclassified
 call	wf/engine_agent.go	agentOps.decide	strings.Join	2	seed, unclassified
-call	wf/engine_agent.go	agentOps.render	strings.Cut	1	seed, unclassified
-call	wf/engine_agent.go	agentOps.render	strings.TrimPrefix	1	seed, unclassified
 call	wf/engine_agent.go	attemptNote	strings.Join	2	seed, unclassified
 call	wf/engine_bind.go	-	regexp.MustCompile	5	F14 template placeholders, dotted lookup
 call	wf/engine_bind.go	bracketBound	strings.CutPrefix	1	F14 template placeholders, dotted lookup
@@ -255,7 +253,6 @@ call	wf/engine_cause.go	cycle.countsLine	strings.Cut	1	display
 call	wf/engine_cause.go	cycle.deciding	strings.Cut	1	display
 call	wf/engine_cause.go	cycle.deciding	strings.Join	1	display
 call	wf/engine_cause.go	cycle.instanceName	strings.Join	1	display
-call	wf/engine_children.go	cycle.ranAUnit	strings.HasPrefix	1	F1 instance ids
 call	wf/engine_children.go	globSegs	strings.Split	1	F1 instance ids
 call	wf/engine_children.go	mapOps.execute	strings.Join	1	F1 instance ids
 call	wf/engine_cleanup.go	cycle.worktreeRemovalBlocked	strings.HasPrefix	1	seed, unclassified
@@ -295,11 +292,8 @@ call	wf/engine_status.go	cycle.firstAgentClass	strings.Join	1	seed, unclassified
 call	wf/engine_status.go	cycle.futureSteps	strings.Join	1	seed, unclassified
 call	wf/engine_status.go	cycle.statusUnits	strings.TrimPrefix	1	seed, unclassified
 call	wf/engine_status.go	cycle.unconditionalAgents	strings.Join	1	seed, unclassified
-call	wf/engine_unit.go	unitPath	strings.HasSuffix	1	F1 instance id parsed back (no decoder)
-call	wf/engine_unit.go	unitPath	strings.Index	1	F1 instance id parsed back (no decoder)
-call	wf/engine_unit.go	unitPath	strings.Join	1	F1 instance id parsed back (no decoder)
-call	wf/engine_unit.go	unitPath	strings.LastIndex	1	F1 instance id parsed back (no decoder)
-call	wf/engine_unit.go	unitPath	strings.Split	1	F1 instance id parsed back (no decoder)
+call	wf/engine_unit.go	runState.unitPath	strings.Join	1	F1 unit path: the formatter of a unit name's path, from recorded fields (sw-5l5n)
+call	wf/engine_unit.go	unitSegment	strings.CutPrefix	1	F1 legacy instance ids (kid-1) spelled before the current constructors keep their segment (sw-5l5n)
 call	wf/engine_verbs.go	Engine.ChildVerbCheck	strings.Join	1	seed, unclassified
 call	wf/enum_json.go	validateEnumJSON	strings.Cut	1	seed, unclassified
 call	wf/enum_validation.go	embeddedEnums	strings.Cut	1	seed, unclassified
@@ -407,7 +401,6 @@ call	wf/main_run.go	ParseModelMap	strings.Split	1	F8 CLI flag value
 call	wf/main_run.go	applyStateEnv	strings.Cut	1	F8 state env file
 call	wf/main_run.go	applyStateEnv	strings.CutPrefix	1	F8 state env file
 call	wf/main_run.go	applyStateEnv	strings.Split	1	F8 state env file
-call	wf/main_run.go	chainBase	strings.LastIndex	1	F3 run id successor parse
 call	wf/main_run.go	cli.bootstrap	strings.HasPrefix	1	seed, unclassified
 call	wf/main_run.go	cli.busy	strings.Join	2	seed, unclassified
 call	wf/main_run.go	cli.busy	strings.TrimPrefix	1	seed, unclassified
@@ -640,20 +633,8 @@ call	wftest/wftest.go	pathMatches	strings.HasSuffix	1	seed, unclassified
 call	wftest/wftest.go	routeOf	strings.Join	1	seed, unclassified
 conv	bd/runtime.go	rawIssue.issue	bd.Status	1	conv: bd.Status has no constructor
 conv	examples/feature/def.go	Definition	wf.RunPath	2	conv: wf.RunPath has no constructor
-conv	wf/assets_resolve.go	ResolveAssets	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/assets_resolve.go	selectRun	wf.RunID	2	conv: wf.RunID has no constructor
-conv	wf/coordinator_turn_cli.go	turnAttachRow	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/engine.go	Engine.Run	wf.RunID	1	conv: wf.RunID has no constructor
 conv	wf/engine.go	deriveRunID	wf.RunID	2	conv: wf.RunID has no constructor
 conv	wf/engine_bind.go	scope.bindArgv	wf.RunPath	1	conv: wf.RunPath has no constructor
-conv	wf/engine_rewind.go	Engine.writeRewind	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/journal_file.go	fileJournal.Runs	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/main_manufacture.go	cli.manufactureStart	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/main_run.go	chainBase	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/main_run.go	cli.drive	wf.RunID	1	conv: wf.RunID has no constructor
-conv	wf/main_run.go	cli.resolveRun	wf.RunID	3	conv: wf.RunID has no constructor
-conv	wf/main_run.go	cli.runChain	wf.RunID	2	conv: wf.RunID has no constructor
-conv	wf/main_run.go	cli.start	wf.RunID	5	conv: wf.RunID has no constructor
-conv	wf/main_run.go	cli.unitOwners	wf.RunID	1	conv: wf.RunID has no constructor
+conv	wf/main_run.go	cli.start	wf.RunID	1	conv: wf.RunID has no constructor
 conv	wf/path_params.go	cycle.paramValue	wf.RunPath	1	conv: wf.RunPath has no constructor
 conv	wf/path_template.go	cycle.resolveOwnedPath	wf.RunPath	1	conv: wf.RunPath has no constructor

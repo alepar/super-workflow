@@ -100,6 +100,17 @@ func validRunID(run RunID) error {
 	return nil
 }
 
+// chainMember refuses a run found at a chain's next id (id, the successor
+// of prev) that records another predecessor: it is another run that only
+// shares the spelling (an explicit run id), never a member to resume or
+// succeed. A run recorded before Predecessor existed is taken as a member.
+func chainMember(id RunID, started *RunStartedData, prev RunID) error {
+	if started == nil || started.Predecessor == "" || started.Predecessor == prev {
+		return nil
+	}
+	return fmt.Errorf("%w: run %s is at the id of %s's successor but records predecessor %s, not %s: it is another run, so it is neither resumed nor succeeded; nothing was started", ErrRejected, id, prev, started.Predecessor, prev)
+}
+
 // hasControlByte reports whether s holds an ASCII control byte (C0 or DEL).
 // Identifiers the engine builds paths and command lines from refuse them at
 // their source, since no argument or path can carry a NUL and a line break
