@@ -111,8 +111,9 @@ func (e *Engine) writeRewind(run RunID, kept []JournalRecord, d RewoundData) (Re
 		if done {
 			if e.opts.RunDir != nil {
 				// The fork's run dir starts as the source's: its records,
-				// detached effects' results, outputs and prompt bodies.
-				for _, sub := range []string{"records", "effects", "out", "prompt"} {
+				// detached effects' results, outputs, prompt bodies and
+				// observed blobs.
+				for _, sub := range []string{"records", "effects", "out", "prompt", ObservedBlobDir} {
 					if err := copyTree(filepath.Join(e.opts.RunDir(run), sub), filepath.Join(e.opts.RunDir(fork), sub)); err != nil {
 						// The fork is committed: the report names it, so
 						// what follows the failure is the fork's.

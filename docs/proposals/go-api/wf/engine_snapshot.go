@@ -758,6 +758,10 @@ func (e *Engine) forkSnapshot(run RunID, seq int64, out string, mark func(*Rewou
 	if err = copyCommandOutputs(outputs); err != nil {
 		return SnapshotFork{}, err
 	}
+	// The prefix's observed records name their large values by hash.
+	if err = copyObservedBlobs(prefix, sourceDir, opts.RunDir(run)); err != nil {
+		return SnapshotFork{}, err
+	}
 	for _, sub := range []string{"records", "out", "prompt"} {
 		if err = copySnapshotTree(filepath.Join(checkpoint, "run-data", sub), filepath.Join(opts.RunDir(run), sub), data.Version == 2); err != nil {
 			return SnapshotFork{}, err

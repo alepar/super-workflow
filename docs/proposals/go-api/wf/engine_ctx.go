@@ -201,7 +201,7 @@ func (x *runCtx) value(k ctxKey) (any, error) {
 		case o.Error != "":
 			return nil, errors.New(o.Error)
 		}
-		return o.Value, nil
+		return observedValue(x.c.resultDir(), o)
 	}
 	return nil, fmt.Errorf("unknown context read %q", k.kind)
 }

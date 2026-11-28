@@ -251,6 +251,9 @@ func (r ReplayReport) String() string {
 		}[r.Stop.Kind]
 		what := "new " + r.Stop.Kind
 		switch {
+		case r.Stop.Kind == "read" && strings.HasPrefix(r.Stop.Then, ErrObservedBlob.Error()):
+			// The run made the read; its value's blob cannot be read back.
+			what, why = "recorded read "+r.Stop.Now, r.Stop.Then
 		case r.Stop.Kind == "read":
 			what += " " + r.Stop.Now
 		case r.Stop.Kind == "unit" && strings.HasPrefix(r.Stop.Then, "recorded result refused by "):
@@ -610,7 +613,15 @@ func (w *replayWorld) Read(_ string, d ObservationDesc) (json.RawMessage, error)
 	case o.Error != "":
 		return nil, errors.New(o.Error)
 	}
-	return o.Value, nil
+	dir := w.r.sourceDir
+	if dir == "" {
+		dir = w.r.oldDir
+	}
+	v, err := observedValue(dir, o)
+	if err != nil {
+		w.r.missed("read", summarize(k), err.Error())
+	}
+	return v, nil
 }
 
 func (w *replayWorld) Apply(_ string, e ExternalEffect) (json.RawMessage, error) {

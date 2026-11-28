@@ -140,6 +140,15 @@ adapter's own `Apply` and `Check` under the engine, against a stub, use
 `wftest.Real(world, runtime)`: crashes and failures from the world's fault
 targets still apply.
 
+An observation's value longer than `wf.ObservedInline` (64 KiB) stays out of
+the journal. Its observed record holds the value's SHA-256 and size
+(`ObservedData.Blob`), and its bytes are written once to
+`<run dir>/observed/<sha256>`. `wf.Observed`, prompt inputs, staleness
+digests, replay, rewind and snapshot forks read the value back by hash and
+check it, so a definition sees the same value as an inline read. A command
+state's streams are handled differently: they are cut to their last 64 KiB,
+with the full text in `RunResult.Output`.
+
 ### Build stamps
 
 Every run records the source identity of the binary that created it: the
@@ -673,7 +682,8 @@ parameter, a path marker in a document (`wf.RunPath`, `wf.PathTemplate`), or a
 `wf.PathTemplate` inside a `wf.Bound` input, whole or embedded in its prose (the
 marked path runs to the next whitespace). Typed inputs go through the same
 check, and a source-root target refuses the prompt.
-A command's full output (`Output`) is carried into the fork at its relocated path.
+A command's full output (`Output`) is carried into the fork at its relocated path,
+and the observed blobs the fork's journal names are copied into its run directory.
 
 Declare path-valued parameters with `d.Param("driver").Path(wf.WorkspaceRelative)`
 or `wf.RunRelative`. Relative inputs use that base; absolute inputs inside the run

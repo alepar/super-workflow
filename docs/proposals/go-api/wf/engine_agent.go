@@ -717,7 +717,7 @@ func (c *cycle) issueRead(in *instance, d ObservationDesc, purpose string) (Obse
 	}
 	if od.Purpose != purpose {
 		od.Purpose, od.Alias = purpose, true
-		if err := c.emit(in, JournalObserved, 0, od); err != nil {
+		if err := c.emitObserved(in, &od); err != nil {
 			return od, err
 		}
 	}
@@ -738,6 +738,11 @@ func (c *cycle) tokenRead(in *instance, token, purpose, canon string) (ObservedD
 		}
 		var od ObservedData
 		if json.Unmarshal(r.Data, &od) == nil && od.Issue == token && (purpose == "" || od.Purpose == purpose) && canonDesc(od.Desc) == canon {
+			if err := c.loadObserved(&od); err != nil {
+				// The recorded value cannot be read back: it is a failed
+				// read, never a silent empty one.
+				od.Value, od.Error = nil, err.Error()
+			}
 			return od, true
 		}
 	}
@@ -872,7 +877,7 @@ func (c *cycle) observedInput(in *instance, d inputDesc) (string, error) {
 		}
 		if od, ok = c.tokenRead(in, token, "", canon); ok {
 			od.Purpose, od.Alias = purpose, true
-			if err := c.emit(in, JournalObserved, 0, od); err != nil {
+			if err := c.emitObserved(in, &od); err != nil {
 				return "", err
 			}
 			break

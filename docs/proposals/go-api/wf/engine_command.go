@@ -578,7 +578,7 @@ func (o commandOps[S]) recover(c *cycle, in *instance, n *node, dead *EffectReru
 			return err
 		}
 		if od.Error == "" && !od.Unavailable && truthy(od.Value) {
-			if err := c.emit(in, JournalObserved, 0, od); err != nil {
+			if err := c.emitObserved(in, &od); err != nil {
 				return err
 			}
 			return o.completeByObservation(c, in, n)

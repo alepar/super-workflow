@@ -2614,7 +2614,7 @@ func (c *cycle) readObsFor(in *instance, d ObservationDesc, purpose, issue strin
 		od.Error = err.Error()
 	}
 	if journal {
-		if err := c.emit(in, JournalObserved, 0, od); err != nil {
+		if err := c.emitObserved(in, &od); err != nil {
 			return od, err
 		}
 	}

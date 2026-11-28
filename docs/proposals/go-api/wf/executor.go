@@ -1165,11 +1165,14 @@ type EffectSettledData struct {
 // ObservedData is the payload of observed: one adapter read, by its resolved
 // descriptor. Purpose is why it was read ("compute", "check", "done_when").
 type ObservedData struct {
-	Desc        ObservationDesc
-	Value       json.RawMessage `json:",omitempty"`
-	Error       string          `json:",omitempty"`
-	Unavailable bool            `json:",omitempty"`
-	Purpose     string          `json:",omitempty"`
+	Desc  ObservationDesc
+	Value json.RawMessage `json:",omitempty"`
+	// Blob names the value kept beside the journal when it is longer than
+	// ObservedInline (sw-ta9r); the record then holds no Value.
+	Blob        *ObservedBlob `json:",omitempty"`
+	Error       string        `json:",omitempty"`
+	Unavailable bool          `json:",omitempty"`
+	Purpose     string        `json:",omitempty"`
 	// Issue is the token of the instruction an input observation was read
 	// for: at its issue, or at the first render of an attempt adopted onto
 	// the input. That issue's prompt and staleness baseline are these reads.

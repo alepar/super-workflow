@@ -49,7 +49,7 @@ func TestResolvePathRecordedTemplatesRemainDistinct(t *testing.T) {
 	if record.Reads[0].Name == record.Reads[1].Name {
 		t.Fatal("template identities collapsed")
 	}
-	context, err := resolveCheckContexts(&CheckContexts{Version: 1, Checks: []RecordedCheck{record}}, JournalRecord{Run: "run", Seq: 1}, nil)
+	context, err := resolveCheckContexts(&CheckContexts{Version: 1, Checks: []RecordedCheck{record}}, JournalRecord{Run: "run", Seq: 1}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

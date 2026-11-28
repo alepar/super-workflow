@@ -648,6 +648,9 @@ func (o mapOps[S, I, K, R]) items(c *cycle, in *instance, n *node, kids []*insta
 		if od.Unavailable || od.Error != "" {
 			return nil, od.Error, false, nil
 		}
+		if err := c.loadObserved(&od); err != nil {
+			return nil, "", true, o.failParent(c, in, n, Refused, []string{"map source: " + err.Error()})
+		}
 		if err := json.Unmarshal(od.Value, &raws); err != nil {
 			return nil, "", true, o.failParent(c, in, n, Refused, []string{"map source is not a JSON array: " + err.Error()})
 		}
@@ -769,7 +772,7 @@ func (o mapOps[S, I, K, R]) leftSince(c *cycle, in *instance, n *node, kids []*i
 		case JournalObserved:
 			var od ObservedData
 			if json.Unmarshal(r.Data, &od) != nil || (od.Purpose != purposeMapSource && od.Purpose != purposeMapRequery) ||
-				od.Unavailable || od.Error != "" || canonDesc(od.Desc) != want {
+				od.Unavailable || od.Error != "" || canonDesc(od.Desc) != want || c.loadObserved(&od) != nil {
 				continue
 			}
 			var raws []json.RawMessage
@@ -887,7 +890,7 @@ func (o mapOps[S, I, K, R]) sourceRaws(c *cycle, in *instance) ([]json.RawMessag
 			return nil, false
 		}
 		od, ok := in.Observed[canonDesc(d)]
-		if !ok || od.Unavailable || od.Error != "" {
+		if !ok || od.Unavailable || od.Error != "" || c.loadObserved(&od) != nil {
 			return nil, false
 		}
 		var raws []json.RawMessage

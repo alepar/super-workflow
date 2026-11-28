@@ -218,7 +218,7 @@ func TestRunPathOfRecordedContextReplaysWithoutLivePaths(t *testing.T) {
 		t.Fatalf("context: %+v", recorded)
 	}
 	contexts := &CheckContexts{Version: 1, Checks: []RecordedCheck{recorded}}
-	resolved, err := resolveCheckContexts(contexts, JournalRecord{Run: "run", Seq: 1}, nil)
+	resolved, err := resolveCheckContexts(contexts, JournalRecord{Run: "run", Seq: 1}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

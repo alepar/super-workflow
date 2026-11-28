@@ -115,7 +115,7 @@ func TestResolveRejectsUnprovenInlineReads(t *testing.T) {
 		{Kind: "input", Value: append(append(json.RawMessage(`"`), make([]byte, 5000)...), '"')},
 	} {
 		context := &CheckContexts{Version: 1, Checks: []RecordedCheck{{Name: "check", Reads: []RecordedRead{r}}}}
-		if _, err := resolveCheckContexts(context, JournalRecord{Run: "r", Seq: 9}, nil); err == nil {
+		if _, err := resolveCheckContexts(context, JournalRecord{Run: "r", Seq: 9}, nil, ""); err == nil {
 			t.Fatalf("accepted unproven inline read: %+v", r)
 		}
 	}

@@ -195,6 +195,7 @@ docs/proposals/go-api/wf/manufacture.go
 docs/proposals/go-api/wf/mermaid.go
 docs/proposals/go-api/wf/next_wait.go
 docs/proposals/go-api/wf/observe.go
+docs/proposals/go-api/wf/observed_blob.go
 docs/proposals/go-api/wf/options.go
 docs/proposals/go-api/wf/paged_delivery.go
 docs/proposals/go-api/wf/path_encoding.go

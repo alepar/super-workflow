@@ -106,7 +106,7 @@ func Harvest(records []JournalRecord, dir string) ([]CorpusEntry, error) {
 			if def.path != "" {
 				state = def.path + "/" + state
 			}
-			context, err := resolveCheckContexts(d.Context, r, records)
+			context, err := resolveCheckContexts(d.Context, r, records, harvestRunDir(records))
 			if err != nil {
 				return nil, fmt.Errorf("harvest seq %d: %w", r.Seq, err)
 			}

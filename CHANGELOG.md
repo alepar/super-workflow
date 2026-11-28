@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **A large observation is journaled by hash (sw-ta9r).** An observed
+  record whose value is longer than `wf.ObservedInline` (64 KiB) now holds
+  `Blob` (the value's SHA-256 and size) and no `Value`. The bytes are written
+  once to `<run dir>/observed/<sha256>`; identical reads share one file. The
+  engine loads the value by hash and checks it wherever it reads one back:
+  `wf.Observed` in a check or compute, a prompt input and its staleness
+  baseline, a Map source, recorded check contexts and harvest. Digests are
+  over the same bytes as before, so no token or hash changes. A replay feeds
+  the read from the source run's blob, and stops at that read naming the
+  blob when it is absent or damaged. A rewind's fork and a snapshot fork
+  carry the blobs their journals name; a snapshot fork whose source lost one
+  is refused with `wf.ErrObservedBlob`. Command states are unchanged: their
+  streams were already cut to a 64 KiB tail with the full text in `Output`.
+
+### Upgrading
+
+- The journal format change is additive (`ObservedData.Blob`, optional).
+  Journals written before it read as before, with no migration. A run whose
+  journal holds a blob needs this engine or later: an older binary sees an
+  empty value. Keep a run's `observed/` directory with its journal when
+  moving or archiving a run directory; replay needs it.
+- `ObservedData` gains `Blob`. Code that decodes observed records itself
+  (outside the engine) gets the value by reading
+  `wf.ObservedBlobPath(runDir, Blob.SHA256)` when `Value` is empty.
+- No API removal, hash or lock change.
+
 ## v0.4.12
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

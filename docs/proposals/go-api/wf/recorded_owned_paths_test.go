@@ -95,7 +95,7 @@ func TestRecordedComputedOwnedPathsKeepProducerAndCalibrate(t *testing.T) {
 	if err := os.RemoveAll(runDir); err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := resolveCheckContexts(accepted.Context, accept, records)
+	resolved, err := resolveCheckContexts(accepted.Context, accept, records, "")
 	if err != nil {
 		t.Fatal(err)
 	}

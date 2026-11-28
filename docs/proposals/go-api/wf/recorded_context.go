@@ -186,7 +186,7 @@ func (x *recordingCtx) value(k ctxKey) (any, error) {
 			}
 			r.State = j.State
 		}
-		value, er, kind, ok := recordedProducer(j, r.Kind)
+		value, er, kind, ok := recordedProducer(j, r.Kind, x.live.c.resultDir())
 		if !ok {
 			continue
 		}
@@ -252,7 +252,10 @@ func (x *recordingCtx) value(k ctxKey) (any, error) {
 	return v, err
 }
 
-func recordedProducer(j JournalRecord, kind string) (json.RawMessage, string, string, bool) {
+// recordedProducer is the value j produced for a read of kind; an observed
+// record's blob is loaded from runDir (a blob that cannot be read is no
+// producer).
+func recordedProducer(j JournalRecord, kind, runDir string) (json.RawMessage, string, string, bool) {
 	switch kind {
 	case "gateInt":
 		if j.Kind == JournalGateAnswered {
@@ -295,7 +298,11 @@ func recordedProducer(j JournalRecord, kind string) (json.RawMessage, string, st
 				if d.Unavailable {
 					k = "unavailable"
 				}
-				return d.Value, d.Error, k, true
+				v, err := observedValue(runDir, d)
+				if err != nil {
+					return nil, "", "", false
+				}
+				return v, d.Error, k, true
 			}
 		}
 	}
@@ -304,7 +311,8 @@ func recordedProducer(j JournalRecord, kind string) (json.RawMessage, string, st
 
 // resolveCheckContexts materializes references only from earlier producers in
 // the same run and instance. Invalid provenance is a corrupt corpus, not a zero.
-func resolveCheckContexts(context *CheckContexts, accept JournalRecord, records []JournalRecord) (*CheckContexts, error) {
+// An observed producer's blob is read from runDir.
+func resolveCheckContexts(context *CheckContexts, accept JournalRecord, records []JournalRecord, runDir string) (*CheckContexts, error) {
 	if context == nil {
 		return nil, nil
 	}
@@ -395,7 +403,7 @@ func resolveCheckContexts(context *CheckContexts, accept JournalRecord, records 
 			if producer == nil || producer.Instance != r.Instance || producer.State != r.State {
 				return nil, fmt.Errorf("missing or mismatched context producer %d", r.Seq)
 			}
-			value, er, kind, ok := recordedProducer(*producer, r.Kind)
+			value, er, kind, ok := recordedProducer(*producer, r.Kind, runDir)
 			if !ok || (r.ErrorKind != "" && r.ErrorKind != "unavailable") || kind != r.ErrorKind || (er != "") != (r.Error != "") {
 				return nil, fmt.Errorf("invalid context producer kind/error %d", r.Seq)
 			}
