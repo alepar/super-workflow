@@ -85,20 +85,47 @@ type fileRunLock struct {
 	f       *os.File
 	claimed bool
 	torn    int64 // -1: none
+	// recorded is whether this lease wrote its holder record at
+	// acquisition; orig is the lock file's contents it replaced, put back
+	// on release when the lease appended nothing.
+	recorded bool
+	orig     []byte
+	origMod  time.Time
 }
 
 // release closes the lease's descriptor, which lets the flock go; a lease
 // whose lock was already let go (a yield that could not take it back) has
-// none. A lease that wrote the holder record marks it released first, while
+// none. A lease that appended marks its holder record released first, while
 // it still holds the lock, so the record left behind is never read as a live
-// holder; a lease that only read leaves the file as it was.
+// holder; a lease that only read puts the file back as it found it.
 func (l *fileRunLock) release() {
 	if l.f != nil {
-		if l.claimed {
+		switch {
+		case l.claimed:
 			markReleased(l.f) // best effort: the flock, not the record, is the lock
+		case l.recorded:
+			restoreLockFile(l.f, l.orig, l.origMod)
 		}
 		l.f.Close()
 		l.f = nil
+	}
+}
+
+// restoreLockFile puts back the contents a reading lease's holder record
+// replaced, and the file's modification time, so a read leaves the run
+// directory as it was (best effort, like the record itself).
+func restoreLockFile(f *os.File, orig []byte, mod time.Time) {
+	if err := f.Truncate(0); err != nil {
+		return
+	}
+	if len(orig) > 0 {
+		if _, err := f.WriteAt(orig, 0); err != nil {
+			return
+		}
+	}
+	_ = f.Sync()
+	if !mod.IsZero() {
+		_ = os.Chtimes(f.Name(), time.Time{}, mod) // a zero atime is left as it is
 	}
 }
 
@@ -169,7 +196,7 @@ func (j *fileJournal) acquire(run RunID, l *fileRunLock) error {
 			return
 		}
 		printed = true
-		fmt.Fprintf(j.progress, "waiting for the run: held by %s; this wait is normal and ends on its own, within %s\n", heldBy(f), time.Until(deadline).Round(time.Second))
+		fmt.Fprintf(j.progress, "waiting for the run: held by %s; this wait is normal and ends on its own, within %s, the most this call waits for the lock%s\n", heldBy(f), max(time.Until(deadline), 0).Round(time.Second), lockWaitTail(j.owner.Verb))
 	}
 	err = nil
 	if gate != nil {
@@ -186,14 +213,22 @@ func (j *fileJournal) acquire(run RunID, l *fileRunLock) error {
 		}
 		return fmt.Errorf("%w: held by %s", ErrRunLocked, who)
 	}
-	// The holder record is written by the first Append (claim), not here:
-	// a call that only reads the run, or is refused, never writes its lock
-	// file, so a run another run's agent addresses stays as it was.
+	// The holder record is written here, at acquisition, so a call that
+	// holds the lock without appending is named to the calls that wait for
+	// it. A lease that appends nothing puts the file's earlier contents back
+	// on release, so a run another run's agent only read or was refused on
+	// stays as it was.
 	prev, hadPrev := readHolder(f)
+	orig, rerr := io.ReadAll(io.NewSectionReader(f, 0, lockFileMax))
+	var origMod time.Time
+	if fi, err := f.Stat(); err == nil {
+		origMod = fi.ModTime()
+	}
+	recorded := rerr == nil && writeHolder(f, j.owner) == nil
 	j.mu.Lock()
-	// Each acquisition writes the holder record at its own first Append:
-	// after a yield, the record may name the call that went in between.
-	l.f, l.next, l.claimed, l.torn = f, 0, false, -1
+	// Each acquisition writes its own holder record: after a yield, the
+	// record names this lease again, not the call that went in between.
+	l.f, l.next, l.claimed, l.torn, l.recorded, l.orig, l.origMod = f, 0, false, -1, recorded, orig, origMod
 	j.held[run] = l
 	if hadPrev {
 		j.prev[run] = prev
@@ -288,6 +323,15 @@ func setLockOwner(j Journal, o lockOwner, progress io.Writer, committed *[]commi
 	case *rootedJournal:
 		setLockOwner(x.Journal, o, progress, committed)
 	}
+}
+
+// lockWaitTail is what a lock wait's progress line adds for verb: a
+// coordinator's next is told the wait is no stop and what to do past it.
+func lockWaitTail(verb string) string {
+	if verb != "next" {
+		return ""
+	}
+	return ". A next waiting for the lock is not a stop: do not interrupt it. If it runs past that, run status, then next again"
 }
 
 // lockOwner is what a CLI verb's lock record says it runs for.
@@ -498,8 +542,11 @@ func (j *fileJournal) claim(run RunID, l *fileRunLock) error {
 		l.torn = -1
 	}
 	if !l.claimed {
-		if err := writeHolder(l.f, j.owner); err != nil {
-			return fmt.Errorf("lock run %s: %w", run, err)
+		if !l.recorded {
+			if err := writeHolder(l.f, j.owner); err != nil {
+				return fmt.Errorf("lock run %s: %w", run, err)
+			}
+			l.recorded = true
 		}
 		gate, err := os.OpenFile(filepath.Join(j.runDir(run), gateFile), os.O_CREATE|os.O_RDWR, 0o644)
 		if err != nil {

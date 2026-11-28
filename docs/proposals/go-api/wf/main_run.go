@@ -1529,7 +1529,14 @@ func (c *cli) drive(row Subcommand, args []string) int {
 		if _, code := c.nextArgs(cmd, &f); code != exitOK {
 			return code
 		}
-		c.budget(f.timeout) // next's own wait and every lock wait end together
+		// next's own wait and every lock wait end together. A harness with
+		// no tool limit (Codex) bounds them by next's default wait, so the
+		// lock wait's printed bound is one the call keeps.
+		budget := f.timeout
+		if budget == 0 && harness.For(envHarness(c.env)).ToolLimit(c.env) == 0 {
+			budget = capWait(DefaultNextWait)
+		}
+		c.budget(budget)
 	} else {
 		c.budget(0)
 	}

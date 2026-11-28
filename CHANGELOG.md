@@ -15,12 +15,29 @@
   yet. The line is guidance; the engine does not read the refusal. A new
   optional adapter interface, `harness.SpawnNote`, carries it, and offer
   sizing counts it. Other harnesses print nothing new.
+- **A lock wait keeps the bound it prints, and names a quiet holder
+  (sw-ex2v).** Where the harness reads no tool limit (Codex) and no
+  `--timeout` is given, `next` now waits for the run lock within its own
+  default wait instead of up to 2 minutes per acquisition, so the bound its
+  progress line prints is one the call keeps. Every acquisition that waits
+  5 s prints its own line, which now says it is the most this call waits for
+  the lock. For `next`, the line adds that the wait is not a stop: do not
+  interrupt it, and past that bound run status, then next again. Each
+  acquisition now writes its holder record when it takes the lock, not at
+  its first append, so a call that holds the lock without appending is
+  named to its waiters. A lease that appends nothing puts the lock file back
+  as it found it on release.
 
 ### Upgrading
 
 - No API break. A Codex coordinator's `next` output gains one line per
   offer, so an offer near the output limit may carry one unit fewer. Tools
   that match Codex offer text exactly see the new line after the header.
+- No API break. On Codex, a `next` under a busy lock now answers "nothing
+  yet" after about 100 s instead of waiting up to 2 minutes per lock.
+  Tools that read the lock file during a hold now see the current holder's
+  record, also for a call that has not appended. The record is gone again
+  once that call lets go.
 
 ## v0.4.9
 

@@ -83,9 +83,10 @@ func TestLockRecordsHolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The record is written by the first append, not by taking the lock.
-	if data, _ := os.ReadFile(filepath.Join(dir, "runs", "r", "lock")); len(data) != 0 {
-		t.Errorf("taking the lock wrote %q before any append", data)
+	// Taking the lock writes the record (sw-ex2v): a holder that never
+	// appends is named too.
+	if data, _ := os.ReadFile(filepath.Join(dir, "runs", "r", "lock")); !strings.Contains(string(data), fmt.Sprintf(`"pid":%d`, os.Getpid())) {
+		t.Errorf("taking the lock wrote %q, want this pid's record", data)
 	}
 	if err := first.Append(JournalRecord{Run: "r", Kind: JournalNote, Data: []byte(`{}`)}); err != nil {
 		t.Fatal(err)
@@ -346,6 +347,9 @@ func TestNextUnderContentionAnswersWithinItsBudget(t *testing.T) {
 	}{
 		{"claude, 3 s Bash", map[string]string{"CLAUDE_CODE_SESSION_ID": "s", "BASH_DEFAULT_TIMEOUT_MS": "3000"}, nil, 3 * time.Second},
 		{"no harness, --timeout shorter than a lock wait", nil, []string{"--timeout", "300ms"}, 2 * time.Second},
+		// sw-ex2v: Codex sets no tool limit; next's own wait bounds its lock
+		// waits, so a wait never outlasts the call that printed its bound.
+		{"codex, no tool limit and no --timeout", map[string]string{"CODEX_THREAD_ID": "t", NextWaitCapEnv: "300ms"}, nil, 2 * time.Second},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			noHarnessEnv(t)
@@ -675,9 +679,9 @@ func TestHeldByAttributesOnlyTheProvenHolder(t *testing.T) {
 	release()
 
 	// One process, two acquisitions: "first" locks, appends
-	// and lets go; "second" locks and appends nothing. A matching pid proves
-	// the process, not the acquisition: the line never names "first" as the
-	// holder, only as the last writer.
+	// and lets go; "second" locks and appends nothing. Each acquisition
+	// writes its own record (sw-ex2v), so the line names "second", the
+	// current lease, as the last writer, never "first".
 	first := FileJournal(dir)
 	setLockOwner(first, lockOwner{Verb: "first"}, nil, nil)
 	unlockFirst, err := first.Lock("r")
@@ -696,7 +700,7 @@ func TestHeldByAttributesOnlyTheProvenHolder(t *testing.T) {
 	}
 	defer unlockSecond()
 	got := heldBy(f)
-	if want := fmt.Sprintf("pid %d (last written by first, pid %d, since ", os.Getpid(), os.Getpid()); !strings.HasPrefix(got, want) {
+	if want := fmt.Sprintf("pid %d (last written by second, pid %d, since ", os.Getpid(), os.Getpid()); !strings.HasPrefix(got, want) {
 		t.Errorf("second's hold: %q, want prefix %q", got, want)
 	}
 }

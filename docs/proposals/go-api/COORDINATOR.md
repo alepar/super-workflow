@@ -206,9 +206,13 @@ output. When that output looks cut (an agy tool result keeps 9,838 bytes, head
 and tail), run `workflow status <run>` (read-only), never the blocking command
 again. A busy
 run lock is waited for within the same budget, across all of the call's
-locks (where the adapter reads no limit and no `--timeout` is given, each
-lock is waited for up to 2 minutes, with one progress line naming the
-holder after 5 s); a next still locked out at its end prints the
+locks (where the adapter reads no limit and no `--timeout` is given,
+`next`'s locks are waited for within its default wait and any other verb's
+for up to 2 minutes each). Each lock wait that lasts 5 s prints its own
+progress line, naming the holder, even one that has appended nothing yet,
+and the most this call waits for the lock. A next waiting for the lock is
+not a stop: do not interrupt it. If it runs past that bound, run `workflow
+status <run>`, then next again. A next still locked out at its end prints the
 nothing-yet line, and any other verb that changed nothing exits 9 with "the
 run is busy" and a tail that says to run the same command again: a busy run
 is never a stop. `workflow lock <run>` (read-only, `--json` for the
@@ -1490,7 +1494,7 @@ holds the run.
 A call waiting for the lock waits about one drive step of the call that
 holds it, not its whole chain: a drive lets the lock go to a waiting call
 between its steps. The longest a driving call can block: the lock wait (2
-minutes where the harness reads no limit), plus the longest inline
+minutes where the harness reads no limit; `next`'s own wait for `next`), plus the longest inline
 effect an engine call runs while it holds the lock, which is the effect's own
 timeout (the shell timeout, 10 minutes by default for a shell command). `next`
 adds its wait (its harness's tool limit less a margin, else 100s) to that; it holds no lock while
