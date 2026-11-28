@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.4.18
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.18`. GitHub installs use the plugin tag
+`plugin-v0.4.18`. This release types the engine's identifiers instead of
+recovering them from text: effect keys escape their parts (a key spelled
+before the upgrade is still found, so nothing re-applies), the claim and the
+binary travel as fields, the git and gh checks no longer accept a forged
+marker, and one shell lexer (`sink.Split`) replaces the ad hoc ones. The
+lock-yield tests no longer race the host. Read Upgrading.
 
 ### What changed
 
