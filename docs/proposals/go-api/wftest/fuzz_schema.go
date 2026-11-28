@@ -61,7 +61,9 @@ func drawSchemaValue(raw json.RawMessage, v, depth int, remaining *int) (any, er
 	}
 	for k := range keys {
 		switch k {
-		case "type", "enum", "properties", "required", "additionalProperties", "items", "pattern", "minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum", "description", "title":
+		// examples is an annotation (a form.Of field states its grammar's
+		// sample there); the sampler draws from the other keywords.
+		case "type", "enum", "properties", "required", "additionalProperties", "items", "pattern", "minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum", "description", "title", "examples":
 		default:
 			return nil, fmt.Errorf("unsupported schema keyword %q", k)
 		}

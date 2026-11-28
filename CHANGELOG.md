@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **The fuzz sampler accepts the `examples` annotation (sw-da9f).** The
+  output schema states each `form.Of` field's grammar sample under
+  `examples`, and `wftest`'s schema sampler refused that keyword, so every
+  fuzz run failed once an agent output carried a `form.Of` value. The sampler
+  now ignores the annotation and draws from the field's other keywords.
+
 ## v0.4.15
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
