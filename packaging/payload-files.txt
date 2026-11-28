@@ -254,6 +254,7 @@ docs/proposals/go-api/wftest/check.go
 docs/proposals/go-api/wftest/check_budget.go
 docs/proposals/go-api/wftest/check_corpus_paths.go
 docs/proposals/go-api/wftest/check_gate_paths.go
+docs/proposals/go-api/wftest/check_kills.go
 docs/proposals/go-api/wftest/check_repeated_faults.go
 docs/proposals/go-api/wftest/check_run_budget.go
 docs/proposals/go-api/wftest/check_scenarios.go
@@ -268,6 +269,7 @@ docs/proposals/go-api/wftest/fuzz_edge_coverage.go
 docs/proposals/go-api/wftest/fuzz_effect_fault.go
 docs/proposals/go-api/wftest/fuzz_effect_runner.go
 docs/proposals/go-api/wftest/fuzz_effect_sequence.go
+docs/proposals/go-api/wftest/fuzz_kill.go
 docs/proposals/go-api/wftest/fuzz_liveness.go
 docs/proposals/go-api/wftest/fuzz_manual.go
 docs/proposals/go-api/wftest/fuzz_properties.go

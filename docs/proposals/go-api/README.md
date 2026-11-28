@@ -111,7 +111,10 @@ operator raises the budget with `workflow resume <run> --operator <name>
 stopped. A resume that leaves the spent limit spent is refused. Tokens count
 only the usage children report with `done --usage`. Pass the same function as
 `wftest.CheckConfig.Budget`, and `Check` also simulates the budget being
-spent early, midway and late in a run.
+spent early, midway and late in a run, and right after the first child of
+each fan-out is let out. A fan-out child the budget stops before it starts
+settles for its join and is not run again on resume. When the join then
+takes an edge, the run ends there instead of stopping.
 
 ### Your own adapter and exactly-once effects
 
@@ -630,6 +633,30 @@ with the concrete actions and the named journal; `result.Minimize(factory)`
 deletes actions while the finding still reproduces, and the resulting script
 replays with `result.Replay(factory)` or as `FuzzConfig.Prefix` in a
 regression test.
+
+`Check` also loses work above the journal at every agent state. For each
+`wftest.FuzzKillKinds` entry it sets `FuzzConfig.Kill` and runs:
+
+- the coordinator dies after `next` handed the unit out, after `started`,
+  while the child runs, or right after its `done`; a new session reports the
+  old one died (`heartbeat died --session`);
+- the child dies holding its claim (`heartbeat died <name>`);
+- the harness refuses the spawn, and the unit is offered again after the
+  unstarted grace;
+- the coordinator ends its turn with the child running and is away for two
+  hours; the engine reports the stall, and the next turn answers it
+  (`heartbeat active`).
+
+The run is all-good from the kill on. It still owes success or a human gate,
+spends no retry on the killed unit, and loses it only for the cause its kind
+expects (`kill-retry-spent` and `kill-lost-cause` findings). A state no
+all-good seed reaches is reached through the earlier `Check` run that issued
+it. A state no run reaches is reported as `kill not reached`. The sweep is
+breadth first: each pass gives every state one kind. `CheckConfig.Kills`
+bounds it: zero runs it within `MaxRuns`, a negative value leaves it out,
+and a positive value gives it a run budget of its own. A large definition
+leaves the sweep out of its every-edit gate and runs it, budgeted, at
+landing.
 
 For smaller focused patterns, see [examples/README.md](examples/README.md).
 [critique](examples/critique/def.go) remains a compact review loop if you want

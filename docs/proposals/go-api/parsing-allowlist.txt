@@ -592,7 +592,7 @@ call	wftest/calibrate.go	calibrate	strings.TrimPrefix	3	seed, unclassified
 call	wftest/check.go	CheckReport.String	strings.Join	1	seed, unclassified
 call	wftest/check.go	CheckReport.simulate	strings.TrimPrefix	1	seed, unclassified
 call	wftest/check.go	checkFaultTargets	strings.TrimPrefix	1	seed, unclassified
-call	wftest/check_corpus_paths.go	checkAgentPaths	strings.TrimPrefix	1	seed, unclassified
+call	wftest/check_corpus_paths.go	agentStateKeys	strings.TrimPrefix	1	seed, unclassified
 call	wftest/check_corpus_paths.go	checkCorpusPaths	strings.TrimPrefix	1	seed, unclassified
 call	wftest/check_gate_paths.go	checkGatePreludePaths	strings.TrimPrefix	1	seed, unclassified
 call	wftest/check_repeated_faults.go	checkRepeatedFaultPaths	strings.TrimPrefix	1	seed, unclassified

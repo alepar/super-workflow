@@ -135,7 +135,7 @@ func TestCheckVariantFindingsNameTheirVariant(t *testing.T) {
 // variant spending its own MaxRuns covers both sides.
 func TestCheckVariantsEachSpendTheirOwnRuns(t *testing.T) {
 	cfg := variantConfig(map[string]any{"audited": variantOpts{}, "skipped": variantOpts{Skip: true}})
-	cfg.MaxRuns = 30
+	cfg.MaxRuns = 44 // 30 before the kill-recovery phase, which adds 7 kinds at 2 agent states
 	got := wftest.Check(variantFactory(false), cfg)
 	if len(got.Problems) != 0 {
 		t.Fatalf("bounded check starved a variant: %v", got.Problems)

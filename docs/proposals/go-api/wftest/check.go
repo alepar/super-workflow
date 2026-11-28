@@ -42,6 +42,13 @@ type CheckConfig struct {
 	// every Edge.When guard must hold under at least one variant. Problems
 	// observed under a variant name it. Empty keeps the factory's options.
 	Variants map[string]any
+	// Kills bounds the kill-recovery phase (see FuzzKill), which injects
+	// every FuzzKillKinds entry at every agent state after the other
+	// phases. Zero runs it within MaxRuns, a negative value leaves it out,
+	// and a positive value gives it a run budget of its own apart from
+	// MaxRuns. A suite whose every-edit gate cannot afford it leaves it out
+	// there and runs it with its own budget in a separate target.
+	Kills int
 	// Budget is the registration's default run budget (wf.Registration
 	// Budget). When it gives a variant's options a budget, Check also
 	// simulates that budget being spent: an all-good run, then the same run
@@ -83,7 +90,10 @@ type CheckReport struct {
 	RepeatedFaultSeeds                   int
 	ScenarioSeeds                        int
 	RunBudgetSeeds                       int // CheckConfig.Budget's runs
+	KillSeeds                            int // kill-recovery runs (see FuzzKill)
 	UnreachedFaults                      []string
+	// UnreachedKills lists the agent states no kill-recovery run reached.
+	UnreachedKills []string
 	// Variants lists CheckConfig.Variants by name, in the order simulated.
 	Variants     []string
 	findingSites map[string]bool
@@ -116,6 +126,10 @@ func (r *CheckReport) String() string {
 	fmt.Fprintf(&b, "scenario runs: %d\n", r.ScenarioSeeds)
 	if r.RunBudgetSeeds > 0 {
 		fmt.Fprintf(&b, "run-budget runs: %d\n", r.RunBudgetSeeds)
+	}
+	fmt.Fprintf(&b, "kill-recovery runs: %d\n", r.KillSeeds)
+	for _, target := range r.UnreachedKills {
+		fmt.Fprintf(&b, "kill not reached: %s\n", target)
 	}
 	for _, target := range r.UnreachedFaults {
 		fmt.Fprintf(&b, "fault not reached: %s\n", target)
@@ -231,11 +245,16 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 	// fault reach to the union: a gap is one no variant closed.
 	single := len(variants) == 1
 	var calibrations []*CalibrationReport
-	var unreached [][]string
+	var unreached, unreachedKills [][]string
 	for _, v := range variants {
 		r.Coverage.variant = v.name
 		budget := &checkRunBudget{max: cfg.MaxRuns, tag: v.tag}
 		budgets = append(budgets, budget)
+		killBudget := budget
+		if cfg.Kills > 0 {
+			killBudget = &checkRunBudget{max: cfg.Kills, tag: v.tag}
+			budgets = append(budgets, killBudget)
+		}
 		cfg.budget, calibration.budget = budget, budget
 		report := calibrate(v.factory, calibration)
 		calibrations = append(calibrations, report)
@@ -255,16 +274,24 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 				}
 			}
 		}
-		var missed []string
-		r.simulate(v, cfg, budget, d, func(description string) {
+		var missed, missedKills []string
+		r.simulate(v, cfg, budget, killBudget, d, func(description string) {
 			if single {
 				r.UnreachedFaults = append(r.UnreachedFaults, description)
 				r.addCoverage("fixture gap: fault not reached: " + description)
 			} else {
 				missed = append(missed, description)
 			}
+		}, func(state string) {
+			if single {
+				r.UnreachedKills = append(r.UnreachedKills, state)
+				r.addCoverage("fixture gap: kill not reached: " + state)
+			} else {
+				missedKills = append(missedKills, state)
+			}
 		})
 		unreached = append(unreached, missed)
+		unreachedKills = append(unreachedKills, missedKills)
 	}
 	r.Calibration = mergeCalibration(calibrations)
 	if !single {
@@ -273,6 +300,12 @@ func check(factory func() *Sim, cfg CheckConfig, lintDefinition bool) *CheckRepo
 			if all(unreached[1:], func(other []string) bool { return slices.Contains(other, description) }) {
 				r.UnreachedFaults = append(r.UnreachedFaults, description)
 				r.addCoverage("fixture gap: fault not reached: " + description)
+			}
+		}
+		for _, state := range unreachedKills[0] {
+			if all(unreachedKills[1:], func(other []string) bool { return slices.Contains(other, state) }) {
+				r.UnreachedKills = append(r.UnreachedKills, state)
+				r.addCoverage("fixture gap: kill not reached: " + state)
 			}
 		}
 	}
@@ -302,12 +335,14 @@ func (v checkVariant) tag(problem string) string {
 
 // simulate runs every simulation phase under one variant, folding results into
 // the shared coverage, and reports each fault this variant did not reach.
-func (r *CheckReport) simulate(v checkVariant, cfg CheckConfig, budget *checkRunBudget, d *wf.Def, unreached func(string)) {
+func (r *CheckReport) simulate(v checkVariant, cfg CheckConfig, budget, killBudget *checkRunBudget, d *wf.Def, unreached, unreachedKill func(string)) {
 	factory := v.factory
 	if r.findingSites == nil {
 		r.findingSites = map[string]bool{}
 	}
+	reach := killReach{}
 	record := func(result *FuzzResult) {
+		reach.add(result)
 		for _, advisory := range result.Advisories {
 			found := false
 			for _, previous := range r.Advisories {
@@ -444,6 +479,12 @@ func (r *CheckReport) simulate(v checkVariant, cfg CheckConfig, budget *checkRun
 		if !reached && !budget.seen[label] {
 			unreached(description)
 		}
+	}
+	// Last, so every earlier run's reach is known.
+	if cfg.Kills >= 0 {
+		kills := cfg
+		kills.budget = killBudget
+		r.KillSeeds += checkKillPaths(factory, kills, reach, record, unreachedKill)
 	}
 }
 

@@ -11,7 +11,8 @@ import (
 // checkRunBudgetPaths simulates CheckConfig.Budget being spent (see there).
 // Simulated attempts spend little, so a default sized for real runs is rarely
 // reached by itself: each run cuts the turn limit at a turn of an all-good
-// reference run instead. It returns the runs it made.
+// reference run instead, among them one midway through each fan-out. It
+// returns the runs it made.
 func checkRunBudgetPaths(factory func() *Sim, cfg CheckConfig, d *wf.Def, valid map[string][]json.RawMessage, record func(*FuzzResult)) int {
 	if cfg.Budget == nil || wf.DefaultBudget(d, cfg.Budget, factory().options) == (wf.RunBudget{}) {
 		return 0
@@ -23,16 +24,31 @@ func checkRunBudgetPaths(factory func() *Sim, cfg CheckConfig, d *wf.Def, valid 
 	}
 	record(ref)
 	runs, turns := 1, 0
+	// fanOut holds, per fan-out, the turn of its first child's instruction:
+	// a cut there lets that child out and stops its siblings, a stop
+	// midway through the fan-out.
+	var fanOut []int
 	if ref.Trace != nil {
+		spawner, seen := map[string]string{}, map[string]bool{}
 		for _, r := range ref.Trace.Journal() {
-			if r.Kind == wf.JournalInstructionIssued {
+			switch r.Kind {
+			case wf.JournalChildSpawned:
+				var c wf.ChildSpawnedData
+				if json.Unmarshal(r.Data, &c) == nil {
+					spawner[c.ID] = r.Instance + "/" + c.State
+				}
+			case wf.JournalInstructionIssued:
 				turns++
+				if fan, ok := spawner[r.Instance]; ok && !seen[fan] {
+					seen[fan] = true
+					fanOut = append(fanOut, turns)
+				}
 			}
 		}
 	}
 	// Turns t lets t instructions out and stops the next one, so the last
 	// cut that stops anything is one short of the reference run's turns.
-	cuts := []int{1, turns / 2, turns - 1}
+	cuts := append([]int{1, turns / 2, turns - 1}, fanOut...)
 	if b := wf.DefaultBudget(d, cfg.Budget, factory().options); b.Turns > 0 && b.Turns < turns {
 		cuts = append(cuts, b.Turns)
 	}

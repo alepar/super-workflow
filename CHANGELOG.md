@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **`wftest.Check` kills the coordinator and children at every agent
+  state (sw-0hqx).** A new kill-recovery phase sets `FuzzConfig.Kill` to
+  each `wftest.FuzzKillKinds` entry at each agent state. The kinds are:
+  - the coordinator dies after hand-out, after `started`, while running or
+    after `done`, and a new session reports it died;
+  - the child dies holding its claim;
+  - the harness refuses the spawn;
+  - the coordinator ends its turn with the child silent for two hours, and
+    the next turn answers the stall.
+
+  The run must still reach success or a human gate, with no retry spent on
+  the killed unit and losses only of the kind's expected cause (findings
+  `kill-retry-spent`, `kill-lost-cause`, `kill-stall-unreported`). States
+  that only repair routes reach are reached through the earlier `Check` run
+  that issued them. `CheckReport` gains `KillSeeds` and `UnreachedKills`, and
+  the report prints `kill-recovery runs: N`. `CheckConfig.Kills` bounds the
+  phase:
+  - zero runs it within `MaxRuns`;
+  - a negative value leaves it out;
+  - a positive value gives it a run budget of its own.
+
+  The sweep is breadth first. Each pass gives every state one kind, rotating
+  the kinds, so a budget that ends the sweep early has still reached every
+  state. A suite whose every-edit gate cannot afford the phase leaves it out
+  there and runs it with its own budget in a separate target.
+- **The run-budget phase also stops a fan-out midway.** With
+  `CheckConfig.Budget` set, `Check` adds a cut right after each fan-out's
+  first child is let out.
+- **`validate-wrote` allows a lease renewal.** A child's `validate` after
+  its coordinator vouched for it journals a heartbeat by the child (by
+  design). The fuzz property no longer reports that record.
+
+### Upgrading
+
+- `Check` makes more runs: one to a few per agent state and kill kind.
+  Under a small `MaxRuns` the phase runs last and is mostly refused, and the
+  refusals show as `not explored (budget): kill ...` coverage problems. Set
+  `Kills` to -1 there, or to its own budget. A
+  definition with repair-only agent states that no `Check` run reaches now
+  gets a `fixture gap: kill not reached: <state>` coverage problem. Supply
+  the progress fixture that reaches the state. A real finding in a kill run
+  is a recovery defect in the definition or the engine.
+- The fuzz driver's coordinator session is still `fuzz-session`. A kill
+  that replaces the session names the next one `fuzz-session-2`, so
+  recorded journals of runs without a kill are unchanged. No engine API,
+  journal format, hash or lock change.
+
 ## v0.4.14
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

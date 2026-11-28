@@ -35,6 +35,10 @@ type FuzzConfig struct {
 	corpusPrefix  bool // liveness prefix submits use curated corpus, never schema fallback
 	// Fault drives progress outputs until this fault occurs, then checks liveness.
 	Fault *FuzzFault
+	// Kill injects one coordinator or child loss (see FuzzKill) where the
+	// rest of the configuration takes the run, which is all-good from the
+	// kill on and owes liveness from it.
+	Kill *FuzzKill
 	// PreludeFault injects one isolated effect fault to reach the primary Fault.
 	// It does not start the all-good recovery phase.
 	PreludeFault *FuzzFault
@@ -149,6 +153,7 @@ type FuzzResult struct {
 	Advisories           []string
 	adversarialInjected  bool // an actual fault, hostile action, or consumed crash; never a configured switch
 	FaultInjected        bool
+	KillInjected         bool // the configured FuzzKill fired
 	PreludeFaultInjected bool
 	liveSteps            []int
 	PrefixOutcome        bool
@@ -196,6 +201,9 @@ func (r *FuzzResult) String() string {
 	if r.config.Fault != nil {
 		t := r.config.Fault
 		fmt.Fprintf(&b, "fault: %s %s %s.%s injected=%t\n", t.State, t.Class, t.Adapter, t.Op, r.FaultInjected)
+	}
+	if k := r.config.Kill; k != nil {
+		fmt.Fprintf(&b, "kill: %s %s injected=%t\n", k.State, k.Kind, r.KillInjected)
 	}
 	if len(r.Switches) > 0 {
 		keys := make([]string, 0, len(r.Switches))
@@ -363,6 +371,12 @@ type fuzzRun struct {
 	timeoutGate       *wf.Instruction // last real gate timeout selected, for intentional terminal proof
 	actionContext     string
 	completedContexts map[string]map[string]bool
+	// sessions counts the coordinator sessions a kill replaced; the
+	// killed unit is named by killName, killInstance and killState, and the
+	// journal before killFrom precedes the kill.
+	sessions                          int
+	killName, killInstance, killState string
+	killFrom                          int
 }
 
 func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay bool) (result *FuzzResult) {
@@ -407,13 +421,13 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 	if result.Finding != nil {
 		return
 	}
-	if config.Liveness {
+	if config.Liveness || config.Kill != nil {
 		bound := config.LivenessSteps
 		if bound == 0 {
 			bound = 3 * config.MaxSteps
 		}
 		j.limit = (result.LivenessStart + bound) * 32
-		if config.Fault != nil {
+		if config.Fault != nil || config.Kill != nil {
 			j.limit = (config.MaxSteps + bound) * 32
 		}
 	}
@@ -456,11 +470,14 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 		if result.Finding == nil {
 			f.definitionErrors()
 		}
-		if result.Finding == nil && config.Liveness && f.good && result.Status.Phase == wf.RunEnded && !result.Status.Outcome.Delivered() && !f.declaredStoppedAfterFault() && !f.endsDeclaredStop() {
+		if result.Finding == nil && (config.Liveness || result.KillInjected) && f.good && result.Status.Phase == wf.RunEnded && !result.Status.Outcome.Delivered() && !f.declaredStoppedAfterFault() && !f.endsDeclaredStop() {
 			f.find("liveness", "all-good results cannot recover this run to success or a human gate")
 		}
 		if result.Finding == nil && !result.Suspended && !result.PrefixOutcome {
 			f.finishProperties()
+		}
+		if result.Finding == nil {
+			f.killProperties()
 		}
 		switch {
 		case result.PrefixOutcome:
@@ -518,13 +535,13 @@ func runFuzz(factory func() *Sim, config FuzzConfig, script []FuzzAction, replay
 		return
 	}
 	limit := config.MaxSteps
-	if config.Liveness {
+	if config.Liveness || config.Kill != nil {
 		bound := config.LivenessSteps
 		if bound == 0 {
 			bound = 3 * config.MaxSteps
 		}
 		limit = result.LivenessStart + bound
-		if config.Fault != nil {
+		if config.Fault != nil || config.Kill != nil {
 			limit = config.MaxSteps + bound
 		}
 	}
@@ -585,7 +602,7 @@ driver:
 			// cancelled its sibling) is not acted on: ask again.
 			f.open = nil
 			if f.drive(func() {
-				ins, e = f.engine.HandOutAs(r.id, 1, wf.Coordinator{Harness: "claude", Session: "fuzz-session"})
+				ins, e = f.engine.HandOutAs(r.id, 1, f.coordinator())
 			}) {
 				continue
 			}
@@ -710,7 +727,7 @@ driver:
 				}
 			}
 			if status.Phase == wf.RunBlocked && (len(status.Fix) > 0 || f.namedHalt(status)) {
-				if config.Liveness && f.good {
+				if (config.Liveness || result.KillInjected) && f.good {
 					f.find("liveness", "run halted without a human gate or repair route")
 				}
 				return
@@ -818,7 +835,11 @@ driver:
 		result.Script = append(result.Script, action)
 		result.Agents++
 		f.actionContext = stepContext(status, in.Child)
-		f.drive(func() { e = f.act(in, action) })
+		if f.killing(in, action) {
+			f.drive(func() { e = f.kill(in, action) })
+		} else {
+			f.drive(func() { e = f.act(in, action) })
+		}
 		if e != nil {
 			f.engineError(e)
 			return
@@ -850,7 +871,7 @@ driver:
 		result.PrefixReason = "prefix bound reached before the all-good phase began"
 		return
 	}
-	if config.Liveness {
+	if config.Liveness || (result.KillInjected && f.good) {
 		f.find("liveness", "all-good phase did not reach success or a human gate within its bound")
 	} else if f.progressingAtStepBound(status) {
 		result.BudgetReason = "step bound reached with pending work in a new state/counter context"
@@ -1187,7 +1208,7 @@ func (f *fuzzRun) act(in wf.Instruction, a FuzzAction) error {
 		f.open = &in
 		return nil
 	}
-	transcript := filepath.Join(f.runner.dir, "transcript-"+strings.ReplaceAll(in.Name, "/", "_")+".jsonl")
+	transcript := f.transcriptPath(in.Name)
 	if f.fixes[in.Name] == 0 {
 		if err := f.claim(&in, transcript); err != nil {
 			return err
@@ -1202,6 +1223,12 @@ func (f *fuzzRun) act(in wf.Instruction, a FuzzAction) error {
 	return f.finish(in, a, transcript)
 }
 
+// transcriptPath is where the simulated child of unit name writes its
+// transcript.
+func (f *fuzzRun) transcriptPath(name string) string {
+	return filepath.Join(f.runner.dir, "transcript-"+strings.ReplaceAll(name, "/", "_")+".jsonl")
+}
+
 // claim starts the unit, fetches its prompt into in and reads its body, as a
 // child does once per attempt.
 func (f *fuzzRun) claim(in *wf.Instruction, transcript string) error {
@@ -1211,7 +1238,7 @@ func (f *fuzzRun) claim(in *wf.Instruction, transcript string) error {
 	if err := os.Chtimes(transcript, f.now, f.now); err != nil {
 		return err
 	}
-	if err := f.engine.Started(f.runner.id, in.Name, wf.Claim{Harness: "claude", Session: "fuzz-session", Agent: in.Name, Transcript: transcript, Context: wf.ContextFresh}); err != nil {
+	if err := f.engine.Started(f.runner.id, in.Name, f.claimOf(*in, transcript)); err != nil {
 		return err
 	}
 	fetched, err := f.engine.PromptFetch(f.runner.id, in.Name, "")
@@ -1274,8 +1301,8 @@ func (f *fuzzRun) finish(in wf.Instruction, a FuzzAction, transcript string) err
 		if verr != nil {
 			return verr
 		}
-		if f.journal.records != before {
-			f.find("validate-wrote", "validate must not append to the journal")
+		if f.journal.records != before && !f.onlyRenewals(before) {
+			f.find("validate-wrote", "validate must not append to the journal beyond the lease renewal a child's call earns")
 		}
 		if !observationFault && !panicked && a.Kind == FuzzSubmit && check.Class == wf.Refused && (f.good || (f.result.config.Fault != nil && !f.result.config.OutcomeSwitches)) {
 			f.find("progress-context", fmt.Sprintf("declared progress output %s was refused in the reached context: %s; verify the corpus/context and acceptance check before claiming liveness", output, strings.Join(check.Refusal, "; ")))
@@ -1336,6 +1363,23 @@ func (f *fuzzRun) finish(in wf.Instruction, a FuzzAction, transcript string) err
 		}
 	}
 	return nil
+}
+
+// onlyRenewals reports whether every record appended since the journal held
+// before records is the lease renewal a child's validate journals (a
+// heartbeat by the child, see wf's renewByCall).
+func (f *fuzzRun) onlyRenewals(before int) bool {
+	records := f.runner.trace().Journal()
+	if before > len(records) {
+		return false
+	}
+	for _, r := range records[before:] {
+		var d wf.HeartbeatData
+		if r.Kind != wf.JournalHeartbeat || json.Unmarshal(r.Data, &d) != nil || d.By != "child" || d.Status != "active" {
+			return false
+		}
+	}
+	return true
 }
 
 // readPromptBody appends a Claude Read of the unit's latest fetched prompt
@@ -1506,7 +1550,7 @@ func (f *fuzzRun) externalStop(in wf.Instruction) {
 		f.result.Advisories = append(f.result.Advisories, fmt.Sprintf("no Uncertain route: uncertain effect at %s ends in manual verification", in.State))
 		return
 	}
-	if f.result.config.Liveness && f.good {
+	if (f.result.config.Liveness || f.result.KillInjected) && f.good {
 		f.find("liveness", fmt.Sprintf("run stopped at %s, not success or a declared human gate", in.Kind))
 	}
 }
