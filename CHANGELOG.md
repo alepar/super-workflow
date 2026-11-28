@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.15
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.15`. GitHub installs use the plugin tag
+`plugin-v0.4.15`. This release adds a kill-recovery phase to `wftest.Check`:
+it kills the coordinator and children at every agent state and checks the run
+recovers with the supported verbs. `CheckConfig.Kills` bounds it. No engine
+API, journal format, hash or lock change.
 
 ### What changed
 
