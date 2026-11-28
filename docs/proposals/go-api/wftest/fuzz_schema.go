@@ -2,6 +2,7 @@ package wftest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -47,10 +48,14 @@ func fuzzChoice(v, n int) int {
 	return v
 }
 
+// errExpansionBound is the refusal of a sample that would exceed the
+// sampler's total node budget.
+var errExpansionBound = errors.New("sample exceeds total expansion bound")
+
 func drawSchemaValue(raw json.RawMessage, v, depth int, remaining *int) (any, error) {
 	*remaining--
 	if *remaining < 0 {
-		return nil, fmt.Errorf("sample exceeds total expansion bound")
+		return nil, errExpansionBound
 	}
 	if depth > 64 {
 		return nil, fmt.Errorf("schema nesting exceeds sampler bound")
@@ -130,13 +135,38 @@ func drawSchemaValue(raw json.RawMessage, v, depth int, remaining *int) (any, er
 		if len(item) == 0 {
 			item = json.RawMessage(`{}`)
 		}
-		values := make([]any, n)
-		for i := range values {
-			values[i], err = drawSchemaValue(item, v+i, depth+1, remaining)
+		// Past its minimum, an array draws its items from a share of half the
+		// budget left, and drops an item that would overrun that share: a
+		// legal schema never fails for size, every field drawn after it keeps
+		// budget, and the same variant draws the same sample. Its minimum items
+		// are drawn first, from the budget itself, and never cut.
+		minimum := 0
+		if s.MinItems != nil {
+			minimum = *s.MinItems
+		}
+		values := make([]any, 0, n)
+		for i := 0; i < n && i < minimum; i++ {
+			value, err := drawSchemaValue(item, v+i, depth+1, remaining)
 			if err != nil {
 				return nil, fmt.Errorf("array item: %w", err)
 			}
+			values = append(values, value)
 		}
+		share := *remaining / 2
+		left := share
+		for i := minimum; i < n && left > 0; i++ {
+			before := left
+			value, err := drawSchemaValue(item, v+i, depth+1, &left)
+			if errors.Is(err, errExpansionBound) {
+				left = before
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("array item: %w", err)
+			}
+			values = append(values, value)
+		}
+		*remaining -= share - left
 		return values, nil
 	case "object":
 		values := map[string]any{}

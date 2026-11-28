@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **The fuzz sampler shrinks nested arrays to its budget (sw-iq08).** Agent
+  output schemas carry no `maxItems`. The sampler draws up to 16 items per
+  array, so a legal schema with several nested lists (operations of items
+  whose sizes carry five lists) overran its 4096-node budget and failed the
+  run with "sample exceeds total expansion bound". Past its `minItems`, an
+  array now draws its items from half the budget left and drops an item that
+  would overrun that share. A legal schema never fails for size, later fields
+  keep budget, and the same variant still draws the same sample. The budget
+  is unchanged, and an array's `minItems` is never cut, so a schema whose
+  minimums alone exceed the budget is still refused.
+
 ## v0.4.16
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

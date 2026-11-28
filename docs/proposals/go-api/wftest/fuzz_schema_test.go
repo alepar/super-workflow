@@ -153,3 +153,58 @@ func TestFuzzSchemaBoundsTotalExpansion(t *testing.T) {
 		t.Fatal("exponential sample must hit an explicit total expansion bound")
 	}
 }
+
+// A legal schema of nested arrays with no maxItems, like an agent output whose
+// operations carry items whose sizes carry several lists, draws at the
+// boundary variant (16 items per array) within the budget: arrays past their
+// minimum shrink to fit, every required field is still drawn, and the draw is
+// deterministic (sw-iq08). An array's minItems is never cut.
+func TestFuzzSchemaShrinksNestedArraysToTheBudget(t *testing.T) {
+	list := `{"type":"array","items":{"type":"string"}}`
+	size := `{"type":"object","properties":{"files":` + list + `,"imports":` + list + `,"interfaces":` + list + `,"open_questions":` + list + `,"criteria":{"type":"integer"}},"required":["files","interfaces","open_questions","criteria"]}`
+	item := `{"type":"object","properties":{"title":{"type":"string"},"owns":` + list + `,"consumes":` + list + `,"replaces":{"type":"array","items":{"type":"object","properties":{"stub":{"type":"string"},"tests":` + list + `},"required":["stub","tests"]}},"size":` + size + `},"required":["title","size"]}`
+	ops := `{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string"},"item":` + item + `,"edges":{"type":"array","items":` + item + `}},"required":["kind","item"]}}`
+	schema := `{"type":"object","properties":{"operations":` + ops + `,"items":` + ops + `,"status":{"type":"string"}},"required":["operations","status"]}`
+	for _, variant := range []int{2, 5, 16} {
+		got, err := drawSchema(json.RawMessage(schema), variant)
+		if err != nil {
+			t.Fatalf("variant %d: %v", variant, err)
+		}
+		var out struct {
+			Operations []struct {
+				Kind *string `json:"kind"`
+				Item *struct {
+					Title *string `json:"title"`
+					Size  *struct {
+						Files    []string `json:"files"`
+						Criteria *float64 `json:"criteria"`
+					} `json:"size"`
+				} `json:"item"`
+			} `json:"operations"`
+			Status *string `json:"status"`
+		}
+		if err := json.Unmarshal(got, &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.Status == nil || len(out.Operations) == 0 {
+			t.Fatalf("variant %d: required fields lost: %s", variant, got)
+		}
+		for _, op := range out.Operations {
+			if op.Kind == nil || op.Item == nil || op.Item.Title == nil || op.Item.Size == nil || op.Item.Size.Files == nil || op.Item.Size.Criteria == nil {
+				t.Fatalf("variant %d: an operation lacks a required field: %s", variant, got)
+			}
+		}
+		again, err := drawSchema(json.RawMessage(schema), variant)
+		if err != nil || string(again) != string(got) {
+			t.Fatalf("variant %d: not deterministic", variant)
+		}
+	}
+	got, err := drawSchema(json.RawMessage(`{"type":"array","minItems":3,"items":{"type":"array","items":{"type":"boolean"}}}`), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outer [][]bool
+	if json.Unmarshal(got, &outer) != nil || len(outer) < 3 {
+		t.Fatalf("minItems cut: %s", got)
+	}
+}
