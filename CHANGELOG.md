@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.20
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.20`. GitHub installs use the plugin tag
+`plugin-v0.4.20`. This release lets a `bd` issue carry its metadata from
+creation, checked by Check, and adds the Upgrading note v0.4.18 missed: a key
+part that binds text holding '/' now spells it escaped. No definition hash or
+journal shape changes. Read Upgrading.
 
 ### What changed
 
