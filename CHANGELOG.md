@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.11
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.11`. GitHub installs use the plugin tag
+`plugin-v0.4.11`. This release folds the journal before taking the run lock
+and folds only the records appended since under it, so concurrent verbs on a
+large journal no longer queue for minutes. No API, journal format, hash or
+lock-semantics change.
 
 ### What changed
 
