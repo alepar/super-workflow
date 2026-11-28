@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.17
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.17`. GitHub installs use the plugin tag
+`plugin-v0.4.17`. This release makes `wftest`'s fuzz sampler shrink nested
+arrays to its expansion budget instead of failing, so a legal schema with
+deep lists can be fuzzed. No engine API, journal format, hash or lock change.
 
 ### What changed
 
