@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -196,14 +197,15 @@ func wordByte(c byte) bool {
 
 // rawIssue is bd's lower-snake JSON shape for a bead.
 type rawIssue struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	IssueType    string   `json:"issue_type"`
-	Status       string   `json:"status"`
-	Priority     int      `json:"priority"`
-	Labels       []string `json:"labels"`
-	Parent       string   `json:"parent"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	IssueType    string          `json:"issue_type"`
+	Status       string          `json:"status"`
+	Priority     int             `json:"priority"`
+	Labels       []string        `json:"labels"`
+	Parent       string          `json:"parent"`
+	Metadata     json.RawMessage `json:"metadata,omitempty"`
 	Dependencies []struct {
 		ID   string `json:"id"`
 		Type string `json:"dependency_type"`
@@ -212,7 +214,7 @@ type rawIssue struct {
 
 func (r rawIssue) issue() Issue {
 	return Issue{ID: r.ID, Title: r.Title, Description: r.Description, Type: r.IssueType,
-		Status: Status(r.Status), Priority: r.Priority, Labels: r.Labels, Parent: r.Parent}
+		Status: Status(r.Status), Priority: r.Priority, Labels: r.Labels, Parent: r.Parent, Metadata: emptyMetadata(r.Metadata)}
 }
 
 // beads decodes a bd JSON array of beads.
@@ -679,6 +681,14 @@ func (r runtime) create(workspace string, e wf.ExternalEffect, is Issue) (json.R
 	if is.NoInheritLabels {
 		args = append(args, "--no-inherit-labels")
 	}
+	if len(is.Metadata) != 0 {
+		md, err := metadataObject(is.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("bd create: %w", err)
+		}
+		// One argv element after its flag: never read as an option.
+		args = append(args, "--metadata", string(md))
+	}
 	out, err := r.run(workspace, args...)
 	if err != nil {
 		return nil, err
@@ -810,6 +820,14 @@ func (r runtime) Check(workspace string, e wf.ExternalEffect) (wf.EffectStatus, 
 			}
 			for _, x := range v {
 				if x.Title == is.Title && (is.Parent == "" || x.Parent == is.Parent) {
+					// A bead under the key and title holds the metadata it
+					// was created with; other metadata is not this effect's
+					// result, and refiling would duplicate it: uncertain.
+					if len(is.Metadata) != 0 {
+						if ok, err := metadataHolds(x.Metadata, is.Metadata); err != nil || !ok {
+							return wf.EffectUnknown, fmt.Errorf("bd create: %s has the key and title but not the metadata it was created with", x.ID)
+						}
+					}
 					return wf.EffectDone, nil
 				}
 			}
@@ -934,4 +952,46 @@ func (r runtime) supersedeState(workspace string, e wf.ExternalEffect) (rawIssue
 		linked = true
 	}
 	return old, linked && old.Status == string(Closed), nil
+}
+
+// metadataObject is raw as a compact JSON object, or an error when it is not
+// one: bd stores an object, and a scalar or array would be refused or
+// misread by it.
+func metadataObject(raw json.RawMessage) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		return nil, fmt.Errorf("metadata is not a JSON object")
+	}
+	return json.Marshal(obj)
+}
+
+// metadataHolds reports whether have holds every field of want with an equal
+// JSON value (bd may add fields of its own).
+func metadataHolds(have, want json.RawMessage) (bool, error) {
+	var h, w map[string]any
+	if err := json.Unmarshal(want, &w); err != nil {
+		return false, err
+	}
+	if len(have) == 0 {
+		return len(w) == 0, nil
+	}
+	if err := json.Unmarshal(have, &h); err != nil {
+		return false, nil
+	}
+	for k, v := range w {
+		hv, ok := h[k]
+		if !ok || !reflect.DeepEqual(hv, v) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// emptyMetadata is raw, or nothing for bd's empty or null metadata.
+func emptyMetadata(raw json.RawMessage) json.RawMessage {
+	switch strings.TrimSpace(string(raw)) {
+	case "", "null", "{}":
+		return nil
+	}
+	return raw
 }

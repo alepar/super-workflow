@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -1026,4 +1027,46 @@ func metadataOf(t *testing.T, dir, id string) map[string]json.RawMessage {
 		t.Fatalf("bd show %s: %v: %s", id, err, out)
 	}
 	return v[0].Metadata
+}
+
+// Create writes the issue's metadata with the bead (sw-abl): one atomic,
+// keyed create, read back by every read that returns beads. Check finds it
+// by key and title, and a bead there with other metadata is uncertain,
+// never done and never refiled.
+func TestCreateWritesMetadataAndCheckReadsIt(t *testing.T) {
+	dir := tempTracker(t)
+	rt := bd.Runtime(bd.Config{})
+	md := json.RawMessage(`{"sp":{"v":1,"covers":["F1"],"note":"a | b, c"},"n":2}`)
+	e := bd.Create(bd.IssueKey("sp:x", "T"), bd.Issue{Title: "T", Labels: []string{"sp:x"}, Metadata: md})
+	if st := check(t, rt, dir, e); st != wf.EffectNotDone {
+		t.Fatalf("check before create = %v", st)
+	}
+	created := apply(t, rt, dir, e)
+	var got, want map[string]any
+	if err := json.Unmarshal(created.Metadata, &got); err != nil {
+		t.Fatalf("created metadata %s: %v", created.Metadata, err)
+	}
+	_ = json.Unmarshal(md, &want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("created metadata %v, want %v", got, want)
+	}
+	if st := check(t, rt, dir, e); st != wf.EffectDone {
+		t.Errorf("check after create = %v, want done", st)
+	}
+	listed := read[[]bd.Issue](t, rt, dir, bd.ListByLabel("sp:x").Desc())
+	if len(listed) != 1 || !strings.Contains(string(listed[0].Metadata), `"covers":["F1"]`) {
+		t.Errorf("listed %+v, want the metadata read back", listed)
+	}
+	other := bd.Create(bd.IssueKey("sp:x", "T"), bd.Issue{Title: "T", Labels: []string{"sp:x"}, Metadata: json.RawMessage(`{"sp":{"v":2}}`)})
+	if st, err := rt.Check(dir, other); st != wf.EffectUnknown || err == nil {
+		t.Errorf("same key and title, other metadata = %v, %v; want unknown with the reason", st, err)
+	}
+	if _, err := rt.Apply(dir, bd.Create(wf.KeyOf("bad"), bd.Issue{Title: "B", Metadata: json.RawMessage(`[1,2]`)})); err == nil {
+		t.Error("metadata that is not a JSON object was passed to bd")
+	}
+	plain := bd.Create(wf.KeyOf("plain"), bd.Issue{Title: "P"})
+	raw, _ := json.Marshal(plain.Args)
+	if strings.Contains(string(raw), "Metadata") {
+		t.Errorf("an issue without metadata encodes it: %s", raw)
+	}
 }

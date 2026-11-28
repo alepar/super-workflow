@@ -9,6 +9,7 @@
 package bd
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -48,6 +49,11 @@ type Issue struct {
 	Parent          string
 	NoInheritLabels bool
 	RootLabel       string
+	// Metadata is the bead's metadata: a JSON object, written with the bead
+	// by Create (`bd create --metadata`) and read back by every read that
+	// returns beads. It is omitted when empty, so an Issue without it encodes
+	// as before.
+	Metadata json.RawMessage `json:",omitempty" render:"omitzero"`
 }
 
 // IssueKey is the idempotency key for Create: dedupe by label plus title
@@ -108,7 +114,9 @@ func CloseEligible(epic string) wf.Observation[[]string] {
 //
 // Idempotent by key. already_done: the adapter lists beads with the label
 // `key:<key>` and the same Title; if one exists it is returned and nothing is
-// created. A created bead is stamped with that label.
+// created. A created bead is stamped with that label. issue.Metadata, when
+// set, is written with the bead in the same create; a bead found under the
+// key and title whose metadata does not hold it is uncertain, not done.
 func Create(key wf.Key, issue Issue) wf.ExternalEffect {
 	return wf.ExternalEffect{Adapter: "bd", Op: "create", Args: map[string]any{"issue": issue}, Key: key}
 }

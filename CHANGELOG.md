@@ -2,7 +2,24 @@
 
 ## Unreleased
 
+### What changed
+
+- **A bead carries its metadata from creation (sw-abl).** `bd.Issue` has a
+  `Metadata` field, a JSON object. `bd.Create` writes it with the bead
+  (`bd create --metadata`), in the same keyed step, so a client no longer
+  needs a keyed shell create of its own to file a bead with structured data.
+  Every read that returns beads (`ListByLabel`, `Show`, the ready reads)
+  returns it. Check finds the bead by key and title as before, and a bead
+  there whose metadata lacks a field the effect gives, or holds it with
+  another value, is uncertain: never done, never filed again.
+
 ### Upgrading
+
+- **`bd.Issue.Metadata` is new** and omitted when empty, so an effect or a
+  journaled issue without metadata encodes as before, and a definition that
+  does not set it keeps its hash: a struct field tagged `render:"omitzero"`
+  is left out of an argument's rendering while it is zero. Metadata that is not a
+  JSON object is refused by Create before bd runs.
 
 - **Effect keys, a gap in v0.4.18's note.** A key part that binds text
   holding `/`, such as `bd.IssueKey("blocker", "{id}/{run}")`, is now spelled

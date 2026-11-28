@@ -550,9 +550,16 @@ func encodeArg(v reflect.Value) string {
 		return "{" + strings.Join(parts, ", ") + "}"
 	case reflect.Struct:
 		t := v.Type()
-		parts := make([]string, v.NumField())
-		for i := range parts {
-			parts[i] = t.Field(i).Name + ": " + encodeArg(v.Field(i))
+		parts := make([]string, 0, v.NumField())
+		for i := 0; i < v.NumField(); i++ {
+			// A field added to an argument type later, tagged
+			// render:"omitzero", is left out while it is zero, so a
+			// definition that does not set it renders, and hashes, as it
+			// did before the field existed.
+			if t.Field(i).Tag.Get("render") == "omitzero" && v.Field(i).IsZero() {
+				continue
+			}
+			parts = append(parts, t.Field(i).Name+": "+encodeArg(v.Field(i)))
 		}
 		return t.String() + "{" + strings.Join(parts, ", ") + "}"
 	case reflect.Pointer:
