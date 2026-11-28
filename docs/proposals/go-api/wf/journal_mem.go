@@ -105,6 +105,22 @@ func (j *memJournal) Records(run RunID) ([]JournalRecord, error) {
 	return out, nil
 }
 
+// ReadUnlocked is Records with no lock held: the read a fold before the
+// lock builds on (preFold).
+func (j *memJournal) ReadUnlocked(run RunID) ([]JournalRecord, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	r, ok := j.runs[run]
+	if !ok || len(r.recs) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownRun, run)
+	}
+	out := slices.Clone(r.recs)
+	for i := range out {
+		out[i].Data = slices.Clone(out[i].Data)
+	}
+	return out, nil
+}
+
 func (j *memJournal) Runs() ([]RunID, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()

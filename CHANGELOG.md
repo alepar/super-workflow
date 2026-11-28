@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### What changed
+
+- **A verb folds the journal before it takes the run lock (sw-989).** Each
+  lock acquisition used to read and fold the whole journal under the lock.
+  On a 217 MB journal that held the lock for 1 to 2 s per acquisition, and
+  a verb takes it 2 to 8 times, so concurrent children queued for minutes.
+  A verb now folds the records committed so far with no lock. Under the
+  lock it folds only the records appended since, onto that fold, after
+  checking that the records it built on are still the journal's prefix. A
+  rewritten or shortened journal, or a changed definition, is folded whole
+  under the lock as before. The process's journal read cache is now shared
+  by every journal value on the same file, so a verb that builds more than
+  one engine (`next`, `heartbeat`) no longer parses the whole file again for
+  each.
+
+### Upgrading
+
+- No API, journal format, definition hash or run hash change, and the lock
+  semantics are unchanged: the state a verb acts on under the lock is still
+  the fold of exactly the records it read under the lock. A verb now spends
+  the fold's CPU before it waits for the lock, so a call that waits holds a
+  fold it may extend. Journals that wrap a `wf.Journal` can pass a lock-free
+  read through by implementing `ReadUnlocked(wf.RunID)
+  ([]wf.JournalRecord, error)`; the engine only folds and compares the
+  records it returns, which may share their payloads with the journal's
+  cache. Without it, the wrapper is folded under the lock as before.
+  `wftest.CrashJournal` passes it through.
+
 ## v0.4.10
 
 The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`

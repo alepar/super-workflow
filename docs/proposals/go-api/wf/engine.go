@@ -416,6 +416,12 @@ func (e *Engine) withRunChecked(run RunID, check func([]JournalRecord) error, f 
 }
 
 func (e *Engine) withRunMode(run RunID, dry bool, check func([]JournalRecord) error, f func(c *cycle) error) error {
+	// The fold of the records committed so far runs before the lock is
+	// taken; under it only the records appended since are folded (foldUnder).
+	pre := e.preFold(run)
+	if h := preFoldedHook; h != nil {
+		h(run)
+	}
 	unlock, err := e.j.Lock(run)
 	if err != nil {
 		return err
@@ -434,7 +440,7 @@ func (e *Engine) withRunMode(run RunID, dry bool, check func([]JournalRecord) er
 	if err != nil {
 		return err
 	}
-	st, err := foldRun(recs, def)
+	st, err := foldUnder(pre, recs, def)
 	if err != nil {
 		return err
 	}
@@ -518,6 +524,7 @@ func (e *Engine) readOnly(run RunID, strict bool, f func(c *cycle) error) error 
 // lock, with nothing else journaled: no migration, adoption or workspace
 // relocation. A refused verb's audit record is then its only write.
 func (e *Engine) withTelemetry(run RunID, f func(c *cycle) error) error {
+	pre := e.preFold(run)
 	unlock, err := e.j.Lock(run)
 	if err != nil {
 		return err
@@ -534,7 +541,7 @@ func (e *Engine) withTelemetry(run RunID, f func(c *cycle) error) error {
 	if err != nil {
 		return err
 	}
-	st, err := foldRun(recs, def)
+	st, err := foldUnder(pre, recs, def)
 	if err != nil {
 		return err
 	}
@@ -1793,6 +1800,10 @@ func (c *cycle) driveOnce() error {
 // yieldedHook, when set, runs each time a drive has the run lock back after
 // letting it go to a waiting call (tests).
 var yieldedHook func(RunID)
+
+// preFoldedHook, when set, runs between a verb's fold before the lock and
+// its taking the lock (withRunMode): a test appends there.
+var preFoldedHook func(RunID)
 
 // lockYielder is a journal whose held run lock can go to a call waiting for
 // it and come back (the file journal's turnstile).

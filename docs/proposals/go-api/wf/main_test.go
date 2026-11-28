@@ -19,6 +19,7 @@ import (
 	"github.com/alepar/super-workflow/docs/proposals/go-api/examples/gatedchain"
 	hn "github.com/alepar/super-workflow/docs/proposals/go-api/harness"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness/agytest"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/foldcheck"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/shell"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
@@ -126,6 +127,7 @@ func clConfig() wf.MainConfig {
 // line (which names this binary) runs as a real subprocess.
 func TestMain(m *testing.M) {
 	testgit.Isolate()
+	foldcheck.Enable()                                        // every fold of a delta under the lock is checked against the full fold
 	if len(os.Args) > 1 && os.Args[1] == shell.DetachedVerb { // the detached runner re-executes this binary
 		os.Exit(shell.RunDetached(os.Args[2:], os.Stdout, os.Stderr))
 	}

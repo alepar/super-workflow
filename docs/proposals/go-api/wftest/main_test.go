@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/harness"
+	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/foldcheck"
 	"github.com/alepar/super-workflow/docs/proposals/go-api/internal/testgit"
 )
 
@@ -36,6 +37,7 @@ func harnessEnvVars() []string {
 
 func TestMain(m *testing.M) {
 	testgit.Isolate()
+	foldcheck.Enable() // every fold of a delta under the lock is checked against the full fold
 	for _, k := range harnessEnvVars() {
 		os.Unsetenv(k)
 	}

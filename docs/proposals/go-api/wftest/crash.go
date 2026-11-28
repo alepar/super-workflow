@@ -1,6 +1,7 @@
 package wftest
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/alepar/super-workflow/docs/proposals/go-api/wf"
@@ -46,6 +47,23 @@ func (c *CrashJournal) Fired() []wf.JournalKind {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]wf.JournalKind(nil), c.fired...)
+}
+
+// ReadUnlocked passes the wrapped journal's lock-free read through, so the
+// engine folds before the lock as it does on a file journal.
+func (c *CrashJournal) ReadUnlocked(run wf.RunID) ([]wf.JournalRecord, error) {
+	return readUnlocked(c.Journal, run)
+}
+
+// readUnlocked is j's lock-free read, when it has one.
+func readUnlocked(j wf.Journal, run wf.RunID) ([]wf.JournalRecord, error) {
+	ur, ok := j.(interface {
+		ReadUnlocked(wf.RunID) ([]wf.JournalRecord, error)
+	})
+	if !ok {
+		return nil, errors.New("wftest: the wrapped journal has no lock-free read")
+	}
+	return ur.ReadUnlocked(run)
 }
 
 // Append implements wf.Journal.

@@ -71,6 +71,7 @@ docs/proposals/go-api/harness/testdata/started/hermes-child.log
 docs/proposals/go-api/harness/testdata/started/hermes-context-truncated.log
 docs/proposals/go-api/harness/testdata/started/pi-child.jsonl
 docs/proposals/go-api/harness/testdata/started/pi-coordinator.jsonl
+docs/proposals/go-api/internal/foldcheck/foldcheck.go
 docs/proposals/go-api/internal/harnessfixture/files.go
 docs/proposals/go-api/opencode/super-workflow.js
 docs/proposals/go-api/shell/detached.go
@@ -204,6 +205,7 @@ docs/proposals/go-api/wf/path_template.go
 docs/proposals/go-api/wf/pattern_validation.go
 docs/proposals/go-api/wf/preflight.go
 docs/proposals/go-api/wf/preflight_run.go
+docs/proposals/go-api/wf/prefold.go
 docs/proposals/go-api/wf/prompt_hash.go
 docs/proposals/go-api/wf/promptref.go
 docs/proposals/go-api/wf/recorded_context.go

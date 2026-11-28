@@ -54,24 +54,30 @@ type fileJournal struct {
 	// committed, when set, collects the run and kind of every record this
 	// value appends: what an invocation has already changed.
 	committed *[]committedRecord
-	mu        sync.Mutex // guards held, prev and cache
+	mu        sync.Mutex // guards held and prev
 	held      map[RunID]*fileRunLock
 	prev      map[RunID]LockHolder // the record found in each run's lock file when this value locked it
-	// cache is each run's records as this value last read them: a later
-	// read under the lock parses only the lines appended since. One verb
-	// takes the lock several times; without it each read parses the whole
-	// file (60 ms of a 15 MB journal, FANOUT-2 run B). Comparing the cached
-	// bytes costs a few ms; it is what proves the prefix unchanged.
-	cache map[RunID]*journalCache
 }
 
-// journalCache is a run's file as this value last read it: raw is its
+// journalCache is a journal file as this process last read it: raw is its
 // committed bytes, recs their records. A read whose file starts with exactly
 // raw parses only what follows; any other file is read in full.
 type journalCache struct {
 	raw  []byte
 	recs []JournalRecord
 }
+
+// readCaches holds each journal file's last read, by path, for every
+// FileJournal value in the process: a later read, under the lock or not,
+// parses only the lines appended since. One verb takes the lock several
+// times, through more than one engine; without it each read parses the
+// whole file (0.85 s of a 217 MB journal, sw-989). Comparing the cached
+// bytes costs a few ms; it is what proves the prefix unchanged, so two
+// values that name one file by different paths only miss.
+var readCaches = struct {
+	sync.Mutex
+	m map[string]*journalCache
+}{m: map[string]*journalCache{}}
 
 // fileRunLock is one held lock. next is the Seq the next Append assigns; 0
 // means the file has not been read since the lock was taken. f is the lock
@@ -134,7 +140,7 @@ func restoreLockFile(f *os.File, orig []byte, mod time.Time) {
 // flock on <dir>/runs/<run-id>/lock, so it excludes other processes and other
 // FileJournal values alike.
 func FileJournal(dir string) Journal {
-	return &fileJournal{dir: dir, held: map[RunID]*fileRunLock{}, prev: map[RunID]LockHolder{}, cache: map[RunID]*journalCache{}}
+	return &fileJournal{dir: dir, held: map[RunID]*fileRunLock{}, prev: map[RunID]LockHolder{}}
 }
 
 func (j *fileJournal) runDir(run RunID) string { return filepath.Join(j.dir, "runs", string(run)) }
@@ -564,36 +570,49 @@ const gateFile = "lock.gate"
 // load reads the run's file under the lock and sets l.next, noting a torn
 // final line in l.torn for the first Append to cut off. A final line with no
 // newline did not commit, even if it parses.
-// When the file begins with the very bytes this value read last time, their
-// records come from its cache and only the rest is parsed; any other
-// content, a rewrite or a shortening anywhere, is parsed in full.
+// Its records come from the process's read cache where they can
+// (parseCached).
 func (j *fileJournal) load(run RunID, l *fileRunLock) ([]JournalRecord, error) {
 	path := filepath.Join(j.runDir(run), journalFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		j.setCache(run, nil)
+		setCachedRead(path, nil)
 		l.next = 1
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	recs, off, err := parseCached(path, data)
+	if err != nil {
+		return nil, err
+	}
+	if off < len(data) {
+		l.torn = int64(off)
+	}
+	l.next = int64(len(recs) + 1)
+	return copyRecords(recs), nil
+}
+
+// parseCached is parseCommitted of the journal file at path, read as data:
+// when data begins with the very bytes the process read of path last time,
+// their records come from the cache and only the rest is parsed; any other
+// content, a rewrite or a shortening anywhere, is parsed in full. The cache
+// then holds data's committed bytes. The records returned are the cache's:
+// a caller hands out copies (copyRecords).
+func parseCached(path string, data []byte) ([]JournalRecord, int, error) {
 	var recs []JournalRecord
 	base := 0
-	if c := j.cached(run); c != nil && len(data) >= len(c.raw) && bytes.Equal(data[:len(c.raw)], c.raw) {
+	if c := cachedRead(path); c != nil && len(data) >= len(c.raw) && bytes.Equal(data[:len(c.raw)], c.raw) {
 		recs, base = c.recs, len(c.raw)
 	}
 	recs = slices.Clip(recs) // appending below never writes into the cached array
 	recs, off, err := parseCommitted(data, base, recs)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s %v", ErrCorruptJournal, path, err)
+		return nil, 0, fmt.Errorf("%w: %s %v", ErrCorruptJournal, path, err)
 	}
-	if off < len(data) {
-		l.torn = int64(off)
-	}
-	j.setCache(run, &journalCache{raw: data[:off:off], recs: recs})
-	l.next = int64(len(recs) + 1)
-	return copyRecords(recs), nil
+	setCachedRead(path, &journalCache{raw: data[:off:off], recs: recs})
+	return recs, off, nil
 }
 
 // parseCommitted parses data's committed records from off on, after recs:
@@ -640,19 +659,19 @@ func copyRecords(recs []JournalRecord) []JournalRecord {
 	return out
 }
 
-func (j *fileJournal) cached(run RunID) *journalCache {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return j.cache[run]
+func cachedRead(path string) *journalCache {
+	readCaches.Lock()
+	defer readCaches.Unlock()
+	return readCaches.m[path]
 }
 
-func (j *fileJournal) setCache(run RunID, c *journalCache) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+func setCachedRead(path string, c *journalCache) {
+	readCaches.Lock()
+	defer readCaches.Unlock()
 	if c == nil {
-		delete(j.cache, run)
+		delete(readCaches.m, path)
 	} else {
-		j.cache[run] = c
+		readCaches.m[path] = c
 	}
 }
 
@@ -1007,7 +1026,8 @@ type committedReader interface {
 	ReadCommitted(run RunID) ([]JournalRecord, error)
 }
 
-// ReadCommitted reads run's committed records with no lock. Each record is
+// ReadCommitted reads run's committed records with no lock, through the
+// process's read cache (parseCached). Each record is
 // one line written whole by one append, so the file is always a committed
 // prefix plus at most a torn final line, which is skipped and never
 // repaired here. A run with no committed record is ErrUnknownRun.
@@ -1023,14 +1043,35 @@ func (j *fileJournal) ReadCommitted(run RunID) ([]JournalRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	recs, _, err := parseCommitted(data, 0, nil)
+	recs, _, err := parseCached(path, data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s %v", ErrCorruptJournal, path, err)
+		return nil, err
 	}
 	if len(recs) == 0 {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownRun, run)
 	}
-	return recs, nil
+	return copyRecords(recs), nil
+}
+
+// ReadUnlocked is ReadCommitted for a fold before the lock (preFold),
+// which only folds and compares what it reads: the records share their
+// payloads with the read cache instead of copying them, so a 217 MB
+// journal is not held twice while the verb's own read under the lock is.
+// A caller never changes a record's Data or Roots.
+func (j *fileJournal) ReadUnlocked(run RunID) ([]JournalRecord, error) {
+	if err := validRunID(run); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(j.runDir(run), journalFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	recs, _, err := parseCached(path, data)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(recs), nil
 }
 
 // recordedHolder reads the holder record in run's lock file with no lock:

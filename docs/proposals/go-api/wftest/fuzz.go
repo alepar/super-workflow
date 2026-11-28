@@ -292,6 +292,11 @@ type fuzzJournal struct {
 	onRecord        func(wf.JournalRecord)
 }
 
+// ReadUnlocked passes the wrapped journal's lock-free read through.
+func (j *fuzzJournal) ReadUnlocked(run wf.RunID) ([]wf.JournalRecord, error) {
+	return readUnlocked(j.Journal, run)
+}
+
 func (j *fuzzJournal) Append(r wf.JournalRecord) error {
 	if j.records >= j.limit*j.instances() || j.instanceRecords[r.Instance] >= j.limit {
 		return errFuzzBound

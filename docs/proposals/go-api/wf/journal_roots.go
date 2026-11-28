@@ -116,6 +116,21 @@ func (j *rootedJournal) ReadCommitted(run RunID) ([]JournalRecord, error) {
 	return out, err
 }
 
+// ReadUnlocked is Records with no lock, for a fold before the lock
+// (preFold), from a journal that can read so.
+func (j *rootedJournal) ReadUnlocked(run RunID) ([]JournalRecord, error) {
+	ur, ok := j.Journal.(unlockedReader)
+	if !ok {
+		return nil, errNoLockFreeRead
+	}
+	recs, err := ur.ReadUnlocked(run)
+	if err != nil {
+		return nil, err
+	}
+	out, _, err := j.rooted(recs)
+	return out, err
+}
+
 // errNoLockFreeRead is a journal that reads a run only under its lock.
 var errNoLockFreeRead = errors.New("journal reads no run without its lock")
 
