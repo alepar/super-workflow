@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.13
+
+The engine module is `github.com/alepar/super-workflow/docs/proposals/go-api`
+at tag `docs/proposals/go-api/v0.4.13`. GitHub installs use the plugin tag
+`plugin-v0.4.13`. This release journals an observed value over 64 KiB by its
+hash and keeps the bytes once in the run's `observed/` directory. The journal
+shape change is additive; an older binary cannot resume a journal that holds
+such a record. Read Upgrading.
 
 ### What changed
 
